@@ -1,0 +1,82 @@
+# 04 — Périmètre du POC
+
+## Objectif
+
+Une **simulation économique autonome** qui tourne seule, sans intervention du joueur, avec des ratios de production cohérents et des dynamiques rural/urbain émergentes.
+
+**Critères de succès**
+- La simulation tourne indéfiniment sans blocage ni dérive absurde.
+- Les quantités produites / consommées restent proportionnellement cohérentes.
+- Les premières dynamiques émergent : pénuries localisées, goulots (chaîne textile), congestion, croissance de quartiers, firmes qui réinvestissent ou font faillite.
+
+## Périmètre
+
+| Élément | POC |
+|---|---|
+| Carte | 200×200 tiles, une seule ville, vue micro uniquement |
+| Personnage | Un seul : **le maire**, objectif = augmenter la population en créant des bâtiments répondant aux besoins |
+| Firmes | Autonomes, règles simples (voir `02`) |
+| Terrain | Un seul : **plaine** (herbe) |
+| Infrastructure | Une seule : **chemin de terre** |
+| Habitation | Une seule : **quartier rural** (1 000 hab) |
+| Niveau technologique | 0 (production primitive) |
+| Transport | Implicite |
+| Intermédiaires | Aucun (relation directe fournisseur ↔ client) |
+| Livraison différée sur congestion | **Oui** |
+
+## Ressources
+
+| Catégorie | Ressources POC | Reporté |
+|---|---|---|
+| Nourriture | grain, viande, fruit — consommés directement (pas de farine) | poisson ; nourriture industrielle |
+| Textile | lin, laine → tissu → vêtements | coton |
+| Bois | bois, consommé directement | transformation |
+| Travail | `MAIN_OEUVRE` | qualifications |
+
+## Catalogue des tiles (identifiants d'assets)
+
+`terrain_plaine` · `infra_chemin_terre` (toutes combinaisons de demi-directions) ·
+`bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_filature` · `bat_atelier_couture` · `bat_quartier_rural`
+
+## Calibration (effectifs 100–500, unités rondes)
+
+Ce qui compte est la **proportion**, pas la valeur absolue.
+
+### Production
+
+| Bâtiment | Travailleurs | Production / jour | Productivité (u/travailleur) |
+|---|---|---|---|
+| Champ (grain) | 200 | 100 grain | 0,5 |
+| Pâturage (viande) | 100 | 20 viande | 0,2 |
+| Verger (fruit) | 150 | 30 fruit | 0,2 |
+| Exploitation forestière | 200 | 50 bois | 0,25 |
+| Champ de lin | 200 | 40 lin | 0,2 |
+| Élevage laine | 100 | 20 laine | 0,2 |
+| Filature / tissage | 300 | 30 tissu | 0,1 |
+| Atelier couture | 200 | 20 vêtements | 0,1 |
+
+Logique : agriculture céréalière extensive et productive par tête ; élevage peu productif ; transformation textile intensive en main-d'œuvre (beaucoup de bras, lent).
+
+### Consommation d'un quartier rural (1 000 hab)
+
+| Ressource | Par jour |
+|---|---|
+| Grain | 50 |
+| Viande | 10 |
+| Fruit | 10 |
+| Bois | 20 |
+| Vêtements | 5 |
+
+### Proportions qui en découlent
+- ~**7 tiles de production pour 2 quartiers ruraux**.
+- La **chaîne textile** (fibre → filature → couture) est le goulot naturel : une chaîne complète (20 vêtements/jour) couvre ~4 quartiers. Première filière candidate à l'intégration verticale.
+- Un quartier supplémentaire sans production supplémentaire crée une tension sur la main-d'œuvre → incitation à investir.
+
+### ⚠️ Points de calibration non tranchés
+- **Main-d'œuvre disponible par quartier** : l'ancienne valeur (250 actifs / 1 000 hab) date de la première calibration (effectifs 15–50). Elle est **incompatible** avec les effectifs actuels (la liste ci-dessus totalise 1 450 travailleurs). Recalibrer : soit le taux d'actifs, soit le nombre de quartiers nécessaires.
+- **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
+- Prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
+
+## Prochaine étape de design identifiée
+
+**Algorithme de placement automatique des bâtiments** (étape « construction », saisonnière) — identifié comme le cœur de l'émergence spatiale, jamais encore traité. Il devra préciser qui décide (maire ? firmes ?), comment on évalue un emplacement (accès aux intrants, à la main-d'œuvre, aux clients, coût de l'infrastructure à créer), et comment se crée l'infrastructure associée.
