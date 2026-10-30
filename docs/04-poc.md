@@ -2,20 +2,30 @@
 
 ## Objectif
 
-Une **simulation économique autonome** qui tourne seule, sans intervention du joueur, avec des ratios de production cohérents et des dynamiques rural/urbain émergentes.
+Une **simulation économique autonome** qui tourne seule, sans intervention du joueur : des pops travaillent, produisent et accumulent des ressources, qui satisfont (ou non) leurs besoins ; la satisfaction pilote la natalité et la mortalité. Le maire est inactif.
+
+**Deux étapes**
+
+| Étape | Contenu |
+|---|---|
+| **POC-A — boucle physique** | Production, flux, congestion, consommation directe des pops (sans monnaie), satisfaction, démographie. Carte initiale fixe, personne ne construit. |
+| **POC-B — monnaie** | Salaires, prix, profit des firmes, réinvestissement, rachat, faillite, construction (placement automatique). |
 
 **Critères de succès**
 - La simulation tourne indéfiniment sans blocage ni dérive absurde.
 - Les quantités produites / consommées restent proportionnellement cohérentes.
-- Les premières dynamiques émergent : pénuries localisées, goulots (chaîne textile), congestion, croissance de quartiers, firmes qui réinvestissent ou font faillite.
+- Les premières dynamiques émergent : pénuries localisées, goulots (chaîne textile), congestion, croissance puis saturation des quartiers selon la satisfaction des besoins.
+- POC-B : firmes qui réinvestissent ou font faillite, croissance de nouveaux quartiers.
 
 ## Périmètre
 
 | Élément | POC |
 |---|---|
 | Carte | 200×200 tiles, une seule ville, vue micro uniquement |
-| Personnage | Un seul : **le maire**, objectif = augmenter la population en créant des bâtiments répondant aux besoins. Ni leviers (pouvoir / capital / influence), ni postes, ni fortune dans le POC |
-| Population | **Pops de 100 hab, fixes** : 10 pops « paysans » par quartier rural, une seule culture / religion / orientation, attributs fixes. Pas de natalité, de mobilité ni de bascule |
+| Personnage | Un seul : **le maire**, **inactif** (aucune décision, ne construit pas). Ni leviers (pouvoir / capital / influence), ni postes, ni fortune dans le POC |
+| Population | **Pops de 100 hab** : 10 pops « paysans » au départ par quartier rural, une seule culture / religion / orientation, attributs fixes. **Natalité / mortalité selon la satisfaction des besoins** (nouvelle pop à +100, disparition à −100, plafond = capacité de logement). Pas de mobilité ni de bascule |
+| Monnaie | POC-A : aucune (consommation directe des pops). POC-B : salaires et prix |
+| Construction | POC-A : aucune, carte initiale fixe. POC-B : réinvestissement des firmes |
 | Firmes | Autonomes, règles simples (voir `02`) |
 | Terrain | Un seul : **plaine** (herbe) |
 | Infrastructure | Une seule : **chemin de terre** |
@@ -68,6 +78,11 @@ Logique : agriculture céréalière extensive et productive par tête ; élevage
 | Bois | 20 |
 | Vêtements | 5 |
 
+### Besoins, satisfaction et démographie
+- Consommation par pop de 100 hab : 5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement par jour.
+- Satisfaction, natalité et mortalité : formules dans `02` §6.
+- À calibrer : `poids_r` des besoins, fonctions `taux_naissance` / `taux_mortalite`, seuil de ±100 pour créer ou supprimer une pop.
+
 ### Proportions qui en découlent
 - ~**7 tiles de production pour 2 quartiers ruraux**.
 - La **chaîne textile** (fibre → filature → couture) est le goulot naturel : une chaîne complète (20 vêtements/jour) couvre ~4 quartiers. Première filière candidate à l'intégration verticale.
@@ -77,8 +92,8 @@ Logique : agriculture céréalière extensive et productive par tête ; élevage
 - **Main-d'œuvre disponible par quartier** : l'ancienne valeur (250 actifs / 1 000 hab) date de la première calibration (effectifs 15–50). Elle est **incompatible** avec les effectifs actuels (la liste ci-dessus totalise 1 450 travailleurs). Recalibrer : soit le taux d'actifs, soit le nombre de quartiers nécessaires.
 - **Affectation pop → lieu de travail** : une pop de 100 hab est affectée à un seul lieu. À valider par le POC : coût de simulation du facteur ×10 en objets, et granularité de l'affectation (effectifs des bâtiments vs actifs d'une pop).
 - **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
-- Prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
+- POC-B : prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
 
 ## Prochaine étape de design identifiée
 
-**Algorithme de placement automatique des bâtiments** (étape « construction », saisonnière) — identifié comme le cœur de l'émergence spatiale, jamais encore traité. Il devra préciser qui décide (maire ? firmes ?), comment on évalue un emplacement (accès aux intrants, à la main-d'œuvre, aux clients, coût de l'infrastructure à créer), et comment se crée l'infrastructure associée.
+**Algorithme de placement automatique des bâtiments** (étape « construction », saisonnière ; POC-B, car personne ne construit en POC-A) — identifié comme le cœur de l'émergence spatiale, jamais encore traité. Il devra préciser qui décide (maire ? firmes ?), comment on évalue un emplacement (accès aux intrants, à la main-d'œuvre, aux clients, coût de l'infrastructure à créer), et comment se crée l'infrastructure associée.

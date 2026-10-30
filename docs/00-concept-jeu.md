@@ -46,10 +46,13 @@ La difficulté centrale : pour l'**économie**, gérer de vraies populations pos
 - Un quartier riche mélange des pops de strates différentes sur la même tile (ex. : bourgeois + domestiques) ; les domestiques y habitent et y travaillent (lieu de vie pour les uns, lieu de travail pour les autres), sans mécanique supplémentaire grâce au flux unifié.
 - Chaque pop porte une **richesse** et des **droits politiques**.
 
+### Démographie (dans le POC)
+- La **natalité et la mortalité** dépendent de la **satisfaction des besoins** de la pop (voir `02` §6). La croissance nette s'accumule par tile quartier : à +100, une **nouvelle pop** de 100 est créée (dans la limite de la capacité de logement) ; à −100, une pop disparaît.
+- Population bornée par la capacité de logement : dans le POC, personne ne crée de quartier, la **saturation** est un résultat observé.
+
 ### Évolutions (hors POC)
 - **Mobilité** : une pop peut déménager (résidence), changer de travail, changer de strate (paysan → ouvrier).
 - **Bascule culturelle, religieuse, d'orientation** : ces attributs sont fixes pour une pop, mais une pop peut *basculer* sous certaines conditions (assimilation, école, urbanisation, État…), avec éventuellement une part d'aléa. Exemple : une pop bretonne dans l'État français peut devenir française.
-- **Natalité** : à trancher. Hypothèse : création d'une nouvelle pop de 100 lorsque la croissance accumulée l'atteint.
 - **Poids politique** d'une pop = effectif × droits × richesse ; la forme du calcul dépend du régime (universel : les têtes ; censitaire : la richesse ; Ancien Régime : le statut). Les types de vote sont donc des paramètres, pas un système à part.
 
 ## 4. Les personnages
@@ -83,6 +86,6 @@ Mariages, traits, intrigues familiales (à la *Crusader Kings*) : souhaitable à
 
 | Phase | Contenu |
 |---|---|
-| **POC** | Pops fixes de 100 (résidence, emploi), un seul personnage : le maire |
-| **Phase 2** | Postes, dévolution, mort et héritage, fortune et firmes ; natalité ; mobilité des pops |
+| **POC** | Pops de 100 (résidence, emploi, attributs fixes), natalité / mortalité selon la satisfaction des besoins ; un seul personnage, le maire, **inactif** |
+| **Phase 2** | Postes, dévolution, mort et héritage, fortune et firmes ; mobilité des pops |
 | **Phase 3** | Émergence des personnages, régimes politiques et suffrage, bascule culturelle des pops ; dramaturgie |

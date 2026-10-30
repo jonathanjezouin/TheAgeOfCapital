@@ -70,6 +70,7 @@ Tile
   capacite_max
   stock           { ressource: qte }
   capacite_logement (si quartier ; population = Σ des pops de la tile)
+  croissance_accumulee (si quartier ; natalité / mortalité, voir `02` §6)
   valeur_fonciere (non utilisé POC)
 
 Firme
@@ -112,7 +113,9 @@ Pop (unité de population, 100 hab fixe)
   richesse, droits_politiques      (nullable, non utilisé POC)
 
 Quartier (état agrégé d'une tile quartier, calculé depuis les pops)
-  population, actifs_disponibles, taux_chomage, salaire_reference
+  population, actifs_disponibles, taux_chomage
+  satisfaction_jour, satisfaction_annuelle
+  salaire_reference (POC-B)
 
 Batiment (type)
   secteur, intrants [{ressource, qte}], extrants [{ressource, qte}]

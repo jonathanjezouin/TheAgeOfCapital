@@ -35,7 +35,7 @@
 - Possède une ou plusieurs tiles, emploie, achète, vend, dégage profit ou perte, réinvestit.
 - **Mono-secteur** : une firme ne gère qu'un type de production.
 - Statut : privée, publique, coopérative…
-- Règles POC (Option A — firmes autonomes à règles simples) :
+- Règles (Option A — firmes autonomes à règles simples), actives à partir du **POC-B** (monnaie, voir `04`) ; en POC-A les firmes produisent et livrent sans profit :
 
 ```
 profit  > seuil        → réinvestir (construire un nouveau bâtiment)
@@ -50,9 +50,10 @@ perte prolongée        → faillite, tile abandonnée
 ### Pop
 - Unité de population : **100 habitants, fixe**. Attributs discrets : tile de résidence, tile d'emploi (nullable), strate, culture, religion, orientation (voir `00`).
 - Dans le POC : une seule strate (paysan), une seule culture et religion, attributs fixes.
+- **Consommation** : chaque jour, une pop consomme sur le stock de sa tile de résidence (5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement pour 100 hab, voir `04`). **Pas de monnaie côté pops dans le POC-A** : elles consomment ce que leur quartier reçoit.
 
 ### Personnages (lien avec la vision)
-Les firmes et institutions sont dirigées par des personnages, créés par des **postes** (voir `00`). Dans le POC : **un seul personnage, le maire**, coquille presque vide dont l'objectif est d'augmenter la population en créant des bâtiments répondant aux besoins.
+Les firmes et institutions sont dirigées par des personnages, créés par des **postes** (voir `00`). Dans le POC : **un seul personnage, le maire**, coquille vide **inactive** (présent dans les données, aucune décision ; il ne construit pas).
 
 ## 3. Flux unifié
 
@@ -125,8 +126,8 @@ cout_transport_effectif = cout_base × (1 + α × facteur_congestion²)
 | Événement | Fréquence |
 |---|---|
 | Contrats, main-d'œuvre, production, stocks, congestion | Quotidienne |
-| Prix (offre / demande) | Hebdomadaire |
-| Décisions des firmes (investir, racheter, contrats) | Mensuelle |
+| Prix (offre / demande) — POC-B | Hebdomadaire |
+| Décisions des firmes (investir, racheter, contrats) — POC-B | Mensuelle |
 | Construction de nouveaux bâtiments | Saisonnière |
 | Démographie des quartiers | Annuelle |
 
@@ -156,11 +157,29 @@ production_effective = production_max
 - **Jour 2** : l'usine B achète 5 unités à A (transfert imputé au segment ce jour-là), consomme les 5, produit 15 unités de B.
 
 ## 6. Démographie (POC)
-- **Pas de natalité dans le POC** : les pops sont fixes (100 hab) et ne naissent ni ne disparaissent. La population totale ne croît que par **création de quartiers** (le maire construit, de nouvelles pops s'installent).
+### Satisfaction des besoins
+Pour chaque ressource de consommation `r`, chaque jour :
+```
+sat_r(jour)      = min(1, recu_r / requis_r)
+satisfaction(jour) = Σ poids_r × sat_r(jour)          (Σ poids_r = 1)
+satisfaction(an) = moyenne de satisfaction(jour) sur l'année
+```
+Les `poids_r` (nourriture dominante) sont à calibrer. La satisfaction est calculée par tile quartier (les pops d'une même tile reçoivent la même part ; à affiner si des strates différentes cohabitent).
+
+### Natalité et mortalité (annuelles)
+```
+croissance_annuelle = pop_tile × ( taux_naissance(satisfaction) − taux_mortalite(satisfaction) )
+croissance_accumulee += croissance_annuelle
+≥ +100 : création d'une pop de 100   (si capacite_logement non atteinte, sinon plafonné)
+≤ −100 : disparition d'une pop de 100 (en priorité une pop sans emploi)
+```
+Les fonctions `taux_naissance` et `taux_mortalite` sont à calibrer (croissante / décroissante en fonction de la satisfaction). Le compteur `croissance_accumulee` est porté par la tile quartier.
+
+- La population est bornée par la capacité de logement. **Personne ne crée de quartier dans le POC** : saturation et équilibre sont des résultats attendus.
 - La main-d'œuvre disponible est une fraction de la population de la pop.
-- Hors POC : natalité (hypothèse : nouvelle pop de 100 quand la croissance accumulée l'atteint), mobilité, bascule des attributs (voir `00`).
+- Hors POC : mobilité, bascule des attributs (voir `00`).
 
 État d'un quartier (agrégat des pops de la tile) :
 ```
-population, actifs_disponibles, taux_chomage, salaire_reference (plancher local, évolue lentement)
+population, actifs_disponibles, taux_chomage, salaire_reference (POC-B), satisfaction_jour, satisfaction_annuelle, croissance_accumulee
 ```
