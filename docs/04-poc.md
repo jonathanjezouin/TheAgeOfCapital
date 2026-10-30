@@ -14,11 +14,12 @@ Une **simulation économique autonome** qui tourne seule, sans intervention du j
 | Élément | POC |
 |---|---|
 | Carte | 200×200 tiles, une seule ville, vue micro uniquement |
-| Personnage | Un seul : **le maire**, objectif = augmenter la population en créant des bâtiments répondant aux besoins |
+| Personnage | Un seul : **le maire**, objectif = augmenter la population en créant des bâtiments répondant aux besoins. Ni leviers (pouvoir / capital / influence), ni postes, ni fortune dans le POC |
+| Population | **Pops de 100 hab, fixes** : 10 pops « paysans » par quartier rural, une seule culture / religion / orientation, attributs fixes. Pas de natalité, de mobilité ni de bascule |
 | Firmes | Autonomes, règles simples (voir `02`) |
 | Terrain | Un seul : **plaine** (herbe) |
 | Infrastructure | Une seule : **chemin de terre** |
-| Habitation | Une seule : **quartier rural** (1 000 hab) |
+| Habitation | Une seule : **quartier rural** (capacité 1 000 hab = 10 pops) |
 | Niveau technologique | 0 (production primitive) |
 | Transport | Implicite |
 | Intermédiaires | Aucun (relation directe fournisseur ↔ client) |
@@ -74,6 +75,7 @@ Logique : agriculture céréalière extensive et productive par tête ; élevage
 
 ### ⚠️ Points de calibration non tranchés
 - **Main-d'œuvre disponible par quartier** : l'ancienne valeur (250 actifs / 1 000 hab) date de la première calibration (effectifs 15–50). Elle est **incompatible** avec les effectifs actuels (la liste ci-dessus totalise 1 450 travailleurs). Recalibrer : soit le taux d'actifs, soit le nombre de quartiers nécessaires.
+- **Affectation pop → lieu de travail** : une pop de 100 hab est affectée à un seul lieu. À valider par le POC : coût de simulation du facteur ×10 en objets, et granularité de l'affectation (effectifs des bâtiments vs actifs d'une pop).
 - **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
 - Prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
 

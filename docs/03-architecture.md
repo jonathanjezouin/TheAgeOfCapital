@@ -69,7 +69,7 @@ Tile
   firme_id        (nullable)
   capacite_max
   stock           { ressource: qte }
-  population      (si quartier)
+  capacite_logement (si quartier ; population = Σ des pops de la tile)
   valeur_fonciere (non utilisé POC)
 
 Firme
@@ -105,7 +105,13 @@ Contrat
   id, type (spot | cadre), prix_unitaire, volume_garanti, duree_ticks
   qualite         (non utilisé POC)
 
-Quartier (état propre à une tile quartier)
+Pop (unité de population, 100 hab fixe)
+  id, tile_residence_id, tile_emploi_id (nullable)
+  strate          : paysan | ouvrier | bourgeois | domestique | noble …
+  culture, religion, orientation   (fixes en POC ; bascule hors POC)
+  richesse, droits_politiques      (nullable, non utilisé POC)
+
+Quartier (état agrégé d'une tile quartier, calculé depuis les pops)
   population, actifs_disponibles, taux_chomage, salaire_reference
 
 Batiment (type)
@@ -121,7 +127,8 @@ Ressources : `MAIN_OEUVRE` est une ressource ordinaire (stock dans le quartier, 
 |---|---|---|
 | Tiles monde | millions | Passives, en base |
 | Bâtiments actifs | 5 000 – 20 000 | En mémoire |
-| Personnages | ~10 000 | Règles légères, pas tous à chaque tick |
+| Pops | à estimer (1 pop = 100 hab) | Objet de base de la population ; flux agrégés par (résidence, emploi, strate) |
+| Personnages | ~10 000 | Créés par des postes (voir `00`), règles légères, pas tous à chaque tick |
 | Firmes | ~1 000 | |
 
 Principe : **on simule finement ce qui est observé** ; les zones inactives n'évoluent que par agrégats simples et « se déploient » quand on y zoome. Résolution variable selon le niveau de zoom.

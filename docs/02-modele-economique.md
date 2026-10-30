@@ -11,10 +11,11 @@
 | Champ | ~5 km² | — |
 | Pâturage | ~10 km² | — |
 | Exploitation forestière | ~20 km² | — |
-| Quartier rural | ~0,5 km² | 1 000 hab |
-| Quartier urbain (futur) | ~0,1 km² | ~5 000 hab |
+| Quartier rural | ~0,5 km² | capacité 1 000 hab |
+| Quartier urbain (futur) | ~0,1 km² | capacité ~5 000 hab |
 
-- **1 tile quartier = 1 000 habitants** (ex. : Rouen ≈ 50 000 hab ≈ 50 tiles quartier). Une tile quartier rurale représente un **bassin de peuplement** (villages et hameaux agrégés), pas un hameau isolé.
+- **Une tile quartier est une capacité de logement** (1 000 hab pour le quartier rural du POC), occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops. Une tile quartier rurale représente un **bassin de peuplement** (villages et hameaux agrégés), pas un hameau isolé.
+- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants.
 - `valeur_fonciere` existe dès le départ mais n'est pas utilisée dans le POC (futur moteur de la ségrégation spatiale).
 
 ### Le ratio habitat / production : indicateur émergent
@@ -46,8 +47,12 @@ perte prolongée        → faillite, tile abandonnée
 - Possède plusieurs firmes (c'est ainsi qu'un grand groupe internalise transport, approvisionnement, etc.).
 - Dans le POC : structure présente, **pas de logique propre**.
 
+### Pop
+- Unité de population : **100 habitants, fixe**. Attributs discrets : tile de résidence, tile d'emploi (nullable), strate, culture, religion, orientation (voir `00`).
+- Dans le POC : une seule strate (paysan), une seule culture et religion, attributs fixes.
+
 ### Personnages (lien avec la vision)
-Les firmes et institutions sont dirigées par des personnages. Dans le POC : **un seul personnage, le maire**, coquille presque vide dont l'objectif est d'augmenter la population en créant des bâtiments répondant aux besoins.
+Les firmes et institutions sont dirigées par des personnages, créés par des **postes** (voir `00`). Dans le POC : **un seul personnage, le maire**, coquille presque vide dont l'objectif est d'augmenter la population en créant des bâtiments répondant aux besoins.
 
 ## 3. Flux unifié
 
@@ -57,6 +62,7 @@ Tout circule dans le même modèle : marchandises **et main-d'œuvre**.
 - Un bâtiment de production **consomme** main-d'œuvre + intrants, **produit** des extrants.
 - **Périmètre** d'une tile = ensemble des tiles accessibles via infrastructure continue, pondéré par le coût de transport (graphe, pas rayon fixe).
 - Un quartier met sa population à disposition dans son périmètre ; une usine met ses ressources à disposition dans son périmètre.
+- Les **pops** sont l'unité de ce flux : chaque pop est affectée à un seul lieu de travail (résolution par le marché journalier ci-dessous).
 
 ### Lien économique
 Créé entre deux tiles quand :
@@ -150,9 +156,11 @@ production_effective = production_max
 - **Jour 2** : l'usine B achète 5 unités à A (transfert imputé au segment ce jour-là), consomme les 5, produit 15 unités de B.
 
 ## 6. Démographie (POC)
-La population d'un quartier croît si ses besoins sont satisfaits, stagne ou décline sinon (mise à jour annuelle). La main-d'œuvre disponible est une fraction de la population.
+- **Pas de natalité dans le POC** : les pops sont fixes (100 hab) et ne naissent ni ne disparaissent. La population totale ne croît que par **création de quartiers** (le maire construit, de nouvelles pops s'installent).
+- La main-d'œuvre disponible est une fraction de la population de la pop.
+- Hors POC : natalité (hypothèse : nouvelle pop de 100 quand la croissance accumulée l'atteint), mobilité, bascule des attributs (voir `00`).
 
-État d'un quartier :
+État d'un quartier (agrégat des pops de la tile) :
 ```
 population, actifs_disponibles, taux_chomage, salaire_reference (plancher local, évolue lentement)
 ```

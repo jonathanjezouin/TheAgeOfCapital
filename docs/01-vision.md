@@ -33,14 +33,14 @@ Des **personnages autonomes** dirigent tout : États, régions, villes, entrepri
 - Ils agissent selon leur **idéologie**, leur **classe sociale**, leurs **intérêts matériels** (ex. : un propriétaire terrien français de 1750 soutient l'Ancien Régime pour conserver ses privilèges).
 - Ils agissent **dans le cadre de leurs possibilités** : lois du pays, contestation, coup d'État militaire, révolution, lobbying des entreprises…
 - Les firmes et institutions sont des **instruments** des personnages ; les personnages ne décident pas tous à chaque tick.
-- Orientation pressentie (non tranchée) : personnages **légers mais nombreux** + personnages **émergeant** de la population.
+- Les personnages sont créés par des **postes** (institution, firme, organisation, porte-parole d'une base), pas par un ratio de population : voir `00-concept-jeu.md`.
 
 ### Le joueur
 Le joueur **est l'un de ces personnages**, ni plus ni moins. Il peut être un puissant dirigeant conquérant, un grand capitaliste, un militant libéral… mais le monde tourne sans lui. Son levier dépend de son rôle (ex. : contrôle de l'investissement selon les lois en vigueur : interventionnisme, marché libre, planification).
 
 ### La population
-- Gérée **par paquets**, jamais individuellement (« 1000 habitants dans ce quartier ; 200 travaillent ici, 400 là-bas ; insatisfaction 12 % car ils mangent correctement et les taxes sont moyennes »).
-- De ces masses peuvent **émerger des personnages remarquables** (leader syndical, révolutionnaire, entrepreneur) qui rejoignent la couche des acteurs.
+- Gérée **par pops de 100 habitants**, jamais individuellement (« cette pop habite ici, travaille là ; insatisfaction 12 % car elle mange correctement et les taxes sont moyennes »). Voir `00-concept-jeu.md`.
+- De ces masses peuvent **émerger des personnages remarquables** (leader syndical, révolutionnaire, entrepreneur) qui rejoignent la couche des acteurs, via la règle de pourvoi des postes.
 
 ## Le capitalisme comme mécanique
 

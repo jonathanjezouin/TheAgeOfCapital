@@ -27,6 +27,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 
 | Fichier | Contenu |
 |---|---|
+| `docs/00-concept-jeu.md` | Concept : ce qu'est le jeu, ce que fait le joueur, pops (100 hab) et personnages (postes) |
 | `docs/01-vision.md` | Vision long terme : acteurs, politique, niveaux de jeu, régimes économiques |
 | `docs/02-modele-economique.md` | Modèle de simulation : tiles, firmes, flux unifié, contrats, congestion, séquence du tick |
 | `docs/03-architecture.md` | Architecture technique, schéma de données, pipeline de rendu (technique) |

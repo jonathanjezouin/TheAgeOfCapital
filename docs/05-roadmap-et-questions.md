@@ -19,7 +19,9 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Qualité différenciée des marchandises avant la standardisation
 - Capital financier, crédit, banques, sociétés par actions
 - Économie politique : lois, régimes, rôles du joueur, partis, syndicats, révolutions
-- Personnages complets (idéologie, classe, émergence depuis la population)
+- Personnages complets : postes et dévolution, fortune, trois leviers (pouvoir / capital / influence), énergie / santé, émergence (voir `00`)
+- Dramaturgie des personnages (mariages, traits, intrigues) : souhaitable, pas dans les premières versions
+- Pops : natalité, mobilité (résidence, emploi, strate), bascule culturelle / religieuse / d'orientation sous conditions (+ aléa)
 - Contrats de travail, licenciements, négociation collective
 - Logique propre des groupes (stratégies : expansion, prédation…)
 - Valeur foncière et ségrégation spatiale
@@ -35,7 +37,8 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 2. **Formation des prix** : simple offre/demande hebdomadaire ? négociation des contrats cadre ? prix plancher ?
 3. **Qui construit dans le POC** : le maire seul, les firmes (réinvestissement), ou les deux ? Articulation des deux logiques.
 4. **Recalibrage de la main-d'œuvre** disponible par quartier (voir `04`).
-5. **Modélisation des personnages** (léger/nombreux + émergents pressenti, non tranché).
+5. **Personnages** : principe retenu (postes, dévolution, voir `00`) ; restent à préciser la succession du joueur à sa mort, l'équilibrage des rôles et les règles de bascule des pops.
+7. **Natalité** : création d'une nouvelle pop de 100 à l'atteinte d'un seuil de croissance accumulée ? À trancher avant la phase 2.
 6. **Monde extérieur** : abstraction type marché mondial vs simulation multi-niveaux.
 
 ## Incohérences relevées dans les échanges de design (à trancher)
