@@ -21,7 +21,7 @@ Une **simulation économique autonome** qui tourne seule, sans intervention du j
 
 | Élément | POC |
 |---|---|
-| Carte | 200×200 tiles, une seule ville, vue micro uniquement |
+| Carte | 200×200 tiles, **un village généré** (graine, aléatoire mais cohérent, voir ci-dessous), vue micro uniquement |
 | Personnage | Un seul : **le maire**, **inactif** (aucune décision, ne construit pas). Ni leviers (pouvoir / capital / influence), ni postes, ni fortune dans le POC |
 | Population | **Pops de 100 hab** : 10 pops « paysans » au départ par quartier rural, une seule culture / religion / orientation, attributs fixes. **Natalité / mortalité selon la satisfaction des besoins** (nouvelle pop à +100, disparition à −100, plafond = capacité de logement). Pas de mobilité ni de bascule |
 | Monnaie | POC-A : aucune (consommation directe des pops). POC-B : salaires et prix |
@@ -46,7 +46,7 @@ Une **simulation économique autonome** qui tourne seule, sans intervention du j
 
 ## Catalogue des tiles (identifiants d'assets)
 
-`terrain_plaine` · `infra_chemin_terre` (toutes combinaisons de demi-directions) ·
+`terrain_plaine` (8 à 12 variantes d'herbe raccordables) · `infra_chemin_terre` (POC : **orthogonal seulement**, 15 combinaisons de demi-directions ; diagonales plus tard) ·
 `bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_filature` · `bat_atelier_couture` · `bat_quartier_rural`
 
 ## Calibration (effectifs en pops, unités rondes)
@@ -91,8 +91,37 @@ Logique : agriculture céréalière extensive et productive par tête ; élevage
 ### ⚠️ Points de calibration non tranchés
 - **Main-d'œuvre disponible par quartier** : **tranché**, un quartier rural de 1 000 hab = 10 pops = 10 unités de main-d'œuvre (l'ancienne valeur « 250 actifs / 1 000 hab » est abandonnée). La liste ci-dessus totalise 29 pops, soit ~3 quartiers pleins : à vérifier que l'équilibre habitat / production (~7 tiles de production pour 2 quartiers) reste cohérent.
 - **Affectation pop → lieu de travail** : **tranché**, la pop est un bloc discret affecté à un seul lieu (voir `00` §3). Reste à valider : la granularité des effectifs (de 2 à 6 pops par bâtiment). À mesurer : coût de simulation du facteur ×10 en objets.
-- **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
+- **Ratios d'intrants de transformation** : **tranché**, filature **4 lin + 2 laine → 3 tissu**, couture **3 tissu → 2 vêtements**. La chaîne est équilibrée : 40 lin + 20 laine → 30 tissu → 20 vêtements par jour.
+- **Poids de satisfaction** et règles de mortalité : valeurs de départ dans `02` §6, à calibrer avec le CLI headless.
+- **Marge d'emploi** : à l'équilibre, ~9,6 pops employées par quartier de 10 : le chômage n'émergera pas en POC-A, et ce n'est pas un objectif (il viendra avec des économies plus complexes).
 - POC-B : prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
+
+## Générateur de village
+
+- **Déterministe** (même graine, même village), progressif : village de 1750 à évolution lente et production quasi stable, puis un deuxième village avec liens économiques, puis un troisième, puis une ville. Simple en POC, il gagnera en finesse à chaque étape.
+- Dimensionné pour être **proche de l'équilibre** : nombre de bâtiments par type proportionnel aux besoins des quartiers (ex. 4 quartiers ≈ 2 champs, 2 pâturages, ~1 verger, ~2 exploitations forestières, 1 chaîne textile), postes initialement pourvus, stocks initiaux non nuls.
+- Réseau de chemins connexe reliant quartiers et bâtiments.
+
+## Outillage de test et d'observation
+
+- Crate Rust `sim` **pure** (sans dépendance napi), **CLI headless** : N années en quelques secondes, séries temporelles en CSV.
+- **Invariants automatisés** : pas de stock négatif, conservation de la matière (produit = consommé + Δstock + pertes), équilibre malthusien prévisible (population ≈ capacité de production / besoins) comme oracle, pas de dérive sur de longues durées.
+- **Déterminisme** : quantités en entiers ou virgule fixe, itérations ordonnées.
+- Paramètres (bâtiments, recettes, besoins) en **fichiers de données**, pas en dur.
+
+## Ce que voit le joueur (POC)
+
+Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregistre quel `min()` a mordu : main-d'œuvre, intrant, congestion, stock plein).
+
+| Niveau | Contenu |
+|---|---|
+| Quartier | Liste de ses pops et de leur lieu de travail, actifs, satisfaction par ressource (reçu/requis), jauge de croissance, fournisseurs, cause des manques |
+| Bâtiment | Production effective %, facteur limitant, stocks, pops employées et leurs quartiers, clients, historique |
+| Segment | Charge / capacité, file d'attente |
+| Modes de carte | Satisfaction, pénuries, utilisation des bâtiments, congestion |
+| Global | Date, vitesse, courbes (pop, production vs consommation), journal d'événements |
+| Temps | Jour/nuit par teinte globale ; une pop = un sprite, au travail le jour, au logement la nuit |
+| Debug | Poser un bâtiment, déclencher un choc (sécheresse), modifier un paramètre en direct |
 
 ## Prochaine étape de design identifiée
 

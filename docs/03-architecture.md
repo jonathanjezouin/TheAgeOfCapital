@@ -32,17 +32,23 @@ Rust : moteur, graphe, économie, pathfinding, décisions des personnages. Node 
 ### Pourquoi Rust dès le départ
 Pas de GC (pas de micro-freezes), compilé natif, parallélisme réel (Rayon). Coût accepté : un binaire `.node` par plateforme (Windows x64, macOS ARM, Linux x64) à gérer dans le build (electron-builder).
 
+### Organisation du code et de l'exécution
+- Crate Rust **`sim` pure** (aucune dépendance à napi) : moteur, déterminisme, tests. Un **CLI headless** l'exécute sans interface.
+- Wrapper **napi-rs** mince pour Electron. En dev, le renderer est une page web ordinaire (Vite) reliée à la sim par un petit serveur local : pas d'Electron avant le packaging Steam (Electron ou Tauri à trancher à ce moment).
+- Rendu validé visuellement en Chromium headless (captures).
+
 ## 2. Tiles passives, bâtiments actifs
 
 | | Tiles | Bâtiments |
 |---|---|---|
 | Rôle | Données géographiques | Agents |
-| Stockage | SQLite | Mémoire (graphe) + persistance SQLite |
+| Stockage | **Mémoire** (`Vec`, 40 000 tiles en POC) ; SQLite pour la sauvegarde | Mémoire (graphe) + persistance SQLite |
 | Dans la boucle de tick | **Jamais** | Oui |
 | Sollicitées pour | Rendu, recherche d'emplacement | Production, échanges, stocks |
 
 - Les tiles ne sont lues que pour : **le rendu** (chunks sous la caméra) et **le placement** (recherche spatiale ponctuelle).
 - **Chunking** (16×16 ou 32×32) : mémoire active = chunks visibles + un anneau tampon ; le reste sur disque. Le joueur voit 200×200 tiles ; un déplacement de caméra charge les voisines.
+- **POC** : 200×200 = 40 000 tiles tiennent en mémoire ; SQLite sert à la sauvegarde / chargement (schéma versionné). Le chunking et la base spatiale concernent l'échelle finale.
 - Recherche d'emplacement : requête SQL indexée sur `(city_id, x, y)` — quelques ms même sur des millions de tiles, acceptable car rare (un personnage décide tous les ~30 jours, jamais à chaque tick).
 
 ## 3. Graphe de connectivité (option B)
@@ -150,11 +156,12 @@ Principe : **on simule finement ce qui est observé** ; les zones inactives n'é
 - Une tile d'infrastructure porte des **demi-connexions** du centre vers le bord, dans jusqu'à **8 directions** (orthogonales + diagonales), **4 actives max** par tile.
 - Deux tiles sont connectées quand leurs demi-directions **en vis-à-vis** sont présentes des deux côtés.
 - Supporte culs-de-sac, routes orthogonales et diagonales, tiles mixtes infra/habitat.
+- **POC : orthogonal seulement** (4 directions, 15 combinaisons non vides au lieu de 162) ; les diagonales viendront après.
 - Coût d'ajout d'une demi-direction dominé par le **déplacement d'habitations existantes** → capture la dynamique haussmannienne sans règle dédiée.
-- Assets : une variante par combinaison de demi-directions (`infra_chemin_terre_*`).
+- Assets : une variante par combinaison de demi-directions (`infra_chemin_terre_*`). La lumière (jour/nuit) est une teinte appliquée en rendu, pas précalculée.
 
 ### Sprites d'ambiance
 Sprites stochastiques (piétons, charrettes, plus tard locomotives) sur les tiles d'infrastructure, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
 
 ## 7. Outillage d'assets
-Un nouveau pipeline de génération d'assets remplace l'ancien générateur Python/Pillow (abandonné pour son rendu). Conventions conservées : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifest JSON.
+Le générateur `graphGeneration/` (Python/Pillow/numpy, maisons par cultures, calques toit/ombre) **fait référence** pour les assets. Conventions conservées : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifest JSON.

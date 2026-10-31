@@ -74,6 +74,8 @@ Créé entre deux tiles quand :
 
 Sélection du fournisseur : **appel d'offres local** — le client choisit, dans son périmètre, le fournisseur au **coût livré** (prix + transport) le plus bas. Les chemins sont **précalculés** à la création du lien et recalculés uniquement si le réseau change.
 
+**POC-A (sans prix)** : coût livré = coût de transport seul, donc le fournisseur le plus proche qui a du stock. **En pénurie, rationnement au pro rata des demandes** (règle simple, sans biais d'ordre de traitement).
+
 ### Transport (POC)
 - **Implicite** : personne ne « réalise » le transport ; son coût est calculé et absorbé dans le prix de transaction.
 - Préparé pour l'extension : `operateur_id` nullable sur le lien (`null` = transport implicite ; plus tard une firme de transport, éventuellement incluse au contrat).
@@ -85,8 +87,21 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, dans
 - Champ `qualite` prévu (différenciation avant standardisation) — non exploité dans le POC.
 - Mécanisme de formation des prix : **à approfondir** (voir `05`).
 
-### Main-d'œuvre : modèle « journalier »
-- Historiquement dominant jusqu'au tournant du XXᵉ siècle ; aucun état persistant côté travailleur.
+### Main-d'œuvre
+
+**POC-A : postes stables, sans marché.** Une pop garde son poste toute sa vie (métier hérité, économie de 1750 : aucune raison de changer de production, aucun salaire).
+
+| Événement | Règle |
+|---|---|
+| Départ | Le générateur de village affecte chaque pop à un poste ; les postes sont dimensionnés pour démarrer près de l'équilibre, un peu en dessous |
+| Naissance (+100) | La nouvelle pop prend le **poste vacant le plus proche** de son quartier (coût de transport) ; à égalité, le bâtiment le moins rempli ; sinon elle est chômeuse (consomme, ne produit pas) |
+| Disparition (−100) | Une chômeuse d'abord ; sinon une pop du quartier choisie de façon déterministe (par identifiant), dont le poste devient vacant |
+| Accès au poste | Le trajet domicile-travail charge les segments (congestion). Si la pop n'atteint pas son poste un jour donné, la production de ce jour est réduite ; la main-d'œuvre ne se reporte pas à J+1 |
+
+Boucle qui se corrige seule : des morts créent des postes vacants, la production baisse, les naissances reprennent les postes.
+
+**POC-B et suivants : modèle « journalier »** (mobilité, salaires)
+- Historiquement dominant jusqu'au tournant du XXᵉ siècle ; aucun contrat durable côté travailleur.
 - Chaque jour, une firme publie une demande (volume, taux journalier offert) ; les quartiers accessibles répondent selon disponibilité et coût → **mini-marché spot quotidien**.
 - La main-d'œuvre **ne se stocke pas** : ce qui n'est pas employé reste au quartier (chômage latent).
 - Une firme en expansion doit **payer plus** (attirer des quartiers lointains) ou **rester limitée** (quartiers proches épuisés, segments saturés) → pression émergente vers cités ouvrières, tramways, délocalisation.
@@ -138,7 +153,7 @@ cout_transport_effectif = cout_base × (1 + α × facteur_congestion²)
 J ouverture
   1. Livraison des différés de J-1 (file_attente des segments)
   2. Résolution des contrats d'approvisionnement (marchandises)
-  3. Résolution des flux de main-d'œuvre (journaliers)
+  3. Flux de main-d'œuvre (POC-A : trajets des pops vers leur poste ; POC-B : marché journalier)
   4. Calcul de la production effective
   5. Mise à jour des stocks et bilans journaliers
   6. [fin de mois] Décisions stratégiques des firmes
@@ -157,6 +172,9 @@ production_effective = production_max
 - **Jour 1** : l'usine A a tous ses travailleurs → en fin de journée, +10 unités dans son stock.
 - **Jour 2** : l'usine B achète 5 unités à A (transfert imputé au segment ce jour-là), consomme les 5, produit 15 unités de B.
 
+### Stocks
+Chaque tile a un **plafond de stock** (`capacite_max`) : une production qui ne trouve plus de place s'arrête (sinon dérive). Fruit et viande se **périment** (perte journalière simple). Le village démarre avec des **stocks initiaux** non nuls.
+
 ## 6. Démographie (POC)
 ### Satisfaction des besoins
 Pour chaque ressource de consommation `r`, chaque jour :
@@ -165,20 +183,24 @@ sat_r(jour)      = min(1, recu_r / requis_r)
 satisfaction(jour) = Σ poids_r × sat_r(jour)          (Σ poids_r = 1)
 satisfaction(an) = moyenne de satisfaction(jour) sur l'année
 ```
-Les `poids_r` (nourriture dominante) sont à calibrer. La satisfaction est calculée par tile quartier (les pops d'une même tile reçoivent la même part ; à affiner si des strates différentes cohabitent).
+Les `poids_r` (nourriture dominante) sont à calibrer ; **valeurs de départ** : nourriture 0,6 (grain 0,4 / viande 0,1 / fruit 0,1), bois 0,2, vêtements 0,2.
+
+**Pas de compensation sur la nourriture** : une moyenne pondérée masque la famine (zéro grain mais tout le reste donne encore ~0,6). La **mortalité dépend donc de `sat_nourriture` seule** (grain, viande, fruit agrégés), la **natalité de la satisfaction globale**. La satisfaction est calculée par tile quartier (les pops d'une même tile reçoivent la même part ; à affiner si des strates différentes cohabitent).
 
 ### Natalité et mortalité (annuelles)
 ```
-croissance_annuelle = pop_tile × ( taux_naissance(satisfaction) − taux_mortalite(satisfaction) )
+croissance_annuelle = pop_tile × ( taux_naissance(satisfaction) − taux_mortalite(sat_nourriture) )
 croissance_accumulee += croissance_annuelle
 ≥ +100 : création d'une pop de 100   (si capacite_logement non atteinte, sinon plafonné)
-≤ −100 : disparition d'une pop de 100 (en priorité une pop sans emploi)
+≤ −100 : disparition d'une pop de 100 (en priorité une pop sans emploi, voir « Main-d'œuvre »)
 ```
 Les fonctions `taux_naissance` et `taux_mortalite` sont à calibrer (croissante / décroissante en fonction de la satisfaction). Le compteur `croissance_accumulee` est porté par la tile quartier.
 
 - La population est bornée par la capacité de logement. **Personne ne crée de quartier dans le POC** : saturation et équilibre sont des résultats attendus.
 - La main-d'œuvre se compte **en pops** : une pop employée fournit une unité, une pop sans emploi est chômeuse. Âge et condition individuelle ne sont pas modélisés (équivalence 1 pop ≈ 50 travailleurs réels : calibration seulement, voir `00` §3).
 - Hors POC : mobilité, bascule des attributs (voir `00`).
+
+Les taux historiques (~0,5 %/an) donnent une pop tous les 20 ans par quartier : trop lent pour observer le POC. Taux paramétrables, simulation headless accélérée (l'horloge d'affichage reste indépendante).
 
 État d'un quartier (agrégat des pops de la tile) :
 ```
