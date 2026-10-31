@@ -21,7 +21,7 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Économie politique : lois, régimes, rôles du joueur, partis, syndicats, révolutions
 - Personnages complets : postes et dévolution, fortune, trois leviers (pouvoir / capital / influence), énergie / santé, émergence (voir `00`)
 - Dramaturgie des personnages (mariages, traits, intrigues) : souhaitable, pas dans les premières versions
-- Pops : natalité, mobilité (résidence, emploi, strate), bascule culturelle / religieuse / d'orientation sous conditions (+ aléa)
+- Pops : natalité, mobilité (résidence, emploi, strate), bascule culturelle / religieuse / d'orientation / alphabétisation par jauge de pression et seuil (voir `00` §3)
 - Contrats de travail, licenciements, négociation collective
 - Logique propre des groupes (stratégies : expansion, prédation…)
 - Valeur foncière et ségrégation spatiale

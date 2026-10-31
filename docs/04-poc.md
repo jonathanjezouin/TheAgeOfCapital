@@ -90,7 +90,7 @@ Logique : agriculture céréalière extensive et productive par tête ; élevage
 
 ### ⚠️ Points de calibration non tranchés
 - **Main-d'œuvre disponible par quartier** : l'ancienne valeur (250 actifs / 1 000 hab) date de la première calibration (effectifs 15–50). Elle est **incompatible** avec les effectifs actuels (la liste ci-dessus totalise 1 450 travailleurs). Recalibrer : soit le taux d'actifs, soit le nombre de quartiers nécessaires.
-- **Affectation pop → lieu de travail** : une pop de 100 hab est affectée à un seul lieu. À valider par le POC : coût de simulation du facteur ×10 en objets, et granularité de l'affectation (effectifs des bâtiments vs actifs d'une pop).
+- **Affectation pop → lieu de travail** : **tranché**, la pop est un bloc discret affecté à un seul lieu (voir `00` §3). Reste à calibrer : le `taux_activité` (main-d'œuvre fournie par pop) et la granularité de l'affectation (effectifs des bâtiments vs actifs d'une pop). À mesurer : coût de simulation du facteur ×10 en objets.
 - **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
 - POC-B : prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
 

@@ -50,6 +50,7 @@ perte prolongée        → faillite, tile abandonnée
 ### Pop
 - Unité de population : **100 habitants, fixe**. Attributs discrets : tile de résidence, tile d'emploi (nullable), strate, culture, religion, orientation (voir `00`).
 - Dans le POC : une seule strate (paysan), une seule culture et religion, attributs fixes.
+- **Bloc discret** (décision, voir `00` §3) : une pop a une seule résidence et un seul emploi ; la main-d'œuvre d'un bâtiment est la somme des pops affectées (× taux d'activité). Résidence ≠ travail : consommation au quartier, production au lieu d'emploi.
 - **Consommation** : chaque jour, une pop consomme sur le stock de sa tile de résidence (5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement pour 100 hab, voir `04`). **Pas de monnaie côté pops dans le POC-A** : elles consomment ce que leur quartier reçoit.
 
 ### Personnages (lien avec la vision)
@@ -176,7 +177,7 @@ croissance_accumulee += croissance_annuelle
 Les fonctions `taux_naissance` et `taux_mortalite` sont à calibrer (croissante / décroissante en fonction de la satisfaction). Le compteur `croissance_accumulee` est porté par la tile quartier.
 
 - La population est bornée par la capacité de logement. **Personne ne crée de quartier dans le POC** : saturation et équilibre sont des résultats attendus.
-- La main-d'œuvre disponible est une fraction de la population de la pop.
+- La main-d'œuvre fournie par une pop est `100 × taux_activité` (paramètre global, à calibrer) ; l'âge et la condition individuelle ne sont pas modélisés.
 - Hors POC : mobilité, bascule des attributs (voir `00`).
 
 État d'un quartier (agrégat des pops de la tile) :

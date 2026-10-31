@@ -109,7 +109,8 @@ Contrat
 Pop (unité de population, 100 hab fixe)
   id, tile_residence_id, tile_emploi_id (nullable)
   strate          : paysan | ouvrier | bourgeois | domestique | noble …
-  culture, religion, orientation   (fixes en POC ; bascule hors POC)
+  culture, religion, orientation, alphabetise   (fixes en POC ; bascule hors POC)
+  pression_conversion   (nullable, non utilisé POC : jauge continue, bascule au franchissement d'un seuil)
   richesse, droits_politiques      (nullable, non utilisé POC)
 
 Quartier (état agrégé d'une tile quartier, calculé depuis les pops)
