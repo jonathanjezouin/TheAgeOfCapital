@@ -55,7 +55,8 @@ Une pop est un **bloc discret et homogène** (comme dans Imperator Rome), pas un
 
 Précisions :
 - **Résidence ≠ travail** : la pop consomme à sa résidence et produit à son lieu de travail ; le trajet est un flux de main-d'œuvre qui sollicite l'infrastructure (flux unifié). La main-d'œuvre d'un bâtiment = somme des pops qui lui sont affectées. Une pop sans emploi compte comme chômeuse.
-- **Âge et condition individuelle ignorés** : un **taux d'activité** global (paramètre) convertit une pop en main-d'œuvre.
+- **Âge et condition individuelle ignorés** : la main-d'œuvre se compte **en pops**, jamais en individus. Une pop employée = une unité de main-d'œuvre ; une pop sans emploi est une chômeuse.
+- **Équivalence de calibration** (hypothèse historique, hors moteur) : ~50 % des habitants travaillent, donc 1 pop ≈ 50 travailleurs réels. Un atelier textile de 1850 qui emploie 100 personnes s'écrit **2 pops** dans le jeu. Ce taux sert uniquement à convertir des chiffres historiques en pops ; il n'apparaît ni dans le schéma, ni dans les formules, ni dans les effectifs des bâtiments (exprimés directement en pops).
 - **100 est un paramètre, pas une structure** : si la granularité gêne, on peut passer à 50 ou 20 hab/pop sans changer les règles.
 
 ### Démographie (dans le POC)

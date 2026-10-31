@@ -114,7 +114,7 @@ Pop (unité de population, 100 hab fixe)
   richesse, droits_politiques      (nullable, non utilisé POC)
 
 Quartier (état agrégé d'une tile quartier, calculé depuis les pops)
-  population, actifs_disponibles, taux_chomage
+  population, pops_disponibles, taux_chomage
   satisfaction_jour, satisfaction_annuelle
   salaire_reference (POC-B)
 

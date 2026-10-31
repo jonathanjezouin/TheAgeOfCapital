@@ -36,7 +36,7 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 1. **Placement automatique des bâtiments** — prochain gros sujet (voir `04`).
 2. **Formation des prix** : simple offre/demande hebdomadaire ? négociation des contrats cadre ? prix plancher ?
 3. **Qui construit** : personne en POC-A ; en POC-B, les firmes (réinvestissement) et/ou le maire ? Articulation des deux logiques.
-4. **Recalibrage de la main-d'œuvre** disponible par quartier (voir `04`).
+4. **Équilibre habitat / production** avec des effectifs en pops (29 pops pour la chaîne complète vs 10 pops par quartier, voir `04`).
 5. **Personnages** : principe retenu (postes, dévolution, voir `00`) ; restent à préciser la succession du joueur à sa mort, l'équilibrage des rôles et les règles de bascule des pops.
 7. **Calibration démographique** : fonctions `taux_naissance` / `taux_mortalite`, poids des besoins, seuil de ±100 (voir `02` §6 et `04`).
 8. **Monnaie** (POC-B) : salaires, budget des pops, formation des prix ; articulation avec la consommation directe du POC-A.

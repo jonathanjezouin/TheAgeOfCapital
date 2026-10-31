@@ -49,22 +49,22 @@ Une **simulation économique autonome** qui tourne seule, sans intervention du j
 `terrain_plaine` · `infra_chemin_terre` (toutes combinaisons de demi-directions) ·
 `bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_filature` · `bat_atelier_couture` · `bat_quartier_rural`
 
-## Calibration (effectifs 100–500, unités rondes)
+## Calibration (effectifs en pops, unités rondes)
 
-Ce qui compte est la **proportion**, pas la valeur absolue.
+Ce qui compte est la **proportion**, pas la valeur absolue. Les effectifs sont exprimés **en pops** (1 pop ≈ 50 travailleurs réels, équivalence de calibration, voir `00` §3).
 
 ### Production
 
-| Bâtiment | Travailleurs | Production / jour | Productivité (u/travailleur) |
+| Bâtiment | Pops | Production / jour | Productivité (u/pop) |
 |---|---|---|---|
-| Champ (grain) | 200 | 100 grain | 0,5 |
-| Pâturage (viande) | 100 | 20 viande | 0,2 |
-| Verger (fruit) | 150 | 30 fruit | 0,2 |
-| Exploitation forestière | 200 | 50 bois | 0,25 |
-| Champ de lin | 200 | 40 lin | 0,2 |
-| Élevage laine | 100 | 20 laine | 0,2 |
-| Filature / tissage | 300 | 30 tissu | 0,1 |
-| Atelier couture | 200 | 20 vêtements | 0,1 |
+| Champ (grain) | 4 | 100 grain | 25 |
+| Pâturage (viande) | 2 | 20 viande | 10 |
+| Verger (fruit) | 3 | 30 fruit | 10 |
+| Exploitation forestière | 4 | 50 bois | 12,5 |
+| Champ de lin | 4 | 40 lin | 10 |
+| Élevage laine | 2 | 20 laine | 10 |
+| Filature / tissage | 6 | 30 tissu | 5 |
+| Atelier couture | 4 | 20 vêtements | 5 |
 
 Logique : agriculture céréalière extensive et productive par tête ; élevage peu productif ; transformation textile intensive en main-d'œuvre (beaucoup de bras, lent).
 
@@ -89,8 +89,8 @@ Logique : agriculture céréalière extensive et productive par tête ; élevage
 - Un quartier supplémentaire sans production supplémentaire crée une tension sur la main-d'œuvre → incitation à investir.
 
 ### ⚠️ Points de calibration non tranchés
-- **Main-d'œuvre disponible par quartier** : l'ancienne valeur (250 actifs / 1 000 hab) date de la première calibration (effectifs 15–50). Elle est **incompatible** avec les effectifs actuels (la liste ci-dessus totalise 1 450 travailleurs). Recalibrer : soit le taux d'actifs, soit le nombre de quartiers nécessaires.
-- **Affectation pop → lieu de travail** : **tranché**, la pop est un bloc discret affecté à un seul lieu (voir `00` §3). Reste à calibrer : le `taux_activité` (main-d'œuvre fournie par pop) et la granularité de l'affectation (effectifs des bâtiments vs actifs d'une pop). À mesurer : coût de simulation du facteur ×10 en objets.
+- **Main-d'œuvre disponible par quartier** : **tranché**, un quartier rural de 1 000 hab = 10 pops = 10 unités de main-d'œuvre (l'ancienne valeur « 250 actifs / 1 000 hab » est abandonnée). La liste ci-dessus totalise 29 pops, soit ~3 quartiers pleins : à vérifier que l'équilibre habitat / production (~7 tiles de production pour 2 quartiers) reste cohérent.
+- **Affectation pop → lieu de travail** : **tranché**, la pop est un bloc discret affecté à un seul lieu (voir `00` §3). Reste à valider : la granularité des effectifs (de 2 à 6 pops par bâtiment). À mesurer : coût de simulation du facteur ×10 en objets.
 - **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
 - POC-B : prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
 
