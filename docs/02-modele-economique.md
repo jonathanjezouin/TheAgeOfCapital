@@ -96,6 +96,7 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, dans
 | Départ | Le générateur de village affecte chaque pop à un poste ; les postes sont dimensionnés pour démarrer près de l'équilibre, un peu en dessous |
 | Naissance (+100) | La nouvelle pop prend le **poste vacant le plus proche** de son quartier (coût de transport) ; à égalité, le bâtiment le moins rempli ; sinon elle est chômeuse (consomme, ne produit pas) |
 | Disparition (−100) | Une chômeuse d'abord ; sinon une pop du quartier choisie de façon déterministe (par identifiant), dont le poste devient vacant |
+| Fin d'année | Après naissances et décès, les chômeuses prennent les postes vacants les plus proches |
 | Accès au poste | Le trajet domicile-travail charge les segments (congestion). Si la pop n'atteint pas son poste un jour donné, la production de ce jour est réduite ; la main-d'œuvre ne se reporte pas à J+1 |
 
 Boucle qui se corrige seule : des morts créent des postes vacants, la production baisse, les naissances reprennent les postes.

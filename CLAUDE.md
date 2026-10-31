@@ -34,6 +34,13 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
 
+## Code
+
+| Dossier | Contenu |
+|---|---|
+| `sim/` | Moteur Rust pur + CLI headless (`cargo run --release --bin sim-cli`), tests d'invariants (`cargo test --release`). Voir `sim/README.md` |
+| `graphGeneration/` | Générateur d'assets (référence graphique) |
+
 ## Principes non négociables
 
 1. **Les tiles sont des unités comptables, pas des surfaces géographiques fixes.** La surface implicite varie selon le type (un champ ≈ 5 km², un quartier rural ≈ 0,5 km²).
