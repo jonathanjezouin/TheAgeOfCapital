@@ -3,7 +3,7 @@
 ## 1. La tile
 
 - **Usage unique** par tile : terrain naturel, infrastructure, bâtiment de production, quartier d'habitation.
-- Exception : la **tile quartier embarque nativement une infrastructure de circulation** (rues). Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard).
+- Exception : la **tile quartier embarque nativement une infrastructure de circulation** (rues). Le **hameau** (POC) embarque en plus un **travail de production domestique** (textile) sur la même tile : habitat et production y sont mêlés, comme dans une économie de subsistance. Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard).
 - **Unité comptable, pas géographique** : la surface implicite dépend du type.
 
 | Type de tile | Surface implicite | Population |
@@ -11,10 +11,11 @@
 | Champ | ~5 km² | — |
 | Pâturage | ~10 km² | — |
 | Exploitation forestière | ~20 km² | — |
+| Hameau (POC) | ~0,5 km² | capacité 2 pops = 200 hab |
 | Quartier rural | ~0,5 km² | capacité 1 000 hab |
 | Quartier urbain (futur) | ~0,1 km² | capacité ~5 000 hab |
 
-- **Une tile quartier est une capacité de logement** (1 000 hab pour le quartier rural du POC), occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops. Une tile quartier rurale représente un **bassin de peuplement** (villages et hameaux agrégés), pas un hameau isolé.
+- **Une tile d'habitat est une capacité de logement** (2 pops = 200 hab pour le hameau du POC, 1 000 hab pour un quartier rural), occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops. Une tile quartier rurale représente un **bassin de peuplement** (villages et hameaux agrégés), pas un hameau isolé.
 - La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants.
 - `valeur_fonciere` existe dès le départ mais n'est pas utilisée dans le POC (futur moteur de la ségrégation spatiale).
 
@@ -27,7 +28,7 @@
 | Ville industrielle 1850 | 3–5 : 1 |
 | Métropole 1900 | 8–10 : 1 |
 
-**Ne jamais le coder.** Il doit émerger de la calibration (production extensive à la campagne, productivité par tile qui explose avec `niveau_tech`).
+**Ne jamais le coder.** Il doit émerger de la calibration (production extensive à la campagne, productivité par tile qui explose avec `niveau_tech`). En économie de subsistance, le hameau embarque son textile : le ratio se mesure entre hameaux et terres exploitées, et c'est l'apparition d'ateliers puis de villes qui le fera basculer.
 
 ## 2. Les acteurs économiques
 
@@ -51,7 +52,7 @@ perte prolongée        → faillite, tile abandonnée
 - Unité de population : **100 habitants, fixe**. Attributs discrets : tile de résidence, tile d'emploi (nullable), strate, culture, religion, orientation (voir `00`).
 - Dans le POC : une seule strate (paysan), une seule culture et religion, attributs fixes.
 - **Bloc discret** (décision, voir `00` §3) : une pop a une seule résidence et un seul emploi ; la main-d'œuvre d'un bâtiment est la somme des pops affectées (effectifs exprimés en pops). Résidence ≠ travail : consommation au quartier, production au lieu d'emploi.
-- **Consommation** : chaque jour, une pop consomme sur le stock de sa tile de résidence (5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement pour 100 hab, voir `04`). **Pas de monnaie côté pops dans le POC-A** : elles consomment ce que leur quartier reçoit.
+- **Consommation** : chaque jour, une pop consomme sur le stock de son hameau (5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement, voir `04`). **Pas de monnaie côté pops dans le POC-A** : elles consomment ce que leur hameau reçoit. **Le producteur mange d'abord** : le fournisseur le plus proche d'un hameau est son propre travail domestique (coût 0).
 
 ### Personnages (lien avec la vision)
 Les firmes et institutions sont dirigées par des personnages, créés par des **postes** (voir `00`). Dans le POC : **un seul personnage, le maire**, coquille vide **inactive** (présent dans les données, aucune décision ; il ne construit pas).
@@ -89,17 +90,18 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, dans
 
 ### Main-d'œuvre
 
-**POC-A : postes stables, sans marché.** Une pop garde son poste toute sa vie (métier hérité, économie de 1750 : aucune raison de changer de production, aucun salaire).
+**POC-A : postes stables, entraide du hameau, sans marché.** Une pop travaille à **un seul endroit** et n'en change que par nécessité. En 1750 aucune pop ne « choisit » sa production (pas de salaire, pas de marché du travail) : elle suit le métier hérité, et le hameau réoriente des bras vers ce qui manque.
 
 | Événement | Règle |
 |---|---|
-| Départ | Le générateur de village affecte chaque pop à un poste ; les postes sont dimensionnés pour démarrer près de l'équilibre, un peu en dessous |
-| Naissance (+100) | La nouvelle pop prend le **poste vacant le plus proche** de son quartier (coût de transport) ; à égalité, le bâtiment le moins rempli ; sinon elle est chômeuse (consomme, ne produit pas) |
-| Disparition (−100) | Une chômeuse d'abord ; sinon une pop du quartier choisie de façon déterministe (par identifiant), dont le poste devient vacant |
-| Fin d'année | Après naissances et décès, les chômeuses prennent les postes vacants les plus proches |
-| Accès au poste | Le trajet domicile-travail charge les segments (congestion). Si la pop n'atteint pas son poste un jour donné, la production de ce jour est réduite ; la main-d'œuvre ne se reporte pas à J+1 |
+| Départ | Le générateur de village affecte chaque pop à un poste ; les postes sont dimensionnés pour démarrer près de l'équilibre |
+| Duplication d'une pop | La nouvelle pop prend le **poste vacant le plus proche** de son hameau (coût de transport) ; à égalité, le lieu le moins rempli ; sinon elle est **sans poste** (elle consomme, ne produit pas) |
+| Disparition d'une pop | La pop dont la jauge a franchi −100 ; son poste devient vacant |
+| **Chaque mois** | 1. Les pops sans poste prennent les postes vacants les plus proches. 2. **Réorientation selon le besoin** : pour chaque ressource en tension (ration couverte à moins de 97 %, ou intrant qui manque à un producteur), une pop quitte un lieu dont le stock est plein (excédent) pour un lieu qui produit la ressource manquante et a un poste libre (la pop la plus proche de la destination). Au plus un déplacement par ressource et par mois |
+| **Travail domestique** | Textile : fait par les résidents du hameau, sans poste ni trajet. Capacité proportionnelle au nombre de résidents |
+| Accès au poste | Le trajet domicile-travail charge les segments. Si la pop n'atteint pas son poste un jour donné (congestion, en sommeil dans le POC), la production de ce jour est réduite ; la main-d'œuvre ne se reporte pas à J+1 |
 
-Boucle qui se corrige seule : des morts créent des postes vacants, la production baisse, les naissances reprennent les postes.
+Boucle qui se corrige seule : des disparitions créent des postes vacants, la production baisse, les duplications reprennent les postes ; un manque de grain attire des bras vers les champs depuis les lieux en excédent. Le **travail saisonnier** (hiver : filage et couture) est hors POC (production continue).
 
 **POC-B et suivants : modèle « journalier »** (mobilité, salaires)
 - Historiquement dominant jusqu'au tournant du XXᵉ siècle ; aucun contrat durable côté travailleur.
@@ -176,34 +178,38 @@ production_effective = production_max
 ### Stocks
 Chaque tile a un **plafond de stock** (`capacite_max`) : une production qui ne trouve plus de place s'arrête (sinon dérive). Fruit et viande se **périment** (perte journalière simple). Le village démarre avec des **stocks initiaux** non nuls.
 
-## 6. Démographie (POC)
-### Satisfaction des besoins
-Pour chaque ressource de consommation `r`, chaque jour :
-```
-sat_r(jour)      = min(1, recu_r / requis_r)
-satisfaction(jour) = Σ poids_r × sat_r(jour)          (Σ poids_r = 1)
-satisfaction(an) = moyenne de satisfaction(jour) sur l'année
-```
-Les `poids_r` (nourriture dominante) sont à calibrer ; **valeurs de départ** : nourriture 0,6 (grain 0,4 / viande 0,1 / fruit 0,1), bois 0,2, vêtements 0,2.
+## 6. Besoins, satisfaction et démographie (POC)
 
-**Pas de compensation sur la nourriture** : une moyenne pondérée masque la famine (zéro grain mais tout le reste donne encore ~0,6). La **mortalité dépend donc de `sat_nourriture` seule** (grain, viande, fruit agrégés), la **natalité de la satisfaction globale**. La satisfaction est calculée par tile quartier (les pops d'une même tile reçoivent la même part ; à affiner si des strates différentes cohabitent).
+### Couverture des besoins (chaque jour, par hameau)
+Chaque pop tire sa ration normale sur le stock de son hameau (`04`). On compare ce qu'elle a **reçu** aux besoins :
 
-### Natalité et mortalité (annuelles)
 ```
-croissance_annuelle = pop_tile × ( taux_naissance(satisfaction) − taux_mortalite(sat_nourriture) )
-croissance_accumulee += croissance_annuelle
-≥ +100 : création d'une pop de 100   (si capacite_logement non atteinte, sinon plafonné)
-≤ −100 : disparition d'une pop de 100 (en priorité une pop sans emploi, voir « Main-d'œuvre »)
+nutrition  = Σ reçu_r × valeur_nutritive_r        (grain, viande, fruit interchangeables)
+vital      = min( nutrition / 5 ,  reçu_bois / 2 )          plafonné à 1
+confort    = min( reçu_viande / 1 ,  reçu_vêtements / 0,5 )  plafonné à 1
 ```
-Les fonctions `taux_naissance` et `taux_mortalite` sont à calibrer (croissante / décroissante en fonction de la satisfaction). Le compteur `croissance_accumulee` est porté par la tile quartier.
+- **Vital** : nourriture (n'importe quelle combinaison) et chauffage. Le manque est une menace de déclin.
+- **Confort** : part de viande attendue et minimum de vêtements. Au-dessous : **insatisfaite** ; au-dessus : **satisfaite**.
+- La couverture est calculée par hameau : les pops d'un même hameau reçoivent la même part.
+- **Pas de compensation** entre vital et confort : un hameau qui a tout sauf le bois reste en manque.
 
-- La population est bornée par la capacité de logement. **Personne ne crée de quartier dans le POC** : saturation et équilibre sont des résultats attendus.
-- La main-d'œuvre se compte **en pops** : une pop employée fournit une unité, une pop sans emploi est chômeuse. Âge et condition individuelle ne sont pas modélisés (équivalence 1 pop ≈ 50 travailleurs réels : calibration seulement, voir `00` §3).
-- Hors POC : mobilité, bascule des attributs (voir `00`).
+### Croissance : une jauge par pop
+Taux annuel de la pop, selon l'état de son hameau :
 
-Les taux historiques (~0,5 %/an) donnent une pop tous les 20 ans par quartier : trop lent pour observer le POC. Taux paramétrables, simulation headless accélérée (l'horloge d'affichage reste indépendante).
-
-État d'un quartier (agrégat des pops de la tile) :
 ```
-population, pops_disponibles, taux_chomage, salaire_reference (POC-B), satisfaction_jour, satisfaction_annuelle, croissance_accumulee
+si vital = 1 :  taux = 0,5 % + (1,5 % − 0,5 %) × confort          # insatisfaite → satisfaite
+sinon        :  taux = 0,5 % − (0,5 % + 8 %) × (1 − vital)         # jusqu'à −8 % si vital = 0
+jauge_pop   += 100 hab × taux / 365                               # chaque jour
+≥ +100 hab : la pop se duplique (hameau d'abord, sinon le plus proche avec de la place ; sinon la jauge attend, plafonnée)
+≤ −100 hab : la pop disparaît
+```
+- Le taux net est multiplié par `acceleration` (observation du POC) ; les valeurs de départ sont dans `sim/donnees/poc.toml`.
+- Une jauge plutôt qu'un dé quotidien : même espérance mathématique, mais déterministe, rejouable et explicable. Les jauges initiales sont décalées pour éviter des duplications synchrones.
+- La population est bornée par la capacité de logement. **Personne ne crée de logement en POC-A** : la saturation est un résultat attendu.
+- La main-d'œuvre se compte **en pops** : une pop employée fournit une unité, une pop sans poste ne produit pas. Âge et condition individuelle ne sont pas modélisés (équivalence 1 pop ≈ 50 travailleurs réels : calibration seulement, voir `00` §3).
+- Hors POC : mobilité, promotion de classe (par le confort), bascule des attributs (voir `00`).
+
+État d'un hameau (agrégat des pops de la tile) :
+```
+pops, capacité, vital_jour, confort_jour, couverture par ressource, vital_annuel, confort_annuel
 ```

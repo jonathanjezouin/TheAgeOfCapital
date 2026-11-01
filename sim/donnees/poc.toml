@@ -1,41 +1,70 @@
-# Données du POC-A. Quantités en unités/jour (converties en milli-unités au chargement).
+# Données du POC-A : économie de subsistance d'un hameau isolé de 1750.
+# Quantités en unités/jour (converties en milli-unités au chargement).
 # Aucune valeur de gameplay n'est codée en dur dans le moteur.
 
 [simulation]
 jours_par_an = 365
 jours_stock_sortie = 10.0          # plafond du stock d'extrant d'un bâtiment (jours de production)
 jours_stock_entree = 5.0           # plafond du stock d'intrants (jours de besoin)
-jours_stock_quartier = 10.0        # plafond du stock d'un quartier (jours de consommation)
+jours_stock_quartier = 10.0        # cible de stock d'un hameau (jours de consommation)
 rayon_max_cout = 4000              # périmètre d'un lieu (coût de transport), 100 = 1 tile
 nb_rondes_appel_offres = 3
 stock_initial_quartier_jours = 5.0
 stock_initial_entree_jours = 3.0
 stock_initial_sortie_jours = 2.0
 
+# Transport : en sommeil dans le POC (capacités très au-dessus des flux). Le lien
+# résidence → lieu de travail et le coût de distance restent actifs.
 [infrastructure]
 cout_tuile = 100
-capacite_nominale = 400.0          # charge/jour d'un segment sans surcoût
-capacite_max = 800.0               # au-delà : livraison différée à J+1
-poids_trajet_pop = 10.0            # charge d'un trajet domicile-travail d'une pop
+capacite_nominale = 4000.0
+capacite_max = 8000.0
+poids_trajet_pop = 10.0
+
+# Habitat : le hameau est une tile de vie à faible densité (logement + production domestique).
+[habitat]
+capacite_pops = 2                  # 2 pops = 200 hab
+batiment_domestique = "textile_domestique"
 
 [demographie]
 habitants_par_pop = 100
-capacite_quartier_pops = 10
-naissance_max = 0.040              # /an à satisfaction 1
-seuil_satisfaction_naissance = 0.30
-mortalite_base = 0.025             # /an à sat_nourriture 1
-mortalite_max = 0.080              # /an à sat_nourriture 0
-acceleration = 1.0                 # facteur appliqué aux deux taux (observation du POC)
+croissance_satisfaite = 0.015      # /an : tous les besoins couverts (vitaux + confort)
+croissance_insatisfaite = 0.005    # /an : besoins vitaux couverts, confort insuffisant
+mortalite_famine = 0.08            # /an à besoins vitaux nuls (interpolation linéaire entre les deux)
+acceleration = 1.0                 # facteur sur le taux net (observation du POC)
+
+# Réorientation de la main-d'œuvre selon le besoin (entraide du hameau), POC : poste stable sinon.
+[mobilite]
+periode_jours = 30
+seuil_tension = 0.97               # satisfaction d'une ressource sous laquelle on réoriente des bras
+deplacements_max_par_ressource = 1
+
+# Besoins vitaux : sans eux, la population décline.
+[vital]
+nourriture = 5.0                   # unités nutritives / pop / jour (grain, viande, fruit interchangeables)
+chauffage_ressource = "bois"
+chauffage = 2.0
+
+# Besoins de confort : sous le minimum la pop est insatisfaite, au-dessus satisfaite.
+[[confort]]
+ressource = "viande"               # part de viande attendue dans l'alimentation
+par_pop_jour = 1.0
+[[confort]]
+ressource = "vetements"
+par_pop_jour = 0.5
 
 [[ressources]]
 nom = "grain"
 peremption_jour = 0.0002
+valeur_nutritive = 1.0
 [[ressources]]
 nom = "viande"
 peremption_jour = 0.02
+valeur_nutritive = 1.0
 [[ressources]]
 nom = "fruit"
 peremption_jour = 0.03
+valeur_nutritive = 1.0
 [[ressources]]
 nom = "bois"
 peremption_jour = 0.0
@@ -52,74 +81,63 @@ peremption_jour = 0.0
 nom = "vetements"
 peremption_jour = 0.0
 
-# Besoins d'une pop (100 hab) par jour. Somme des poids = 1.
-# La mortalité ne dépend que de la catégorie "nourriture".
+# Ration normale tirée chaque jour par une pop sur le stock de son hameau.
 [[besoins]]
 ressource = "grain"
 par_pop_jour = 5.0
-poids = 0.4
-categorie = "nourriture"
 [[besoins]]
 ressource = "viande"
 par_pop_jour = 1.0
-poids = 0.1
-categorie = "nourriture"
 [[besoins]]
 ressource = "fruit"
 par_pop_jour = 1.0
-poids = 0.1
-categorie = "nourriture"
 [[besoins]]
 ressource = "bois"
 par_pop_jour = 2.0
-poids = 0.2
-categorie = "autre"
 [[besoins]]
 ressource = "vetements"
 par_pop_jour = 0.5
-poids = 0.2
-categorie = "autre"
 
-# Bâtiments : effectif en pops, intrants et extrants par jour à effectif plein.
+# Terres exploitées : lieux de production sans logement, travaillés par les pops des hameaux.
 [[batiments]]
 nom = "champ"
 asset = "bat_champ"
 pops = 4
-extrants = [{ ressource = "grain", qte = 100.0 }]
+etapes = [{ extrants = [{ ressource = "grain", qte = 100.0 }] }]
 [[batiments]]
 nom = "paturage"
 asset = "bat_paturage"
 pops = 2
-extrants = [{ ressource = "viande", qte = 20.0 }]
+etapes = [{ extrants = [{ ressource = "viande", qte = 20.0 }] }]
 [[batiments]]
 nom = "verger"
 asset = "bat_verger"
 pops = 3
-extrants = [{ ressource = "fruit", qte = 30.0 }]
+etapes = [{ extrants = [{ ressource = "fruit", qte = 30.0 }] }]
 [[batiments]]
 nom = "foret_exploitee"
 asset = "bat_foret_exploitee"
 pops = 4
-extrants = [{ ressource = "bois", qte = 50.0 }]
+etapes = [{ extrants = [{ ressource = "bois", qte = 50.0 }] }]
 [[batiments]]
 nom = "champ_lin"
 asset = "bat_champ_lin"
 pops = 4
-extrants = [{ ressource = "lin", qte = 40.0 }]
+etapes = [{ extrants = [{ ressource = "lin", qte = 40.0 }] }]
 [[batiments]]
 nom = "elevage_laine"
 asset = "bat_elevage_laine"
 pops = 2
-extrants = [{ ressource = "laine", qte = 20.0 }]
+etapes = [{ extrants = [{ ressource = "laine", qte = 20.0 }] }]
+
+# Travail textile à domicile (filage, tissage, couture) : fait par les résidents du hameau,
+# sans poste ni trajet. Capacité proportionnelle au nombre de résidents (effectif de référence : 2).
 [[batiments]]
-nom = "filature"
-asset = "bat_filature"
-pops = 6
-intrants = [{ ressource = "lin", qte = 40.0 }, { ressource = "laine", qte = 20.0 }]
-extrants = [{ ressource = "tissu", qte = 30.0 }]
-[[batiments]]
-nom = "atelier_couture"
-asset = "bat_atelier_couture"
-pops = 4
-intrants = [{ ressource = "tissu", qte = 30.0 }]
-extrants = [{ ressource = "vetements", qte = 20.0 }]
+nom = "textile_domestique"
+asset = "bat_hameau"
+domestique = true
+pops = 2
+etapes = [
+  { intrants = [{ ressource = "lin", qte = 3.0 }, { ressource = "laine", qte = 1.5 }], extrants = [{ ressource = "tissu", qte = 2.25 }] },
+  { intrants = [{ ressource = "tissu", qte = 2.25 }], extrants = [{ ressource = "vetements", qte = 1.5 }] },
+]

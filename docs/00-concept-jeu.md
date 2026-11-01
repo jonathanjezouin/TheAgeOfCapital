@@ -60,8 +60,10 @@ Précisions :
 - **100 est un paramètre, pas une structure** : si la granularité gêne, on peut passer à 50 ou 20 hab/pop sans changer les règles.
 
 ### Démographie (dans le POC)
-- La **natalité et la mortalité** dépendent de la **satisfaction des besoins** de la pop (voir `02` §6). La croissance nette s'accumule par tile quartier : à +100, une **nouvelle pop** de 100 est créée (dans la limite de la capacité de logement) ; à −100, une pop disparaît.
-- Population bornée par la capacité de logement : dans le POC, personne ne crée de quartier, la **saturation** est un résultat observé.
+- La croissance dépend de la **couverture des besoins** (vitaux et de confort, voir `02` §6). Chaque pop porte une **jauge de croissance** alimentée chaque jour : à +100 habitants elle se **duplique** (la nouvelle pop se loge dans son hameau, ou le plus proche qui a de la place) ; à −100 elle **disparaît**. Une pop ne « meurt » pas vraiment : elle représente une centaine d'habitants homogènes, et en cas de baisse de la population globale des unités disparaissent.
+- Jauge déterministe plutôt que tirage de dé quotidien : même espérance (+1,5 % / +0,5 % / déclin), mais rejouable et explicable (« pourquoi cette pop a disparu ? »), comme pour la conversion culturelle.
+- Population bornée par la capacité de logement : dans le POC, personne ne crée de logement, la **saturation** est un résultat observé.
+- La satisfaction du **confort** servira plus tard à la promotion vers d'autres classes.
 
 ### Évolutions (hors POC)
 - **Mobilité** : une pop peut déménager (résidence), changer de travail, changer de strate (paysan → ouvrier).

@@ -8,7 +8,7 @@ use std::fmt::Write as _;
 
 fn aide() -> ! {
     eprintln!(
-        "sim-cli [--annees N] [--graine N] [--quartiers N] [--occupation PCT]\n\
+        "sim-cli [--annees N] [--graine N] [--hameaux N] [--occupation PCT]\n\
          \x20       [--donnees fichier.toml] [--accel X] [--csv fichier.csv] [--pas JOURS]\n\
          \x20       [--json-final fichier.json]"
     );
@@ -30,7 +30,7 @@ fn main() {
         match a.as_str() {
             "--annees" => annees = val().parse().unwrap_or_else(|_| aide()),
             "--graine" => pv.graine = val().parse().unwrap_or_else(|_| aide()),
-            "--quartiers" => pv.nb_quartiers = val().parse().unwrap_or_else(|_| aide()),
+            "--hameaux" => pv.nb_hameaux = val().parse().unwrap_or_else(|_| aide()),
             "--occupation" => pv.occupation_initiale_pct = val().parse().unwrap_or_else(|_| aide()),
             "--pas" => pas = val().parse().unwrap_or_else(|_| aide()),
             "--accel" => accel = Some(val().parse().unwrap_or_else(|_| aide())),
@@ -57,7 +57,7 @@ fn main() {
     let noms: Vec<String> = sim.cat.ressources.iter().map(|r| r.nom.clone()).collect();
     write!(
         sortie,
-        "jour,annee,pops,chomeurs,sat_moy,sat_nourriture_moy,differes,retards,charge_max_pct"
+        "jour,annee,pops,sans_poste,vital_moy,confort_moy,differes,retards,charge_max_pct"
     )
     .unwrap();
     for n in &noms {
@@ -70,18 +70,18 @@ fn main() {
         sim.jour_suivant();
         if sim.jour % pas == 0 {
             let nq = sim.monde.quartiers.len() as i64;
-            let sat: i64 = sim
+            let vital: i64 = sim
                 .monde
                 .quartiers
                 .iter()
-                .map(|q| q.sat_jour_ppm)
+                .map(|q| q.vital_jour_ppm)
                 .sum::<i64>()
                 / nq;
-            let sat_n: i64 = sim
+            let confort: i64 = sim
                 .monde
                 .quartiers
                 .iter()
-                .map(|q| q.sat_nourriture_jour_ppm)
+                .map(|q| q.confort_jour_ppm)
                 .sum::<i64>()
                 / nq;
             write!(
@@ -90,9 +90,9 @@ fn main() {
                 sim.jour,
                 sim.jour / sim.cat.sim.jours_par_an as u64,
                 sim.pops.len(),
-                sim.chomeurs(),
-                sat as f64 / PPM as f64,
-                sat_n as f64 / PPM as f64,
+                sim.sans_poste(),
+                vital as f64 / PPM as f64,
+                confort as f64 / PPM as f64,
                 sim.stats.nb_differes,
                 sim.stats.retards_pops,
                 sim.stats.charge_max_ppm as f64 / PPM as f64 * 100.0
@@ -118,24 +118,30 @@ fn main() {
 
     // Résumé lisible.
     println!(
-        "Village graine {} : {} quartiers, {} bâtiments, {} segments",
+        "Village graine {} : {} hameaux, {} lieux de production, {} segments",
         pv.graine,
         sim.monde.quartiers.len(),
-        sim.monde.batiments.len(),
+        sim.monde
+            .batiments
+            .iter()
+            .filter(|b| b.quartier.is_none())
+            .count(),
         sim.reseau.segments.len()
     );
     println!(
-        "Après {} ans : {} pops, {} chômeuses",
+        "Après {} ans : {} pops, {} sans poste",
         annees,
         sim.pops.len(),
-        sim.chomeurs()
+        sim.sans_poste()
     );
+    let eff = sim.effectifs();
     for (q, qu) in sim.monde.quartiers.iter().enumerate() {
         println!(
-            "  quartier {q} : {} pops, sat an {:.2} (nourriture {:.2})",
-            sim.pops_du_quartier(q),
-            qu.sat_annuelle_ppm as f64 / PPM as f64,
-            qu.sat_nourriture_annuelle_ppm as f64 / PPM as f64
+            "  hameau {q:>2} : {}/{} pops, vital {:.2}, confort {:.2} (moyenne annuelle)",
+            eff[q],
+            qu.capacite_pops,
+            qu.vital_annuel_ppm as f64 / PPM as f64,
+            qu.confort_annuel_ppm as f64 / PPM as f64
         );
     }
     let occ = sim.occupation();
@@ -147,10 +153,11 @@ fn main() {
             Limitant::Intrant(r) => format!("intrant {}", sim.cat.ressources[r].nom),
             Limitant::StockPlein => "stock plein".to_string(),
         };
+        let effectif = if t.domestique { bat.presents } else { occ[b] };
         println!(
-            "  {:<16} {}/{} pops, production {:>3}%  limite : {lim}",
+            "  {:<19} {}/{} pops, production {:>3}%  limite : {lim}",
             t.nom,
-            occ[b],
+            effectif,
             t.pops,
             bat.prod_ppm * 100 / PPM
         );

@@ -1,7 +1,7 @@
 # sim — moteur de simulation (POC-A)
 
-Crate Rust **pure** (aucune dépendance à Electron / napi) : économie spatiale de The Age Of Capital,
-boucle quotidienne, démographie annuelle, générateur de village déterministe. Spécification : `../docs/` (02, 03, 04).
+Crate Rust **pure** (aucune dépendance à Electron / napi) : économie de subsistance d'un hameau isolé de 1750,
+boucle quotidienne, jauge de croissance par pop, générateur de village déterministe. Spécification : `../docs/` (02, 03, 04).
 
 ```bash
 cargo run --release --bin sim-cli -- --annees 100 --graine 7 --csv sortie.csv
@@ -12,7 +12,7 @@ cargo test --release
 |---|---|
 | `--annees N` | durée simulée (1 an ≈ 3 ms en release) |
 | `--graine N` | graine du village (même graine, même résultat) |
-| `--quartiers N` / `--occupation PCT` | taille du village / pops initiales en % de la capacité |
+| `--hameaux N` / `--occupation PCT` | taille du village / pops initiales en % de la capacité de logement |
 | `--accel X` | facteur sur natalité et mortalité (observer l'équilibre plus vite) |
 | `--donnees f.toml` | remplace `donnees/poc.toml` |
 | `--csv f.csv` / `--pas J` | série temporelle tous les J jours |
@@ -22,13 +22,13 @@ cargo test --release
 
 | Fichier | Contenu |
 |---|---|
-| `donnees/poc.toml` | ressources, besoins, bâtiments, infrastructure, démographie (aucune valeur de gameplay en dur) |
+| `donnees/poc.toml` | ressources, besoins vitaux et de confort, terres exploitées, travail domestique, habitat, démographie, mobilité (aucune valeur de gameplay en dur) |
 | `src/donnees.rs` | chargement et validation ; quantités en milli-unités, proportions en ppm (entiers) |
 | `src/monde.rs` | tiles passives, quartiers, bâtiments, demi-directions (orthogonales) |
 | `src/reseau.rs` | segments, Dijkstra, chemins précalculés entre lieux |
 | `src/village.rs` | génération déterministe, dimensionnée près de l'équilibre |
-| `src/simulation.rs` | jour : différés → contrats (pro rata) → main-d'œuvre → production → consommation → péremption ; an : démographie |
-| `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, congestion |
+| `src/simulation.rs` | jour : différés → contrats (pro rata) → main-d'œuvre → production → consommation → jauges de croissance → péremption ; mois : réorientation des bras |
+| `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, réorientation des bras, producteur servi d'abord, congestion en sommeil |
 
 ## Règles de conception
 - **Déterminisme** : entiers uniquement dans la simulation, itérations ordonnées (`BTreeMap`, `Vec`), RNG maison.

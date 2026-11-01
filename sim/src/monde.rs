@@ -34,21 +34,25 @@ pub struct Tuile {
     pub variante: u8,
 }
 
+/// Un hameau : lieu de vie à faible densité (logement + travail domestique).
 #[derive(Clone, Debug, Serialize)]
 pub struct Quartier {
     pub tuile: usize,
+    pub capacite_pops: u32,
+    /// Bâtiment de production domestique embarqué (même tuile), s'il y en a un.
+    pub domestique: Option<usize>,
     pub stock: Vec<Qte>,
-    /// Compteur de natalité / mortalité, en milli-habitants.
-    pub croissance_milli: i64,
-    pub sat_jour_ppm: i64,
-    pub sat_nourriture_jour_ppm: i64,
-    /// Satisfaction du dernier jour par ressource (reçu / requis), indexée comme `Catalogue::ressources`.
+    /// Besoins vitaux couverts (0..1 en ppm) lors du dernier jour.
+    pub vital_jour_ppm: i64,
+    /// Besoins de confort couverts (0..1 en ppm) lors du dernier jour.
+    pub confort_jour_ppm: i64,
+    /// Couverture de la ration du dernier jour par ressource (reçu / requis), indexée comme `Catalogue::ressources`.
     pub sat_par_ressource_ppm: Vec<i64>,
-    pub cumul_sat_ppm: i64,
-    pub cumul_sat_nourriture_ppm: i64,
+    pub cumul_vital_ppm: i64,
+    pub cumul_confort_ppm: i64,
     pub jours_an: i64,
-    pub sat_annuelle_ppm: i64,
-    pub sat_nourriture_annuelle_ppm: i64,
+    pub vital_annuel_ppm: i64,
+    pub confort_annuel_ppm: i64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -64,6 +68,8 @@ pub enum Limitant {
 pub struct Batiment {
     pub type_id: usize,
     pub tuile: usize,
+    /// Hameau auquel appartient un bâtiment domestique.
+    pub quartier: Option<usize>,
     pub stock_entree: Vec<Qte>,
     pub stock_sortie: Vec<Qte>,
     /// Pops arrivées au poste aujourd'hui.

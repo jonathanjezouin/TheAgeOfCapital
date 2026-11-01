@@ -1,22 +1,24 @@
 //! Générateur de village : déterministe (graine), aléatoire mais cohérent.
 //!
-//! Dimensionné pour démarrer proche de l'équilibre : le nombre de bâtiments de
-//! chaque type découle des besoins des quartiers (jamais d'un ratio codé en dur).
-//! Disposition : un chemin principal horizontal, des bâtiments le long (deux côtés)
-//! ou au bout d'antennes de 1 à 3 tiles. Cette version est volontairement simple ;
-//! elle gagnera en finesse avec les villages suivants.
+//! Économie de subsistance de 1750 : des hameaux (logement à faible densité, avec
+//! leur travail textile à domicile) et des terres exploitées (champs, pâturages,
+//! vergers, forêt, lin, laine) le long d'un chemin principal, directement ou au bout
+//! d'antennes de 1 à 3 tiles. Le nombre de terres de chaque type découle des besoins
+//! des hameaux (jamais d'un ratio codé en dur) pour démarrer proche de l'équilibre.
+//! Version volontairement simple : elle gagnera en finesse avec les villages suivants.
 
 use crate::donnees::Catalogue;
-use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile, DIRS, N, S};
+use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile, DIRS};
 use crate::reseau::Reseau;
 use crate::rng::Rng;
 use crate::simulation::{Pop, Simulation};
+use crate::PPM;
 
 #[derive(Clone, Debug)]
 pub struct ParamsVillage {
     pub graine: u64,
-    pub nb_quartiers: usize,
-    /// Pops initiales par quartier, en % de la capacité de logement.
+    pub nb_hameaux: usize,
+    /// Pops initiales, en % de la capacité de logement totale.
     pub occupation_initiale_pct: u32,
     pub largeur: usize,
     pub hauteur: usize,
@@ -26,7 +28,7 @@ impl Default for ParamsVillage {
     fn default() -> Self {
         ParamsVillage {
             graine: 1,
-            nb_quartiers: 4,
+            nb_hameaux: 10,
             occupation_initiale_pct: 80,
             largeur: 200,
             hauteur: 200,
@@ -36,27 +38,30 @@ impl Default for ParamsVillage {
 
 #[derive(Clone, Copy)]
 enum Item {
-    Quartier,
-    Batiment(usize),
+    Hameau,
+    Terre(usize),
 }
 
-/// Nombre de bâtiments de chaque type pour couvrir les besoins de `nb_quartiers`
-/// quartiers pleins, en remontant les chaînes de production (intrants compris).
-pub fn composition(cat: &Catalogue, nb_quartiers: usize) -> Vec<usize> {
+/// Nombre de bâtiments de chaque type pour couvrir les besoins de `nb_hameaux`
+/// hameaux pleins, en remontant les chaînes de production (intrants compris).
+/// Les bâtiments domestiques sont comptés à raison d'un par hameau.
+pub fn composition(cat: &Catalogue, nb_hameaux: usize) -> Vec<usize> {
     let nr = cat.ressources.len();
     let mut demande = vec![0f64; nr];
-    for r in 0..nr {
-        demande[r] = (cat.besoin_pop(r)
-            * cat.demo.capacite_quartier_pops as i64
-            * nb_quartiers as i64) as f64;
+    for b in &cat.besoins {
+        demande[b.ressource] =
+            (b.par_pop * cat.habitat.capacite_pops as i64 * nb_hameaux as i64) as f64;
     }
     let producteur: Vec<Option<usize>> = (0..nr)
         .map(|r| cat.producteurs(r).first().copied())
         .collect();
-    // Ressources consommées par le producteur de s.
+    // Le producteur de s consomme-t-il r de l'extérieur ?
     let consomme_par = |s: usize, r: usize| -> bool {
         producteur[s].map_or(false, |t| {
-            cat.batiments[t].intrants.iter().any(|(x, _)| *x == r)
+            cat.batiments[t]
+                .intrants_externes()
+                .iter()
+                .any(|(x, _)| *x == r)
         })
     };
     let mut fait = vec![false; nr];
@@ -73,26 +78,95 @@ pub fn composition(cat: &Catalogue, nb_quartiers: usize) -> Vec<usize> {
             continue;
         };
         let q_ext = cat.batiments[t]
-            .extrants
+            .extrants_finaux()
             .iter()
             .find(|(x, _)| *x == r)
             .unwrap()
             .1 as f64;
         let besoin = demande[r] / q_ext;
-        compte[t] = compte[t].max(besoin.round().max(1.0) as usize);
-        for &(i, q_in) in &cat.batiments[t].intrants {
+        compte[t] = if cat.batiments[t].domestique {
+            nb_hameaux
+        } else {
+            compte[t].max(besoin.round().max(1.0) as usize)
+        };
+        for (i, q_in) in cat.batiments[t].intrants_externes() {
             demande[i] += besoin * q_in as f64;
         }
     }
     compte
 }
 
+fn nouveau_hameau(tuile: usize, cat: &Catalogue) -> Quartier {
+    let nr = cat.ressources.len();
+    Quartier {
+        tuile,
+        capacite_pops: cat.habitat.capacite_pops,
+        domestique: None,
+        stock: vec![0; nr],
+        vital_jour_ppm: PPM,
+        confort_jour_ppm: PPM,
+        sat_par_ressource_ppm: vec![PPM; nr],
+        cumul_vital_ppm: 0,
+        cumul_confort_ppm: 0,
+        jours_an: 0,
+        vital_annuel_ppm: PPM,
+        confort_annuel_ppm: PPM,
+    }
+}
+
+fn nouveau_batiment(
+    type_id: usize,
+    tuile: usize,
+    quartier: Option<usize>,
+    cat: &Catalogue,
+) -> Batiment {
+    let nr = cat.ressources.len();
+    Batiment {
+        type_id,
+        tuile,
+        quartier,
+        stock_entree: vec![0; nr],
+        stock_sortie: vec![0; nr],
+        presents: 0,
+        prod_ppm: 0,
+        limitant: Limitant::Aucun,
+    }
+}
+
+fn poser(monde: &mut Monde, cat: &Catalogue, item: Item, t: usize, rng: &mut Rng) {
+    match item {
+        Item::Hameau => {
+            let q = monde.quartiers.len();
+            monde.quartiers.push(nouveau_hameau(t, cat));
+            monde.tuiles[t].contenu = Contenu::Quartier(q);
+            if let Some(type_id) = cat.habitat.domestique {
+                let b = monde.batiments.len();
+                monde
+                    .batiments
+                    .push(nouveau_batiment(type_id, t, Some(q), cat));
+                monde.quartiers[q].domestique = Some(b);
+            }
+        }
+        Item::Terre(type_id) => {
+            let b = monde.batiments.len();
+            monde
+                .batiments
+                .push(nouveau_batiment(type_id, t, None, cat));
+            monde.tuiles[t].contenu = Contenu::Batiment(b);
+        }
+    }
+    monde.tuiles[t].variante = rng.dans(4) as u8;
+}
+
 pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> {
     let mut rng = Rng::new(p.graine);
+
     // --- Éléments à placer ---
-    let mut items: Vec<Item> = (0..p.nb_quartiers).map(|_| Item::Quartier).collect();
-    for (t, &n) in composition(&cat, p.nb_quartiers).iter().enumerate() {
-        items.extend((0..n).map(|_| Item::Batiment(t)));
+    let mut items: Vec<Item> = (0..p.nb_hameaux).map(|_| Item::Hameau).collect();
+    for (t, &n) in composition(&cat, p.nb_hameaux).iter().enumerate() {
+        if !cat.batiments[t].domestique {
+            items.extend((0..n).map(|_| Item::Terre(t)));
+        }
     }
     rng.melanger(&mut items);
 
@@ -117,51 +191,13 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
         batiments: Vec::new(),
     };
     let mut aretes: Vec<(usize, usize)> = Vec::new();
-    let tuile = |m: &Monde, x: usize, y: usize| m.idx(x, y);
 
     for x in x0..x0 + cols {
-        let t = tuile(&monde, x, cy);
+        let t = monde.idx(x, cy);
         monde.tuiles[t].contenu = Contenu::Chemin { masque: 0 };
         if x > x0 {
-            aretes.push((tuile(&monde, x - 1, cy), t));
+            aretes.push((monde.idx(x - 1, cy), t));
         }
-    }
-
-    fn poser(monde: &mut Monde, cat: &Catalogue, item: Item, t: usize, rng: &mut Rng) {
-        let nr = cat.ressources.len();
-        match item {
-            Item::Quartier => {
-                let q = monde.quartiers.len();
-                monde.quartiers.push(Quartier {
-                    tuile: t,
-                    stock: vec![0; nr],
-                    croissance_milli: 0,
-                    sat_jour_ppm: crate::PPM,
-                    sat_nourriture_jour_ppm: crate::PPM,
-                    sat_par_ressource_ppm: vec![crate::PPM; nr],
-                    cumul_sat_ppm: 0,
-                    cumul_sat_nourriture_ppm: 0,
-                    jours_an: 0,
-                    sat_annuelle_ppm: crate::PPM,
-                    sat_nourriture_annuelle_ppm: crate::PPM,
-                });
-                monde.tuiles[t].contenu = Contenu::Quartier(q);
-            }
-            Item::Batiment(type_id) => {
-                let b = monde.batiments.len();
-                monde.batiments.push(Batiment {
-                    type_id,
-                    tuile: t,
-                    stock_entree: vec![0; nr],
-                    stock_sortie: vec![0; nr],
-                    presents: 0,
-                    prod_ppm: 0,
-                    limitant: Limitant::Aucun,
-                });
-                monde.tuiles[t].contenu = Contenu::Batiment(b);
-            }
-        }
-        monde.tuiles[t].variante = rng.dans(4) as u8;
     }
 
     let libre = |m: &Monde, x: usize, y: usize| m.tuiles[m.idx(x, y)].contenu == Contenu::Vide;
@@ -176,14 +212,14 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
                     .map(|k| (cy as i64 + cote * k) as usize)
                     .collect();
                 if ys.iter().all(|&y| libre(&monde, x, y)) {
-                    let mut prec = tuile(&monde, x, cy);
+                    let mut prec = monde.idx(x, cy);
                     for &y in &ys[..d as usize] {
-                        let t = tuile(&monde, x, y);
+                        let t = monde.idx(x, y);
                         monde.tuiles[t].contenu = Contenu::Chemin { masque: 0 };
                         aretes.push((prec, t));
                         prec = t;
                     }
-                    let t = tuile(&monde, x, ys[d as usize]);
+                    let t = monde.idx(x, ys[d as usize]);
                     poser(&mut monde, &cat, item, t, &mut rng);
                     aretes.push((prec, t));
                     place = true;
@@ -204,9 +240,9 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
                 return Err("plus d'emplacement le long du chemin principal".into());
             }
             let (x, y) = slots[rng.dans(slots.len())];
-            let t = tuile(&monde, x, y);
+            let t = monde.idx(x, y);
             poser(&mut monde, &cat, item, t, &mut rng);
-            aretes.push((tuile(&monde, x, cy), t));
+            aretes.push((monde.idx(x, cy), t));
         }
     }
 
@@ -226,30 +262,41 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
             *masque |= DIRS[d].3;
         }
     }
-    debug_assert!(N != S);
+
+    // --- Pops initiales : réparties sur les hameaux (ordre tiré au hasard) ---
+    let nq = monde.quartiers.len();
+    let cap_totale = nq as u32 * cat.habitat.capacite_pops;
+    let total0 = ((cap_totale * p.occupation_initiale_pct + 50) / 100)
+        .max(1)
+        .min(cap_totale);
+    let mut ordre: Vec<usize> = (0..nq).collect();
+    rng.melanger(&mut ordre);
+    let mut n0 = vec![0u32; nq];
+    for i in 0..total0 as usize {
+        n0[ordre[i % nq]] += 1;
+    }
 
     // --- Stocks initiaux ---
-    let cap = cat.demo.capacite_quartier_pops;
-    let n0 = ((cap * p.occupation_initiale_pct + 50) / 100).max(1);
-    for q in &mut monde.quartiers {
+    for (q, qu) in monde.quartiers.iter_mut().enumerate() {
         for b in &cat.besoins {
-            q.stock[b.ressource] =
-                Catalogue::jours_x(b.par_pop * n0 as i64, cat.sim.stock_initial_quartier_jours);
+            qu.stock[b.ressource] = Catalogue::jours_x(
+                b.par_pop * n0[q] as i64,
+                cat.sim.stock_initial_quartier_jours,
+            );
         }
     }
     for b in &mut monde.batiments {
         let t = &cat.batiments[b.type_id];
-        for &(r, q) in &t.intrants {
+        for (r, q) in t.intrants_externes() {
             b.stock_entree[r] = Catalogue::jours_x(q, cat.sim.stock_initial_entree_jours);
         }
-        for &(r, q) in &t.extrants {
+        for (r, q) in t.extrants_finaux() {
             b.stock_sortie[r] = Catalogue::jours_x(q, cat.sim.stock_initial_sortie_jours);
         }
     }
 
-    // --- Pops et affectation aux postes ---
+    // --- Connexité ---
     let reseau = Reseau::construire(&monde, &cat);
-    let nq = monde.quartiers.len();
     let nb = monde.batiments.len();
     for de in 0..nq + nb {
         for vers in 0..nq + nb {
@@ -258,17 +305,20 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
             }
         }
     }
-    let postes: Vec<u32> = monde
-        .batiments
+
+    // --- Affectation aux postes (proportionnelle, pops les plus proches d'abord) ---
+    let travaillees: Vec<usize> = (0..nb)
+        .filter(|&b| !cat.batiments[monde.batiments[b].type_id].domestique)
+        .collect();
+    let postes: Vec<u32> = travaillees
         .iter()
-        .map(|b| cat.batiments[b.type_id].pops)
+        .map(|&b| cat.batiments[monde.batiments[b].type_id].pops)
         .collect();
     let total_postes: u32 = postes.iter().sum();
-    let total_pops = n0 * nq as u32;
+    let total_pops: u32 = n0.iter().sum();
     let cibles: Vec<u32> = if total_pops >= total_postes {
         postes.clone()
     } else {
-        // Répartition proportionnelle (plus fortes fractions d'abord).
         let mut c: Vec<u32> = postes
             .iter()
             .map(|&x| x * total_pops / total_postes)
@@ -289,32 +339,34 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
         }
         c
     };
-    let mut restantes = vec![n0; nq];
+    let seuil = cat.demo.habitants_par_pop * 1_000_000;
+    let mut restantes = n0.clone();
     let mut pops: Vec<Pop> = Vec::new();
     let mut id = 0u32;
-    for (b, &t) in cibles.iter().enumerate() {
-        for _ in 0..t {
+    let mut nouvelle = |residence: usize, emploi: Option<usize>, rng: &mut Rng| {
+        // Jauges décalées pour que les duplications ne soient pas synchrones.
+        let p = Pop {
+            id,
+            residence,
+            emploi,
+            croissance: (rng.u64() % seuil as u64) as i64,
+        };
+        id += 1;
+        p
+    };
+    for (k, &b) in travaillees.iter().enumerate() {
+        for _ in 0..cibles[k] {
             let q = (0..nq)
                 .filter(|&q| restantes[q] > 0)
                 .min_by_key(|&q| (reseau.chemin(q, nq + b).map_or(i64::MAX, |c| c.cout), q))
                 .expect("assez de pops");
             restantes[q] -= 1;
-            pops.push(Pop {
-                id,
-                residence: q,
-                emploi: Some(b),
-            });
-            id += 1;
+            pops.push(nouvelle(q, Some(b), &mut rng));
         }
     }
     for q in 0..nq {
         for _ in 0..restantes[q] {
-            pops.push(Pop {
-                id,
-                residence: q,
-                emploi: None,
-            });
-            id += 1;
+            pops.push(nouvelle(q, None, &mut rng));
         }
     }
     Ok(Simulation::nouvelle(cat, monde, pops))

@@ -82,6 +82,10 @@ impl Reseau {
                 return vec![monde.quartiers[lieu].tuile];
             }
             let t = monde.batiments[lieu - nq].tuile;
+            // Bâtiment domestique : il partage la tile (et les rues) de son hameau.
+            if matches!(monde.tuiles[t].contenu, Contenu::Quartier(_)) {
+                return vec![t];
+            }
             let mut v = Vec::new();
             for d in 0..4 {
                 if let Some(n) = monde.voisin(t, d) {

@@ -1,6 +1,7 @@
-//! Boucle quotidienne (voir docs/02 §5) et démographie annuelle (docs/02 §6).
+//! Boucle quotidienne (voir docs/02 §5), démographie par jauge de pop (docs/02 §6)
+//! et réorientation de la main-d'œuvre selon le besoin (docs/02 §3).
 
-use crate::donnees::{mul_div, Catalogue, Qte, PPM};
+use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, PPM};
 use crate::monde::{Limitant, Monde};
 use crate::reseau::Reseau;
 use serde::Serialize;
@@ -9,10 +10,13 @@ use std::collections::BTreeMap;
 #[derive(Clone, Debug, Serialize)]
 pub struct Pop {
     pub id: u32,
-    /// Index du quartier de résidence.
+    /// Index du hameau de résidence.
     pub residence: usize,
-    /// Index du bâtiment d'emploi (None = chômeuse).
+    /// Index du bâtiment d'emploi (None = pop sans poste).
     pub emploi: Option<usize>,
+    /// Jauge de croissance en micro-habitants : à +100 habitants la pop se duplique,
+    /// à −100 elle disparaît. Alimentée chaque jour par la couverture des besoins.
+    pub croissance: i64,
 }
 
 /// Marchandise partie du stock du fournisseur mais pas encore arrivée (congestion).
@@ -49,11 +53,11 @@ pub struct StatsJour {
 pub struct ResumeAn {
     pub annee: u64,
     pub pops: usize,
-    pub chomeurs: usize,
+    pub sans_poste: usize,
     pub naissances: u32,
     pub deces: u32,
-    pub sat_moy_ppm: i64,
-    pub sat_nourriture_moy_ppm: i64,
+    pub vital_moy_ppm: i64,
+    pub confort_moy_ppm: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -68,8 +72,77 @@ pub struct Simulation {
     pub bilan: Bilan,
     pub stats: StatsJour,
     pub historique: Vec<ResumeAn>,
+    pub naissances_an: u32,
+    pub deces_an: u32,
     /// `fournisseurs[lieu_client][ressource]` = (coût, lieu fournisseur), du plus proche au plus loin.
+    /// Un hameau est son propre fournisseur le plus proche (coût 0) : le producteur mange d'abord.
     fournisseurs: Vec<Vec<Vec<(i64, usize)>>>,
+}
+
+/// Résultat de l'évaluation des besoins d'un hameau sur une journée.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Evaluation {
+    /// Besoins vitaux couverts (nourriture, chauffage) : min des deux, en ppm.
+    pub vital_ppm: i64,
+    /// Besoins de confort couverts (part de viande, vêtements) : min, en ppm.
+    pub confort_ppm: i64,
+    /// Couverture de la ration par ressource (affichage).
+    pub par_ressource_ppm: Vec<i64>,
+}
+
+fn ratio(a: Qte, b: Qte) -> i64 {
+    if b <= 0 {
+        PPM
+    } else {
+        mul_div(a.max(0), PPM, b).min(PPM)
+    }
+}
+
+/// Évalue ce qu'ont reçu `n` pops (`recu[r]` en milli-unités sur la journée).
+/// Nourriture : grain, viande et fruit s'additionnent en unités nutritives.
+pub fn evaluer_besoins(cat: &Catalogue, n: i64, recu: &[Qte]) -> Evaluation {
+    let nr = cat.ressources.len();
+    if n == 0 {
+        return Evaluation {
+            vital_ppm: PPM,
+            confort_ppm: PPM,
+            par_ressource_ppm: vec![PPM; nr],
+        };
+    }
+    let nutrition: Qte = (0..nr)
+        .map(|r| recu[r] * cat.ressources[r].nutritive_milli / 1000)
+        .sum();
+    let nourriture = ratio(nutrition, cat.vital.nourriture * n);
+    let chauffage = ratio(recu[cat.vital.chauffage_ressource], cat.vital.chauffage * n);
+    let confort = cat
+        .confort
+        .iter()
+        .map(|c| ratio(recu[c.ressource], c.par_pop * n))
+        .min()
+        .unwrap_or(PPM);
+    let mut par = vec![PPM; nr];
+    for b in &cat.besoins {
+        par[b.ressource] = ratio(recu[b.ressource], b.par_pop * n);
+    }
+    Evaluation {
+        vital_ppm: nourriture.min(chauffage),
+        confort_ppm: confort,
+        par_ressource_ppm: par,
+    }
+}
+
+/// Taux de croissance annuel (ppm) d'une pop.
+/// - besoins vitaux couverts : de `croissance_insatisfaite` (confort nul) à `croissance_satisfaite` (confort plein) ;
+/// - sinon : décroît linéairement jusqu'à −`mortalite_famine` quand les besoins vitaux sont nuls.
+pub fn taux_croissance_ppm(d: &ParamsDemo, vital_ppm: i64, confort_ppm: i64) -> i64 {
+    let bas = d.croissance_insatisfaite_ppm;
+    let haut = d.croissance_satisfaite_ppm;
+    let r = if vital_ppm >= PPM {
+        bas + (haut - bas) * confort_ppm / PPM
+    } else {
+        bas - (bas + d.mortalite_famine_ppm) * (PPM - vital_ppm) / PPM
+    };
+    r * d.acceleration_ppm / PPM
 }
 
 /// Répartit `dispo` entre des demandes au prorata (rationnement), sans biais d'ordre :
@@ -126,6 +199,8 @@ impl Simulation {
                 ..Default::default()
             },
             historique: Vec::new(),
+            naissances_an: 0,
+            deces_an: 0,
             fournisseurs: Vec::new(),
         };
         sim.calculer_fournisseurs();
@@ -135,6 +210,10 @@ impl Simulation {
 
     fn nq(&self) -> usize {
         self.monde.quartiers.len()
+    }
+
+    fn est_domestique(&self, b: usize) -> bool {
+        self.cat.batiments[self.monde.batiments[b].type_id].domestique
     }
 
     fn calculer_fournisseurs(&mut self) {
@@ -147,7 +226,7 @@ impl Simulation {
                 let mut v: Vec<(i64, usize)> = Vec::new();
                 for (b, bat) in self.monde.batiments.iter().enumerate() {
                     let produit = self.cat.batiments[bat.type_id]
-                        .extrants
+                        .extrants_finaux()
                         .iter()
                         .any(|(r, _)| *r == res);
                     if !produit || nq + b == client {
@@ -166,7 +245,7 @@ impl Simulation {
 
     // ---------- Observation ----------
 
-    /// Stock total par ressource : quartiers + bâtiments + marchandises en transit.
+    /// Stock total par ressource : hameaux + bâtiments + marchandises en transit.
     pub fn stock_total(&self) -> Vec<Qte> {
         let mut t = vec![0; self.cat.ressources.len()];
         for q in &self.monde.quartiers {
@@ -199,11 +278,20 @@ impl Simulation {
             .collect()
     }
 
+    /// Nombre de pops résidant dans chaque hameau.
+    pub fn effectifs(&self) -> Vec<u32> {
+        let mut e = vec![0u32; self.nq()];
+        for p in &self.pops {
+            e[p.residence] += 1;
+        }
+        e
+    }
+
     pub fn pops_du_quartier(&self, q: usize) -> usize {
         self.pops.iter().filter(|p| p.residence == q).count()
     }
 
-    pub fn chomeurs(&self) -> usize {
+    pub fn sans_poste(&self) -> usize {
         self.pops.iter().filter(|p| p.emploi.is_none()).count()
     }
 
@@ -218,9 +306,9 @@ impl Simulation {
         occ
     }
 
-    pub fn capacite_stock_quartier(&self, res: usize) -> Qte {
-        let requis = self.cat.besoin_pop(res) * self.cat.demo.capacite_quartier_pops as i64;
-        Catalogue::jours_x(requis, self.cat.sim.jours_stock_quartier)
+    /// Seuil de la jauge de croissance, en micro-habitants.
+    pub fn seuil_croissance(&self) -> i64 {
+        self.cat.demo.habitants_par_pop * 1_000_000
     }
 
     // ---------- Transport ----------
@@ -279,21 +367,22 @@ impl Simulation {
 
         // 2. Marchandises : appel d'offres local, rationnement au pro rata, transport.
         self.resoudre_contrats();
-
         // 3. Main-d'œuvre : trajets domicile-travail.
         self.resoudre_main_oeuvre();
-
         // 4. Production.
         self.produire();
-
-        // 5. Consommation des pops (satisfaction).
+        // 5. Consommation des pops et couverture des besoins.
         self.consommer();
-
-        // 6. Péremption, statistiques.
+        // 6. Jauges de croissance : naissances et disparitions de pops.
+        self.croissance_quotidienne();
+        // 7. Péremption, statistiques.
         self.perimer();
         self.finaliser_jour();
 
         self.jour += 1;
+        if self.jour % self.cat.mobilite.periode_jours == 0 {
+            self.reaffecter();
+        }
         if self.jour % self.cat.sim.jours_par_an as u64 == 0 {
             self.fin_annee();
         }
@@ -307,6 +396,7 @@ impl Simulation {
         }
         let nq = self.nq();
         let nb_lieux = nq + self.monde.batiments.len();
+        let eff = self.effectifs();
 
         // En transit par (client, ressource), pour ne pas commander deux fois.
         let mut transit: BTreeMap<(usize, usize), Qte> = BTreeMap::new();
@@ -318,17 +408,16 @@ impl Simulation {
         for client in 0..nb_lieux {
             let mut besoins: Vec<(usize, Qte, f64)> = Vec::new(); // (ressource, requis/jour, jours de cible)
             if client < nq {
-                let n = self.pops_du_quartier(client) as i64;
                 for b in &self.cat.besoins {
                     besoins.push((
                         b.ressource,
-                        b.par_pop * n,
+                        b.par_pop * eff[client] as i64,
                         self.cat.sim.jours_stock_quartier,
                     ));
                 }
             } else {
                 let t = &self.cat.batiments[self.monde.batiments[client - nq].type_id];
-                for &(r, q) in &t.intrants {
+                for (r, q) in t.intrants_externes() {
                     besoins.push((r, q, self.cat.sim.jours_stock_entree));
                 }
             }
@@ -430,91 +519,278 @@ impl Simulation {
     }
 
     fn produire(&mut self) {
+        let eff = self.effectifs();
         let cat = &self.cat;
         for b in &mut self.monde.batiments {
             let t = &cat.batiments[b.type_id];
-            let mut f = PPM;
-            let mut limitant = Limitant::Aucun;
+            if t.domestique {
+                // Travail à domicile : les résidents du hameau, sans poste ni trajet.
+                b.presents = b.quartier.map_or(0, |q| eff[q]).min(t.pops);
+            }
             let f_mo = b.presents as i64 * PPM / t.pops as i64;
-            if f_mo < f {
-                f = f_mo;
-                limitant = Limitant::MainOeuvre;
-            }
-            for &(r, q) in &t.intrants {
-                let f_in = (b.stock_entree[r] * PPM / q).min(PPM);
-                if f_in < f {
-                    f = f_in;
-                    limitant = Limitant::Intrant(r);
+            let mut f_min = PPM;
+            let mut limitant = Limitant::Aucun;
+            let mut f_dernier = 0;
+            for (si, e) in t.etapes.iter().enumerate() {
+                let mut f = f_mo.min(PPM);
+                let mut lim = if f_mo < PPM {
+                    Limitant::MainOeuvre
+                } else {
+                    Limitant::Aucun
+                };
+                for &(r, q) in &e.intrants {
+                    let f_in = (b.stock_entree[r] * PPM / q).min(PPM);
+                    if f_in < f {
+                        f = f_in;
+                        lim = Limitant::Intrant(r);
+                    }
                 }
-            }
-            for &(r, q) in &t.extrants {
-                let plafond = Catalogue::jours_x(q, cat.sim.jours_stock_sortie);
-                let libre = (plafond - b.stock_sortie[r]).max(0);
-                let f_out = (libre * PPM / q).min(PPM);
-                if f_out < f {
-                    f = f_out;
-                    limitant = Limitant::StockPlein;
+                for &(r, q) in &e.extrants {
+                    if t.consomme_ensuite(si, r) {
+                        continue;
+                    }
+                    let plafond = Catalogue::jours_x(q, cat.sim.jours_stock_sortie);
+                    let libre = (plafond - b.stock_sortie[r]).max(0);
+                    let f_out = (libre * PPM / q).min(PPM);
+                    if f_out < f {
+                        f = f_out;
+                        lim = Limitant::StockPlein;
+                    }
                 }
+                let f = f.max(0);
+                for &(r, q) in &e.intrants {
+                    let c = mul_div(q, f, PPM);
+                    b.stock_entree[r] -= c;
+                    self.bilan.consomme_prod[r] += c;
+                }
+                for &(r, q) in &e.extrants {
+                    let p = mul_div(q, f, PPM);
+                    self.bilan.produit[r] += p;
+                    if t.consomme_ensuite(si, r) {
+                        b.stock_entree[r] += p; // matière intermédiaire, consommée par l'étape suivante
+                    } else {
+                        b.stock_sortie[r] += p;
+                        self.stats.produit[r] += p;
+                    }
+                }
+                if f < f_min {
+                    f_min = f;
+                    limitant = lim;
+                }
+                f_dernier = f;
             }
-            let f = f.max(0);
-            for &(r, q) in &t.intrants {
-                let c = mul_div(q, f, PPM);
-                b.stock_entree[r] -= c;
-                self.bilan.consomme_prod[r] += c;
-            }
-            for &(r, q) in &t.extrants {
-                let p = mul_div(q, f, PPM);
-                b.stock_sortie[r] += p;
-                self.bilan.produit[r] += p;
-                self.stats.produit[r] += p;
-            }
-            b.prod_ppm = f;
-            b.limitant = if f >= PPM { Limitant::Aucun } else { limitant };
+            b.prod_ppm = f_dernier;
+            b.limitant = if f_min >= PPM {
+                Limitant::Aucun
+            } else {
+                limitant
+            };
         }
     }
 
     fn consommer(&mut self) {
         let nr = self.cat.ressources.len();
+        let eff = self.effectifs();
         for q in 0..self.nq() {
-            let n = self.pops_du_quartier(q) as i64;
+            let n = eff[q] as i64;
             let quartier = &mut self.monde.quartiers[q];
+            let mut recu = vec![0; nr];
+            for b in &self.cat.besoins {
+                let r = quartier.stock[b.ressource].min(b.par_pop * n).max(0);
+                quartier.stock[b.ressource] -= r;
+                recu[b.ressource] = r;
+                self.bilan.consomme_pops[b.ressource] += r;
+                self.stats.consomme_pops[b.ressource] += r;
+            }
+            let ev = evaluer_besoins(&self.cat, n, &recu);
+            quartier.vital_jour_ppm = ev.vital_ppm;
+            quartier.confort_jour_ppm = ev.confort_ppm;
+            quartier.sat_par_ressource_ppm = ev.par_ressource_ppm;
+            quartier.cumul_vital_ppm += ev.vital_ppm;
+            quartier.cumul_confort_ppm += ev.confort_ppm;
             quartier.jours_an += 1;
-            if n == 0 {
-                quartier.sat_jour_ppm = PPM;
-                quartier.sat_nourriture_jour_ppm = PPM;
-                quartier.sat_par_ressource_ppm = vec![PPM; nr];
-                quartier.cumul_sat_ppm += PPM;
-                quartier.cumul_sat_nourriture_ppm += PPM;
+        }
+    }
+
+    // ---------- Démographie : une jauge par pop ----------
+
+    /// Hameau où loger une nouvelle pop : celui du parent s'il a de la place,
+    /// sinon le plus proche qui en a (coût, remplissage, index).
+    fn hameau_libre(&self, q: usize, eff: &[u32]) -> Option<usize> {
+        if eff[q] < self.monde.quartiers[q].capacite_pops {
+            return Some(q);
+        }
+        (0..self.nq())
+            .filter(|&h| eff[h] < self.monde.quartiers[h].capacite_pops)
+            .filter_map(|h| self.reseau.chemin(q, h).map(|c| ((c.cout, eff[h], h), h)))
+            .min()
+            .map(|(_, h)| h)
+    }
+
+    fn croissance_quotidienne(&mut self) {
+        let seuil = self.seuil_croissance();
+        let jours = self.cat.sim.jours_par_an;
+        let taux: Vec<i64> = self
+            .monde
+            .quartiers
+            .iter()
+            .map(|q| taux_croissance_ppm(&self.cat.demo, q.vital_jour_ppm, q.confort_jour_ppm))
+            .collect();
+        for p in &mut self.pops {
+            p.croissance += mul_div(seuil, taux[p.residence], PPM * jours);
+        }
+
+        // Disparitions d'abord (elles libèrent du logement et des postes).
+        let morts: Vec<usize> = (0..self.pops.len())
+            .filter(|&i| self.pops[i].croissance <= -seuil)
+            .collect();
+        for &i in morts.iter().rev() {
+            self.pops.remove(i);
+            self.deces_an += 1;
+        }
+
+        // Duplications : la nouvelle pop se loge et prend le poste vacant le plus proche.
+        let mut eff = self.effectifs();
+        let mut occ = self.occupation();
+        let parents: Vec<usize> = (0..self.pops.len())
+            .filter(|&i| self.pops[i].croissance >= seuil)
+            .collect();
+        for i in parents {
+            let q = self.pops[i].residence;
+            match self.hameau_libre(q, &eff) {
+                Some(h) => {
+                    let emploi = self.meilleur_poste(h, &occ);
+                    if let Some(b) = emploi {
+                        occ[b] += 1;
+                    }
+                    let id = self.prochain_pop_id;
+                    self.prochain_pop_id += 1;
+                    self.pops.push(Pop {
+                        id,
+                        residence: h,
+                        emploi,
+                        croissance: 0,
+                    });
+                    eff[h] += 1;
+                    self.pops[i].croissance -= seuil;
+                    self.naissances_an += 1;
+                }
+                // Plus de logement : la jauge attend, plafonnée.
+                None => self.pops[i].croissance = seuil,
+            }
+        }
+    }
+
+    // ---------- Postes ----------
+
+    /// Poste vacant le plus proche du hameau : (coût, taux de remplissage, index) minimal.
+    fn meilleur_poste(&self, q: usize, occ: &[u32]) -> Option<usize> {
+        let nq = self.nq();
+        let mut best: Option<((i64, i64, usize), usize)> = None;
+        for (b, bat) in self.monde.batiments.iter().enumerate() {
+            let t = &self.cat.batiments[bat.type_id];
+            if t.domestique || occ[b] >= t.pops {
                 continue;
             }
-            let mut sat = 0i64;
-            let mut sat_n = 0i64;
-            let mut poids_n = 0i64;
-            let mut par_res = vec![PPM; nr];
-            for b in &self.cat.besoins {
-                let requis = b.par_pop * n;
-                let recu = quartier.stock[b.ressource].min(requis).max(0);
-                quartier.stock[b.ressource] -= recu;
-                self.bilan.consomme_pops[b.ressource] += recu;
-                self.stats.consomme_pops[b.ressource] += recu;
-                let s = if requis > 0 { recu * PPM / requis } else { PPM };
-                par_res[b.ressource] = s;
-                sat += mul_div(b.poids_ppm, s, PPM);
-                if b.nourriture {
-                    sat_n += mul_div(b.poids_ppm, s, PPM);
-                    poids_n += b.poids_ppm;
+            let Some(ch) = self.reseau.chemin(q, nq + b) else {
+                continue;
+            };
+            let cle = (ch.cout, occ[b] as i64 * 1000 / t.pops as i64, b);
+            if best.map_or(true, |(k, _)| cle < k) {
+                best = Some((cle, b));
+            }
+        }
+        best.map(|(_, b)| b)
+    }
+
+    /// Réorientation mensuelle des bras selon le besoin (entraide du hameau, sans salaire) :
+    /// 1. les pops sans poste prennent les postes vacants ;
+    /// 2. pour chaque ressource en tension, une pop quitte un lieu dont le stock est plein
+    ///    pour rejoindre un lieu qui produit la ressource manquante et a un poste libre.
+    fn reaffecter(&mut self) {
+        let nq = self.nq();
+        let nb = self.monde.batiments.len();
+        let nr = self.cat.ressources.len();
+        let mut occ = self.occupation();
+        for i in 0..self.pops.len() {
+            if self.pops[i].emploi.is_none() {
+                if let Some(b) = self.meilleur_poste(self.pops[i].residence, &occ) {
+                    self.pops[i].emploi = Some(b);
+                    occ[b] += 1;
                 }
             }
-            let sat_n = if poids_n > 0 {
-                sat_n * PPM / poids_n
-            } else {
-                PPM
-            };
-            quartier.sat_jour_ppm = sat;
-            quartier.sat_nourriture_jour_ppm = sat_n;
-            quartier.sat_par_ressource_ppm = par_res;
-            quartier.cumul_sat_ppm += sat;
-            quartier.cumul_sat_nourriture_ppm += sat_n;
+        }
+
+        // Tensions : ressources dont la ration n'est pas couverte, ou qui manquent à un producteur.
+        let eff = self.effectifs();
+        let seuil = self.cat.mobilite.seuil_tension_ppm;
+        let mut poids = vec![0i64; nr];
+        for (q, qu) in self.monde.quartiers.iter().enumerate() {
+            if eff[q] == 0 {
+                continue;
+            }
+            for b in &self.cat.besoins {
+                let s = qu.sat_par_ressource_ppm[b.ressource];
+                if s < seuil {
+                    poids[b.ressource] += (PPM - s) * eff[q] as i64;
+                }
+            }
+        }
+        for bat in &self.monde.batiments {
+            if let Limitant::Intrant(r) = bat.limitant {
+                poids[r] += PPM - bat.prod_ppm;
+            }
+        }
+        let mut ordre: Vec<usize> = (0..nr).filter(|&r| poids[r] > 0).collect();
+        ordre.sort_by(|a, b| poids[*b].cmp(&poids[*a]).then(a.cmp(b)));
+
+        let mut utilises = vec![false; nb];
+        for r in ordre {
+            for _ in 0..self.cat.mobilite.max_par_ressource {
+                let produit = |b: usize| {
+                    let t = &self.cat.batiments[self.monde.batiments[b].type_id];
+                    t.extrants_finaux().iter().any(|(x, _)| *x == r)
+                };
+                let receveur = (0..nb)
+                    .filter(|&b| {
+                        !self.est_domestique(b)
+                            && !utilises[b]
+                            && produit(b)
+                            && occ[b] < self.cat.batiments[self.monde.batiments[b].type_id].pops
+                    })
+                    .min_by_key(|&b| {
+                        (
+                            occ[b] as i64 * 1000
+                                / self.cat.batiments[self.monde.batiments[b].type_id].pops as i64,
+                            b,
+                        )
+                    });
+                let Some(rb) = receveur else { break };
+                let donneur = (0..nb)
+                    .filter(|&b| {
+                        !self.est_domestique(b)
+                            && !utilises[b]
+                            && b != rb
+                            && occ[b] > 0
+                            && self.monde.batiments[b].limitant == Limitant::StockPlein
+                    })
+                    .min_by_key(|&b| (self.monde.batiments[b].prod_ppm, b));
+                let Some(db) = donneur else { break };
+                let pop = (0..self.pops.len())
+                    .filter(|&i| self.pops[i].emploi == Some(db))
+                    .filter_map(|i| {
+                        self.reseau
+                            .chemin(self.pops[i].residence, nq + rb)
+                            .map(|c| ((c.cout, self.pops[i].id), i))
+                    })
+                    .min();
+                let Some((_, i)) = pop else { break };
+                self.pops[i].emploi = Some(rb);
+                occ[db] -= 1;
+                occ[rb] += 1;
+                utilises[db] = true;
+                utilises[rb] = true;
+            }
         }
     }
 
@@ -554,139 +830,35 @@ impl Simulation {
             .unwrap_or(0);
     }
 
-    // ---------- Démographie annuelle ----------
-
-    /// Poste vacant le plus proche du quartier : (coût, taux de remplissage, index) minimal.
-    fn meilleur_poste(&self, q: usize, occ: &[u32]) -> Option<usize> {
-        let nq = self.nq();
-        let mut best: Option<((i64, i64, usize), usize)> = None;
-        for (b, bat) in self.monde.batiments.iter().enumerate() {
-            let postes = self.cat.batiments[bat.type_id].pops;
-            if occ[b] >= postes {
-                continue;
-            }
-            let Some(ch) = self.reseau.chemin(q, nq + b) else {
-                continue;
-            };
-            let cle = (ch.cout, occ[b] as i64 * 1000 / postes as i64, b);
-            if best.map_or(true, |(k, _)| cle < k) {
-                best = Some((cle, b));
-            }
-        }
-        best.map(|(_, b)| b)
-    }
-
     fn fin_annee(&mut self) {
-        let nq = self.nq();
-        let d = self.cat.demo.clone();
-        let seuil_milli = d.habitants_par_pop * 1000;
-        let mut naissances = 0u32;
-        let mut deces = 0u32;
-        let mut somme_sat = 0i64;
-        let mut somme_sat_n = 0i64;
-        let mut nb_q_actifs = 0i64;
-
-        for q in 0..nq {
-            let jours = self.monde.quartiers[q].jours_an.max(1);
-            let sat = self.monde.quartiers[q].cumul_sat_ppm / jours;
-            let sat_n = self.monde.quartiers[q].cumul_sat_nourriture_ppm / jours;
-            {
-                let qu = &mut self.monde.quartiers[q];
-                qu.sat_annuelle_ppm = sat;
-                qu.sat_nourriture_annuelle_ppm = sat_n;
-                qu.cumul_sat_ppm = 0;
-                qu.cumul_sat_nourriture_ppm = 0;
-                qu.jours_an = 0;
-            }
-            let n = self.pops_du_quartier(q) as i64;
-            if n > 0 {
-                somme_sat += sat;
-                somme_sat_n += sat_n;
-                nb_q_actifs += 1;
-            }
-
-            // Taux annuels (ppm). Natalité : sat globale ; mortalité : sat nourriture seule.
-            let nat = d.naissance_max_ppm
-                * ((sat - d.seuil_sat_naissance_ppm).max(0) * PPM
-                    / (PPM - d.seuil_sat_naissance_ppm))
-                    .min(PPM)
-                / PPM;
-            let mort = d.mortalite_base_ppm
-                + (d.mortalite_max_ppm - d.mortalite_base_ppm) * (PPM - sat_n) / PPM;
-            let net = (nat - mort) * d.acceleration_ppm / PPM;
-            let hab = n * d.habitants_par_pop;
-            self.monde.quartiers[q].croissance_milli += mul_div(hab * 1000, net, PPM);
-
-            while self.monde.quartiers[q].croissance_milli >= seuil_milli {
-                if (self.pops_du_quartier(q) as u32) < d.capacite_quartier_pops {
-                    let occ = self.occupation();
-                    let emploi = self.meilleur_poste(q, &occ);
-                    let id = self.prochain_pop_id;
-                    self.prochain_pop_id += 1;
-                    self.pops.push(Pop {
-                        id,
-                        residence: q,
-                        emploi,
-                    });
-                    self.monde.quartiers[q].croissance_milli -= seuil_milli;
-                    naissances += 1;
-                } else {
-                    self.monde.quartiers[q].croissance_milli = seuil_milli; // plafonné par le logement
-                    break;
-                }
-            }
-            while self.monde.quartiers[q].croissance_milli <= -seuil_milli {
-                // Une chômeuse d'abord, sinon la dernière pop du quartier (identifiant le plus élevé).
-                let cible = self
-                    .pops
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, p)| p.residence == q)
-                    .max_by_key(|(_, p)| (p.emploi.is_none(), p.id))
-                    .map(|(i, _)| i);
-                match cible {
-                    Some(i) => {
-                        self.pops.remove(i);
-                        self.monde.quartiers[q].croissance_milli += seuil_milli;
-                        deces += 1;
-                    }
-                    None => {
-                        self.monde.quartiers[q].croissance_milli = 0;
-                        break;
-                    }
-                }
+        let mut somme_v = 0i64;
+        let mut somme_c = 0i64;
+        let mut actifs = 0i64;
+        let eff = self.effectifs();
+        for (q, qu) in self.monde.quartiers.iter_mut().enumerate() {
+            let jours = qu.jours_an.max(1);
+            qu.vital_annuel_ppm = qu.cumul_vital_ppm / jours;
+            qu.confort_annuel_ppm = qu.cumul_confort_ppm / jours;
+            qu.cumul_vital_ppm = 0;
+            qu.cumul_confort_ppm = 0;
+            qu.jours_an = 0;
+            if eff[q] > 0 {
+                somme_v += qu.vital_annuel_ppm;
+                somme_c += qu.confort_annuel_ppm;
+                actifs += 1;
             }
         }
-
-        // Les chômeuses prennent les postes devenus vacants.
-        let mut occ = self.occupation();
-        for i in 0..self.pops.len() {
-            if self.pops[i].emploi.is_none() {
-                if let Some(b) = self.meilleur_poste(self.pops[i].residence, &occ) {
-                    self.pops[i].emploi = Some(b);
-                    occ[b] += 1;
-                }
-            }
-        }
-
-        let annee = self.jour / self.cat.sim.jours_par_an as u64;
         self.historique.push(ResumeAn {
-            annee,
+            annee: self.jour / self.cat.sim.jours_par_an as u64,
             pops: self.pops.len(),
-            chomeurs: self.chomeurs(),
-            naissances,
-            deces,
-            sat_moy_ppm: if nb_q_actifs > 0 {
-                somme_sat / nb_q_actifs
-            } else {
-                0
-            },
-            sat_nourriture_moy_ppm: if nb_q_actifs > 0 {
-                somme_sat_n / nb_q_actifs
-            } else {
-                0
-            },
+            sans_poste: self.sans_poste(),
+            naissances: self.naissances_an,
+            deces: self.deces_an,
+            vital_moy_ppm: if actifs > 0 { somme_v / actifs } else { 0 },
+            confort_moy_ppm: if actifs > 0 { somme_c / actifs } else { 0 },
         });
+        self.naissances_an = 0;
+        self.deces_an = 0;
     }
 
     pub fn avancer(&mut self, jours: u64) {
@@ -705,7 +877,7 @@ mod tests {
         let p = repartir_pro_rata(100, &[60, 60, 30]);
         assert_eq!(p.iter().sum::<Qte>(), 100);
         assert!(p.iter().zip([60, 60, 30]).all(|(a, b)| *a <= b));
-        // Pas de biais d'ordre : deux demandes égales reçoivent (à 1 près) la même part.
+        // Pas de biais d'ordre : trois demandes égales reçoivent (à 1 près) la même part.
         let q = repartir_pro_rata(101, &[50, 50, 50]);
         assert_eq!(q.iter().sum::<Qte>(), 101);
         assert!(q.iter().max().unwrap() - q.iter().min().unwrap() <= 1);
@@ -715,5 +887,89 @@ mod tests {
     fn pro_rata_suffisant_ou_vide() {
         assert_eq!(repartir_pro_rata(500, &[10, 20]), vec![10, 20]);
         assert_eq!(repartir_pro_rata(0, &[10, 20]), vec![0, 0]);
+    }
+
+    /// Reçu d'une pop pour une journée, par nom de ressource (en unités).
+    fn recu(cat: &Catalogue, n: i64, parts: &[(&str, f64)]) -> Vec<Qte> {
+        let mut v = vec![0; cat.ressources.len()];
+        for (nom, q) in parts {
+            v[cat.res_id(nom).unwrap()] = (q * 1000.0 * n as f64).round() as Qte;
+        }
+        v
+    }
+
+    #[test]
+    fn besoins_pleinement_couverts() {
+        let c = Catalogue::defaut();
+        let r = recu(
+            &c,
+            2,
+            &[
+                ("grain", 5.0),
+                ("viande", 1.0),
+                ("fruit", 1.0),
+                ("bois", 2.0),
+                ("vetements", 0.5),
+            ],
+        );
+        let e = evaluer_besoins(&c, 2, &r);
+        assert_eq!((e.vital_ppm, e.confort_ppm), (PPM, PPM));
+    }
+
+    #[test]
+    fn vital_couvert_sans_confort_est_insatisfait() {
+        let c = Catalogue::defaut();
+        // Grain et bois seulement : on survit, mais ni viande ni vêtements.
+        let e = evaluer_besoins(&c, 2, &recu(&c, 2, &[("grain", 5.0), ("bois", 2.0)]));
+        assert_eq!((e.vital_ppm, e.confort_ppm), (PPM, 0));
+    }
+
+    #[test]
+    fn les_aliments_sont_interchangeables_pour_le_vital() {
+        let c = Catalogue::defaut();
+        // 3 grain + 1 viande + 1 fruit = 5 unités nutritives : le vital est couvert.
+        let e = evaluer_besoins(
+            &c,
+            1,
+            &recu(
+                &c,
+                1,
+                &[
+                    ("grain", 3.0),
+                    ("viande", 1.0),
+                    ("fruit", 1.0),
+                    ("bois", 2.0),
+                ],
+            ),
+        );
+        assert_eq!(e.vital_ppm, PPM);
+        // 2 grain seulement : 40 % du vital.
+        let e = evaluer_besoins(&c, 1, &recu(&c, 1, &[("grain", 2.0), ("bois", 2.0)]));
+        assert_eq!(e.vital_ppm, 400_000);
+    }
+
+    #[test]
+    fn sans_chauffage_le_vital_tombe() {
+        let c = Catalogue::defaut();
+        let e = evaluer_besoins(
+            &c,
+            1,
+            &recu(
+                &c,
+                1,
+                &[("grain", 5.0), ("viande", 1.0), ("vetements", 0.5)],
+            ),
+        );
+        assert_eq!(e.vital_ppm, 0);
+    }
+
+    #[test]
+    fn taux_de_croissance_par_regime() {
+        let d = &Catalogue::defaut().demo;
+        assert_eq!(taux_croissance_ppm(d, PPM, PPM), 15_000); // satisfaite : +1,5 %/an
+        assert_eq!(taux_croissance_ppm(d, PPM, 0), 5_000); // insatisfaite mais vitale couverte : +0,5 %/an
+        assert_eq!(taux_croissance_ppm(d, 0, 0), -80_000); // famine totale
+        assert!(taux_croissance_ppm(d, 900_000, PPM) < 5_000);
+        assert!(taux_croissance_ppm(d, 500_000, PPM) < taux_croissance_ppm(d, 900_000, PPM));
     }
 }

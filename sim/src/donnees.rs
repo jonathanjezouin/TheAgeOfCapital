@@ -27,7 +27,11 @@ fn en_ppm(x: f64) -> i64 {
 struct Brut {
     simulation: BrutSim,
     infrastructure: BrutInfra,
+    habitat: BrutHabitat,
     demographie: BrutDemo,
+    mobilite: BrutMobilite,
+    vital: BrutVital,
+    confort: Vec<BrutBesoin>,
     ressources: Vec<BrutRessource>,
     besoins: Vec<BrutBesoin>,
     batiments: Vec<BrutBatiment>,
@@ -55,28 +59,46 @@ struct BrutInfra {
 }
 
 #[derive(Deserialize)]
+struct BrutHabitat {
+    capacite_pops: u32,
+    batiment_domestique: Option<String>,
+}
+
+#[derive(Deserialize)]
 struct BrutDemo {
     habitants_par_pop: i64,
-    capacite_quartier_pops: u32,
-    naissance_max: f64,
-    seuil_satisfaction_naissance: f64,
-    mortalite_base: f64,
-    mortalite_max: f64,
+    croissance_satisfaite: f64,
+    croissance_insatisfaite: f64,
+    mortalite_famine: f64,
     acceleration: f64,
+}
+
+#[derive(Deserialize)]
+struct BrutMobilite {
+    periode_jours: u64,
+    seuil_tension: f64,
+    deplacements_max_par_ressource: usize,
+}
+
+#[derive(Deserialize)]
+struct BrutVital {
+    nourriture: f64,
+    chauffage_ressource: String,
+    chauffage: f64,
 }
 
 #[derive(Deserialize)]
 struct BrutRessource {
     nom: String,
     peremption_jour: f64,
+    #[serde(default)]
+    valeur_nutritive: f64,
 }
 
 #[derive(Deserialize)]
 struct BrutBesoin {
     ressource: String,
     par_pop_jour: f64,
-    poids: f64,
-    categorie: String,
 }
 
 #[derive(Deserialize)]
@@ -86,14 +108,21 @@ struct BrutFlux {
 }
 
 #[derive(Deserialize)]
+struct BrutEtape {
+    #[serde(default)]
+    intrants: Vec<BrutFlux>,
+    #[serde(default)]
+    extrants: Vec<BrutFlux>,
+}
+
+#[derive(Deserialize)]
 struct BrutBatiment {
     nom: String,
     asset: String,
     pops: u32,
     #[serde(default)]
-    intrants: Vec<BrutFlux>,
-    #[serde(default)]
-    extrants: Vec<BrutFlux>,
+    domestique: bool,
+    etapes: Vec<BrutEtape>,
 }
 
 // ---------- Catalogue résolu ----------
@@ -120,45 +149,126 @@ pub struct ParamsInfra {
 }
 
 #[derive(Clone, Debug)]
+pub struct ParamsHabitat {
+    pub capacite_pops: u32,
+    /// Type de bâtiment de production domestique embarqué dans chaque hameau.
+    pub domestique: Option<usize>,
+}
+
+#[derive(Clone, Debug)]
 pub struct ParamsDemo {
     pub habitants_par_pop: i64,
-    pub capacite_quartier_pops: u32,
-    pub naissance_max_ppm: i64,
-    pub seuil_sat_naissance_ppm: i64,
-    pub mortalite_base_ppm: i64,
-    pub mortalite_max_ppm: i64,
+    pub croissance_satisfaite_ppm: i64,
+    pub croissance_insatisfaite_ppm: i64,
+    pub mortalite_famine_ppm: i64,
     pub acceleration_ppm: i64,
+}
+
+#[derive(Clone, Debug)]
+pub struct ParamsMobilite {
+    pub periode_jours: u64,
+    pub seuil_tension_ppm: i64,
+    pub max_par_ressource: usize,
+}
+
+/// Besoins vitaux par pop et par jour.
+#[derive(Clone, Debug)]
+pub struct Vital {
+    /// Unités nutritives (milli) : grain, viande et fruit sont interchangeables.
+    pub nourriture: Qte,
+    pub chauffage_ressource: usize,
+    pub chauffage: Qte,
 }
 
 #[derive(Clone, Debug)]
 pub struct Ressource {
     pub nom: String,
     pub peremption_ppm: i64,
+    /// Unités nutritives par unité de marchandise (×1000).
+    pub nutritive_milli: i64,
 }
 
+/// Quantité par pop et par jour (ration normale ou minimum de confort).
 #[derive(Clone, Debug)]
 pub struct Besoin {
     pub ressource: usize,
     pub par_pop: Qte,
-    pub poids_ppm: i64,
-    pub nourriture: bool,
+}
+
+#[derive(Clone, Debug)]
+pub struct Etape {
+    pub intrants: Vec<(usize, Qte)>,
+    pub extrants: Vec<(usize, Qte)>,
 }
 
 #[derive(Clone, Debug)]
 pub struct TypeBatiment {
     pub nom: String,
     pub asset: String,
+    /// Effectif plein (en pops). Pour un bâtiment domestique : effectif de référence des résidents.
     pub pops: u32,
-    pub intrants: Vec<(usize, Qte)>,
-    pub extrants: Vec<(usize, Qte)>,
+    /// Travail fait par les résidents du hameau : ni poste, ni trajet.
+    pub domestique: bool,
+    pub etapes: Vec<Etape>,
+}
+
+impl TypeBatiment {
+    /// Intrants à fournir de l'extérieur (hors ce qu'une étape précédente produit).
+    pub fn intrants_externes(&self) -> Vec<(usize, Qte)> {
+        let mut v: Vec<(usize, Qte)> = Vec::new();
+        for (i, e) in self.etapes.iter().enumerate() {
+            for &(r, q) in &e.intrants {
+                if self.etapes[..i]
+                    .iter()
+                    .any(|p| p.extrants.iter().any(|(x, _)| *x == r))
+                {
+                    continue;
+                }
+                match v.iter_mut().find(|(x, _)| *x == r) {
+                    Some(t) => t.1 += q,
+                    None => v.push((r, q)),
+                }
+            }
+        }
+        v
+    }
+
+    /// Extrants livrés au stock de sortie (hors ce qu'une étape suivante consomme).
+    pub fn extrants_finaux(&self) -> Vec<(usize, Qte)> {
+        let mut v: Vec<(usize, Qte)> = Vec::new();
+        for (i, e) in self.etapes.iter().enumerate() {
+            for &(r, q) in &e.extrants {
+                if self.consomme_ensuite(i, r) {
+                    continue;
+                }
+                match v.iter_mut().find(|(x, _)| *x == r) {
+                    Some(t) => t.1 += q,
+                    None => v.push((r, q)),
+                }
+            }
+        }
+        v
+    }
+
+    /// Une étape postérieure à `etape` consomme-t-elle `res` ?
+    pub fn consomme_ensuite(&self, etape: usize, res: usize) -> bool {
+        self.etapes[etape + 1..]
+            .iter()
+            .any(|e| e.intrants.iter().any(|(x, _)| *x == res))
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct Catalogue {
     pub sim: ParamsSim,
     pub infra: ParamsInfra,
+    pub habitat: ParamsHabitat,
     pub demo: ParamsDemo,
+    pub mobilite: ParamsMobilite,
+    pub vital: Vital,
+    pub confort: Vec<Besoin>,
     pub ressources: Vec<Ressource>,
+    /// Ration normale tirée chaque jour sur le stock du hameau.
     pub besoins: Vec<Besoin>,
     pub batiments: Vec<TypeBatiment>,
 }
@@ -178,6 +288,7 @@ impl Catalogue {
             .map(|r| Ressource {
                 nom: r.nom.clone(),
                 peremption_ppm: en_ppm(r.peremption_jour),
+                nutritive_milli: en_milli(r.valeur_nutritive),
             })
             .collect();
         let id = |nom: &str| -> Result<usize, String> {
@@ -186,49 +297,54 @@ impl Catalogue {
                 .position(|r| r.nom == nom)
                 .ok_or_else(|| format!("ressource inconnue : {nom}"))
         };
-
-        let mut besoins = Vec::new();
-        for x in &b.besoins {
-            besoins.push(Besoin {
-                ressource: id(&x.ressource)?,
-                par_pop: en_milli(x.par_pop_jour),
-                poids_ppm: en_ppm(x.poids),
-                nourriture: match x.categorie.as_str() {
-                    "nourriture" => true,
-                    "autre" => false,
-                    c => return Err(format!("catégorie de besoin inconnue : {c}")),
-                },
-            });
-        }
-        let somme: i64 = besoins.iter().map(|x| x.poids_ppm).sum();
-        if (somme - PPM).abs() > 1_000 {
-            return Err(format!(
-                "la somme des poids de besoins vaut {} au lieu de 1",
-                somme as f64 / PPM as f64
-            ));
-        }
-        if !besoins.iter().any(|x| x.nourriture) {
-            return Err("aucun besoin de catégorie nourriture".into());
-        }
+        let besoins_de = |v: &Vec<BrutBesoin>| -> Result<Vec<Besoin>, String> {
+            v.iter()
+                .map(|x| {
+                    Ok(Besoin {
+                        ressource: id(&x.ressource)?,
+                        par_pop: en_milli(x.par_pop_jour),
+                    })
+                })
+                .collect()
+        };
 
         let mut batiments = Vec::new();
         for x in &b.batiments {
             if x.pops == 0 {
                 return Err(format!("bâtiment {} sans effectif", x.nom));
             }
+            if x.etapes.is_empty() {
+                return Err(format!("bâtiment {} sans étape de production", x.nom));
+            }
             let conv = |v: &Vec<BrutFlux>| -> Result<Vec<(usize, Qte)>, String> {
                 v.iter()
                     .map(|f| Ok((id(&f.ressource)?, en_milli(f.qte))))
                     .collect()
             };
+            let mut etapes = Vec::new();
+            for e in &x.etapes {
+                etapes.push(Etape {
+                    intrants: conv(&e.intrants)?,
+                    extrants: conv(&e.extrants)?,
+                });
+            }
             batiments.push(TypeBatiment {
                 nom: x.nom.clone(),
                 asset: x.asset.clone(),
                 pops: x.pops,
-                intrants: conv(&x.intrants)?,
-                extrants: conv(&x.extrants)?,
+                domestique: x.domestique,
+                etapes,
             });
         }
+        let domestique = match &b.habitat.batiment_domestique {
+            None => None,
+            Some(nom) => Some(
+                batiments
+                    .iter()
+                    .position(|t| &t.nom == nom && t.domestique)
+                    .ok_or_else(|| format!("bâtiment domestique inconnu : {nom}"))?,
+            ),
+        };
 
         let cat = Catalogue {
             sim: ParamsSim {
@@ -248,17 +364,30 @@ impl Catalogue {
                 capacite_max: en_milli(b.infrastructure.capacite_max),
                 poids_trajet_pop: en_milli(b.infrastructure.poids_trajet_pop),
             },
+            habitat: ParamsHabitat {
+                capacite_pops: b.habitat.capacite_pops,
+                domestique,
+            },
             demo: ParamsDemo {
                 habitants_par_pop: b.demographie.habitants_par_pop,
-                capacite_quartier_pops: b.demographie.capacite_quartier_pops,
-                naissance_max_ppm: en_ppm(b.demographie.naissance_max),
-                seuil_sat_naissance_ppm: en_ppm(b.demographie.seuil_satisfaction_naissance),
-                mortalite_base_ppm: en_ppm(b.demographie.mortalite_base),
-                mortalite_max_ppm: en_ppm(b.demographie.mortalite_max),
+                croissance_satisfaite_ppm: en_ppm(b.demographie.croissance_satisfaite),
+                croissance_insatisfaite_ppm: en_ppm(b.demographie.croissance_insatisfaite),
+                mortalite_famine_ppm: en_ppm(b.demographie.mortalite_famine),
                 acceleration_ppm: en_ppm(b.demographie.acceleration),
             },
+            mobilite: ParamsMobilite {
+                periode_jours: b.mobilite.periode_jours,
+                seuil_tension_ppm: en_ppm(b.mobilite.seuil_tension),
+                max_par_ressource: b.mobilite.deplacements_max_par_ressource,
+            },
+            vital: Vital {
+                nourriture: en_milli(b.vital.nourriture),
+                chauffage_ressource: id(&b.vital.chauffage_ressource)?,
+                chauffage: en_milli(b.vital.chauffage),
+            },
+            confort: besoins_de(&b.confort)?,
+            besoins: besoins_de(&b.besoins)?,
             ressources,
-            besoins,
             batiments,
         };
         cat.valider()?;
@@ -266,13 +395,19 @@ impl Catalogue {
     }
 
     fn valider(&self) -> Result<(), String> {
-        if self.demo.seuil_sat_naissance_ppm >= PPM {
-            return Err("seuil_satisfaction_naissance doit être < 1".into());
-        }
         if self.infra.capacite_max < self.infra.capacite_nominale {
             return Err("capacite_max < capacite_nominale".into());
         }
-        for b in &self.besoins {
+        if self.habitat.capacite_pops == 0 {
+            return Err("capacite_pops du hameau nulle".into());
+        }
+        if self.mobilite.periode_jours == 0 {
+            return Err("periode_jours de mobilité nulle".into());
+        }
+        if !self.ressources.iter().any(|r| r.nutritive_milli > 0) {
+            return Err("aucune ressource nutritive".into());
+        }
+        for b in self.besoins.iter().chain(&self.confort) {
             if self.producteurs(b.ressource).is_empty() {
                 return Err(format!(
                     "aucun bâtiment ne produit {}",
@@ -280,12 +415,23 @@ impl Catalogue {
                 ));
             }
         }
+        for r in 0..self.ressources.len() {
+            if self.ressources[r].nutritive_milli > 0 && self.producteurs(r).is_empty() {
+                return Err(format!(
+                    "aucun bâtiment ne produit {}",
+                    self.ressources[r].nom
+                ));
+            }
+        }
+        if self.producteurs(self.vital.chauffage_ressource).is_empty() {
+            return Err("aucun producteur de la ressource de chauffage".into());
+        }
         for t in &self.batiments {
-            for (r, _) in &t.intrants {
-                if self.producteurs(*r).is_empty() {
+            for (r, _) in t.intrants_externes() {
+                if self.producteurs(r).is_empty() {
                     return Err(format!(
                         "{} : intrant {} sans producteur",
-                        t.nom, self.ressources[*r].nom
+                        t.nom, self.ressources[r].nom
                     ));
                 }
             }
@@ -301,15 +447,20 @@ impl Catalogue {
         self.batiments.iter().position(|b| b.nom == nom)
     }
 
-    /// Types de bâtiments qui produisent la ressource.
+    /// Types de bâtiments qui livrent la ressource en sortie finale.
     pub fn producteurs(&self, res: usize) -> Vec<usize> {
         (0..self.batiments.len())
-            .filter(|&i| self.batiments[i].extrants.iter().any(|(r, _)| *r == res))
+            .filter(|&i| {
+                self.batiments[i]
+                    .extrants_finaux()
+                    .iter()
+                    .any(|(r, _)| *r == res)
+            })
             .collect()
     }
 
-    /// Consommation journalière d'une pop pour une ressource (0 si aucun besoin).
-    pub fn besoin_pop(&self, res: usize) -> Qte {
+    /// Ration journalière d'une pop pour une ressource (0 si aucune).
+    pub fn ration_pop(&self, res: usize) -> Qte {
         self.besoins
             .iter()
             .find(|b| b.ressource == res)

@@ -114,19 +114,20 @@ Contrat
 
 Pop (unité de population, 100 hab fixe)
   id, tile_residence_id, tile_emploi_id (nullable)
+  croissance      (jauge en micro-habitants : +100 hab = duplication, −100 hab = disparition)
   strate          : paysan | ouvrier | bourgeois | domestique | noble …
   culture, religion, orientation, alphabetise   (fixes en POC ; bascule hors POC)
   pression_conversion   (nullable, non utilisé POC : jauge continue, bascule au franchissement d'un seuil)
   richesse, droits_politiques      (nullable, non utilisé POC)
 
-Quartier (état agrégé d'une tile quartier, calculé depuis les pops)
-  population, pops_disponibles, taux_chomage
-  satisfaction_jour, satisfaction_annuelle
+Hameau / Quartier (tile d'habitat)
+  capacite_pops, batiment_domestique (nullable : travail textile à domicile, même tile)
+  stock, vital_jour, confort_jour, couverture par ressource, vital_annuel, confort_annuel
   salaire_reference (POC-B)
 
 Batiment (type)
-  secteur, intrants [{ressource, qte}], extrants [{ressource, qte}]
-  emploi, niveau_tech, contraintes_geo
+  secteur, etapes [{intrants [{ressource, qte}], extrants [{ressource, qte}]}]   (étapes enchaînées le même jour)
+  emploi (en pops), domestique (travail des résidents du hameau : ni poste ni trajet), niveau_tech, contraintes_geo
 ```
 
 Ressources : `MAIN_OEUVRE` est une ressource ordinaire (stock dans le quartier, circule par liens, contribue à la congestion). Liste POC dans `04-poc.md`.
