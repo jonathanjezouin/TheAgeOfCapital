@@ -15,10 +15,10 @@ Distribution visée : Steam. Licence : Apache 2.0.
 
 | Couche | Techno |
 |---|---|
-| Shell desktop | Electron |
+| Shell desktop | Electron (Tauri écarté) |
 | UI | Vue 3 |
 | Rendu | PixiJS (WebGL) |
-| Moteur de simulation | **Rust** via napi-rs (addon `.node`) — Rust dès le départ, pas de migration ultérieure |
+| Moteur de simulation | **Rust** via napi-rs (addon `.node`) pour Steam ; WebAssembly pour démos/tests — Rust dès le départ. Cible d'échelle : centaines de milliers d'objets (`docs/03` §5b) |
 | Persistance | SQLite, mode WAL, via `rusqlite` |
 | Pont | Node.js (main process Electron) ↔ renderer par IPC (deltas uniquement) |
 | IA embarquée (plus tard) | node-llama-cpp + Qwen 2.5 3B Q4_K_M, sortie JSON via GBNF — **hors POC** |

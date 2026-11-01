@@ -12,6 +12,9 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 
 ## Explicitement reporté après le POC
 
+- **Passage à l'échelle** (centaines de milliers de bâtiments / pops, rendu sur la seule zone caméra) : principes retenus dans `03` §5b ; **banc d'essai reporté** (moteur : 500 k bâtiments + 200 k pops synthétiques, structures denses vs existant, mono-thread vs Rayon ; rendu : carte 2 000×2 000 avec chunks, culling et niveaux de détail, captures Chromium + FPS). À lancer quand le design sera prêt
+- Migration du moteur vers tableaux denses, pont binaire `viewport`, chunks de rendu, sauvegarde binaire
+
 - Maintenance des infrastructures par des firmes municipales (frein à la prolifération des routes)
 - Propriété des infrastructures (routes souvent publiques ; péages)
 - Firmes de transport ; prestataire de transport inclus dans le contrat
@@ -52,7 +55,18 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 | **Le confort freine la croissance** | Non : une pop insatisfaite croît à +0,5 %/an | À reconsidérer avec la promotion de classe |
 | **Prélèvements** (dîme, rente, impôts) | Aucun | Le surplus qui quitte le village : amorce du marché et du capital |
 
+## Décisions techniques prises
+
+| Sujet | Décision |
+|---|---|
+| Hôte Steam | **Electron + napi-rs** (Tauri écarté) ; wasm conservé pour démonstrations et tests visuels (`03` §1) |
+| Échelle visée | ~4 M tiles, 300–500 k bâtiments, 100–300 k pops, 10–50 k personnages (`03` §5), à valider par banc d'essai |
+| Pont | Tableaux typés par viewport + drapeaux « sale » par chunk, pas de JSON du monde (`03` §5b) |
+| Persistance | SQLite hors tick ; sauvegarde = instantané binaire compressé |
+
 ## Questions ouvertes
+
+0. **Échelle exacte** : 2 000×2 000 et 500 k bâtiments sont des ordres de grandeur provisoires ; à confirmer avec le banc d'essai avant de figer les structures de données.
 
 1. **Déclin et abandon** — *écarté pour l'instant, à reprendre plus tard*. L'extension communautaire est faite (`02` §7) ; reste à traiter ce qui se passe quand la population baisse durablement : hameaux vides, terres sans bras, équipes de chantier orphelines, mémoire des lieux abandonnés (et leur réutilisation).
 1b. **Placement automatique des bâtiments par les firmes** (POC-B) : généralisation de l'extension communautaire, avec des critères de rentabilité à la place des besoins de subsistance.
