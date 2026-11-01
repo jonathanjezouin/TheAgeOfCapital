@@ -165,4 +165,19 @@ Principe : **on simule finement ce qui est observé** ; les zones inactives n'é
 Sprites stochastiques (piétons, charrettes, plus tard locomotives) sur les tiles d'infrastructure, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
 
 ## 7. Outillage d'assets
-Le générateur `graphGeneration/` (Python/Pillow/numpy, maisons par cultures, calques toit/ombre) **fait référence** pour les assets. Conventions conservées : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifest JSON.
+Le générateur `graphGeneration/` (Python/Pillow/numpy) **fait référence** pour les assets. Conventions : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifeste JSON.
+
+```bash
+cd graphGeneration && python generate_assets.py [--seed N] [--apercu]   # écrit dans app/public/assets/
+```
+
+| Sortie | Contenu |
+|---|---|
+| `atlas.png` + `atlas.json` | 49 tiles de 256×256 : herbe (10 variantes raccordables), 15 chemins, hameaux, terres, chantiers |
+| `relief/` | Pour les hameaux (les seuls à avoir du relief) : image **sans éclairage directionnel** (`*_albedo.png`) et **carte de normales** (`*_normal.png`) |
+
+- **Lumière : soleil au zénith.** Aucune ombre portée ; seule une légère assise de contact sous les objets. Le relief des toits est cuit (pans symétriques). Pour une **lumière en rotation**, un shader ré-éclairera les hameaux à partir de l'albedo et des normales, sans régénérer. Le jour/nuit reste une teinte globale en rendu.
+- **Raccords.** Les chemins sont indexés par **masque de demi-directions** (N=1, E=2, S=4, O=8, mêmes valeurs que le moteur) et leur profil au bord est identique d'une tile à l'autre (bruit périodique) : pas de couture visible. L'herbe est raccordable et toutes ses variantes ont la même couleur moyenne.
+- **Couches.** 0 terrain, 1 infrastructure, 2 bâtiments. **Les hameaux n'embarquent pas leurs rues** : le rendu pose sous le hameau (et sous le chantier de hameau) le chemin du masque des voisins réellement raccordés. Le hameau garde seulement une placette de terre battue.
+- **Un chantier, deux images.** Dans la simulation un chantier est un seul type de lieu ; le rendu choisit `bat_chantier_hameau` ou `bat_chantier_champ` selon sa cible.
+- Tests : `cd graphGeneration && python -m unittest discover -s tests` (raccords, zénith, manifeste).

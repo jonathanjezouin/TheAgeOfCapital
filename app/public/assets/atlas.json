@@ -1,0 +1,405 @@
+{
+ "version": 1,
+ "tuile": 256,
+ "lumiere": "zenith",
+ "atlas": "atlas.png",
+ "taille": [
+  2048,
+  1792
+ ],
+ "frames": {
+  "terrain_plaine_00": {
+   "x": 0,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_01": {
+   "x": 256,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_02": {
+   "x": 512,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_03": {
+   "x": 768,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_04": {
+   "x": 1024,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_05": {
+   "x": 1280,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_06": {
+   "x": 1536,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_07": {
+   "x": 1792,
+   "y": 0,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_08": {
+   "x": 0,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "terrain_plaine_09": {
+   "x": 256,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_01": {
+   "x": 512,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_02": {
+   "x": 768,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_03": {
+   "x": 1024,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_04": {
+   "x": 1280,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_05": {
+   "x": 1536,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_06": {
+   "x": 1792,
+   "y": 256,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_07": {
+   "x": 0,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_08": {
+   "x": 256,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_09": {
+   "x": 512,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_10": {
+   "x": 768,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_11": {
+   "x": 1024,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_12": {
+   "x": 1280,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_13": {
+   "x": 1536,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_14": {
+   "x": 1792,
+   "y": 512,
+   "w": 256,
+   "h": 256
+  },
+  "infra_chemin_terre_15": {
+   "x": 0,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_hameau_0": {
+   "x": 256,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_hameau_1": {
+   "x": 512,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_hameau_2": {
+   "x": 768,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_hameau_textile_0": {
+   "x": 1024,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_hameau_textile_1": {
+   "x": 1280,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_0": {
+   "x": 1536,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_1": {
+   "x": 1792,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_2": {
+   "x": 0,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_mur_0": {
+   "x": 256,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_paturage_0": {
+   "x": 512,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_paturage_1": {
+   "x": 768,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_verger_0": {
+   "x": 1024,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_verger_1": {
+   "x": 1280,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_foret_exploitee_0": {
+   "x": 1536,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_foret_exploitee_1": {
+   "x": 1792,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_foret_exploitee_2": {
+   "x": 0,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_lin_0": {
+   "x": 256,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_lin_1": {
+   "x": 512,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_elevage_laine_0": {
+   "x": 768,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_elevage_laine_1": {
+   "x": 1024,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_chantier_hameau_0": {
+   "x": 1280,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_chantier_hameau_1": {
+   "x": 1536,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_chantier_champ_0": {
+   "x": 1792,
+   "y": 1280,
+   "w": 256,
+   "h": 256
+  },
+  "bat_chantier_champ_1": {
+   "x": 0,
+   "y": 1536,
+   "w": 256,
+   "h": 256
+  }
+ },
+ "groupes": {
+  "terrain_plaine": [
+   "terrain_plaine_00",
+   "terrain_plaine_01",
+   "terrain_plaine_02",
+   "terrain_plaine_03",
+   "terrain_plaine_04",
+   "terrain_plaine_05",
+   "terrain_plaine_06",
+   "terrain_plaine_07",
+   "terrain_plaine_08",
+   "terrain_plaine_09"
+  ],
+  "infra_chemin_terre": {
+   "1": "infra_chemin_terre_01",
+   "2": "infra_chemin_terre_02",
+   "3": "infra_chemin_terre_03",
+   "4": "infra_chemin_terre_04",
+   "5": "infra_chemin_terre_05",
+   "6": "infra_chemin_terre_06",
+   "7": "infra_chemin_terre_07",
+   "8": "infra_chemin_terre_08",
+   "9": "infra_chemin_terre_09",
+   "10": "infra_chemin_terre_10",
+   "11": "infra_chemin_terre_11",
+   "12": "infra_chemin_terre_12",
+   "13": "infra_chemin_terre_13",
+   "14": "infra_chemin_terre_14",
+   "15": "infra_chemin_terre_15"
+  },
+  "bat_hameau": [
+   "bat_hameau_0",
+   "bat_hameau_1",
+   "bat_hameau_2"
+  ],
+  "bat_hameau_textile": [
+   "bat_hameau_textile_0",
+   "bat_hameau_textile_1"
+  ],
+  "bat_champ": [
+   "bat_champ_0",
+   "bat_champ_1",
+   "bat_champ_2"
+  ],
+  "bat_champ_mur": [
+   "bat_champ_mur_0"
+  ],
+  "bat_paturage": [
+   "bat_paturage_0",
+   "bat_paturage_1"
+  ],
+  "bat_verger": [
+   "bat_verger_0",
+   "bat_verger_1"
+  ],
+  "bat_foret_exploitee": [
+   "bat_foret_exploitee_0",
+   "bat_foret_exploitee_1",
+   "bat_foret_exploitee_2"
+  ],
+  "bat_champ_lin": [
+   "bat_champ_lin_0",
+   "bat_champ_lin_1"
+  ],
+  "bat_elevage_laine": [
+   "bat_elevage_laine_0",
+   "bat_elevage_laine_1"
+  ],
+  "bat_chantier_hameau": [
+   "bat_chantier_hameau_0",
+   "bat_chantier_hameau_1"
+  ],
+  "bat_chantier_champ": [
+   "bat_chantier_champ_0",
+   "bat_chantier_champ_1"
+  ]
+ },
+ "relief": {
+  "bat_hameau_0": {
+   "albedo": "relief/bat_hameau_0_albedo.png",
+   "normal": "relief/bat_hameau_0_normal.png"
+  },
+  "bat_hameau_1": {
+   "albedo": "relief/bat_hameau_1_albedo.png",
+   "normal": "relief/bat_hameau_1_normal.png"
+  },
+  "bat_hameau_2": {
+   "albedo": "relief/bat_hameau_2_albedo.png",
+   "normal": "relief/bat_hameau_2_normal.png"
+  },
+  "bat_hameau_textile_0": {
+   "albedo": "relief/bat_hameau_textile_0_albedo.png",
+   "normal": "relief/bat_hameau_textile_0_normal.png"
+  },
+  "bat_hameau_textile_1": {
+   "albedo": "relief/bat_hameau_textile_1_albedo.png",
+   "normal": "relief/bat_hameau_textile_1_normal.png"
+  }
+ }
+}

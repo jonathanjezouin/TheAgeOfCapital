@@ -47,8 +47,10 @@ Une **économie de subsistance** : un village isolé de **1750**, simulé de fa�
 
 ## Catalogue des tiles (identifiants d'assets)
 
-`terrain_plaine` (8 à 12 variantes d'herbe raccordables) · `infra_chemin_terre` (POC : **orthogonal seulement**, 15 combinaisons de demi-directions ; diagonales plus tard) ·
-`bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_hameau` · `bat_hameau_textile` · `bat_chantier` (variantes selon l'avancement à prévoir)
+`terrain_plaine` (10 variantes d'herbe raccordables) · `infra_chemin_terre` (POC : **orthogonal seulement**, 15 combinaisons de demi-directions indexées par masque ; diagonales plus tard) ·
+`bat_champ` (3) · `bat_champ_mur` (réservé aux saisons) · `bat_paturage` (2) · `bat_verger` (2) · `bat_foret_exploitee` (3) · `bat_champ_lin` (2) · `bat_elevage_laine` (2) · `bat_hameau` (3) · `bat_hameau_textile` (2) · `bat_chantier_hameau` (2) · `bat_chantier_champ` (2)
+
+49 tiles, générées par `graphGeneration/` (voir `03` §7) ; aperçu : `docs/img/atlas-assets.png` et `docs/img/apercu-village-assets.png`. Un état d'avancement du chantier (fondations, charpente…) reste à prévoir.
 
 Reportés : `bat_filature`, `bat_atelier_couture` (manufacture), `bat_quartier_rural` (bassin de peuplement de 1 000 hab).
 

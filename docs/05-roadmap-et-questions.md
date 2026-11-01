@@ -31,6 +31,8 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Rendements décroissants des terres, fertilité variable par tile, droits d'usage communaux du bois, prélèvements (dîme, rente, impôts) : le surplus qui quitte le village
 - Promotion de classe par la satisfaction du confort
 - Abandon des lieux en déclin (hameaux vides, terres sans bras), délai de production d'un verger
+- **Lumière en rotation** : shader de ré-éclairage à partir de l'albedo et des normales des hameaux (déjà générés, voir `03` §7) ; relief des autres sprites (arbres, bâtiments futurs)
+- Avancement visible d'un chantier (plusieurs états)
 - Congestion et livraisons différées : code présent mais **en sommeil** (capacités très au-dessus des flux dans le POC)
 - Poisson, coton, transformation du bois, nourriture industrielle
 - Autres terrains, infrastructures (route pavée, canal, rail, port), quartiers (artisan, bourgeois, urbain)

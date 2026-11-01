@@ -18,6 +18,9 @@ SS = 4  # sur-échantillonnage (anti-aliasing par réduction)
 
 # Lumière : x vers la droite, y vers le bas, z vers le haut. Ici venue du haut-gauche.
 DEFAULT_LIGHT = (-0.55, -0.60, 0.58)
+# Soleil au zénith : pans symétriques, aucune ombre portée (la lumière pourra tourner plus tard,
+# via l'image sans éclairage directionnel et la carte de normales).
+ZENITH = (0.0, 0.0, 1.0)
 
 BRICK = np.array([128, 92, 80], np.float32)
 MOSS = np.array([86, 100, 58], np.float32)
@@ -40,6 +43,9 @@ class HouseSprite:
     roof: Image.Image
     shadow: Image.Image
     meta: dict
+    # Pour ré-éclairer en jeu : couleur sans éclairage directionnel et normales (RGB = xyz * 0,5 + 0,5).
+    albedo: Image.Image = None
+    normal: Image.Image = None
 
     def composite(self):
         out = Image.new("RGBA", self.roof.size, (0, 0, 0, 0))
@@ -79,7 +85,7 @@ def _shift(a, dx, dy):
     return np.roll(np.roll(a, int(round(dy)), axis=0), int(round(dx)), axis=1)
 
 
-def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGHT):
+def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGHT, relief=0.36):
     """Retourne un HouseSprite (toit RGBA + ombre RGBA), à `ppm` pixels par mètre."""
     rng = np.random.default_rng(seed)
     L = np.asarray(light, np.float32)
@@ -139,7 +145,7 @@ def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGH
     gy, gx = np.gradient(hz)
     nrm = np.sqrt(gx**2 + gy**2 + 1.0)
     lam = (-gx * L[0] - gy * L[1] + L[2]) / nrm
-    shade = 1.0 + 0.36 * (lam / L[2] - 1.0)
+    shade = 1.0 + relief * (lam / L[2] - 1.0)
 
     # --- tuiles -------------------------------------------------------------
     Pr = culture.tile_row * k
@@ -193,8 +199,10 @@ def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGH
 
     # --- cheminées ----------------------------------------------------------
     n_chim = int(rng.integers(0, 1 + max(0, round(culture.chimney_max * (0.4 + wealth)))))
+    horiz = float(np.hypot(L[0], L[1]))
     sdir = np.array([-L[0], -L[1]], np.float32)
-    sdir /= np.linalg.norm(sdir)
+    if horiz > 1e-6:
+        sdir /= np.linalg.norm(sdir)
     chim_shadow = np.zeros((H, W), bool)
     chim_body = np.zeros((H, W), bool)
     chim_hole = np.zeros((H, W), bool)
@@ -210,8 +218,9 @@ def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGH
         cx, cy = cx * k, cy * k
         body = (np.abs(X - cx) < s / 2) & (np.abs(Y - cy) < s / 2)
         hole = (np.abs(X - cx) < s * 0.28) & (np.abs(Y - cy) < s * 0.28)
-        for t in np.linspace(0, 1.1 * k, 6):
-            chim_shadow |= _shift(body, sdir[0] * t, sdir[1] * t)
+        if horiz > 1e-6:  # soleil au zénith : pas d'ombre de cheminée
+            for t in np.linspace(0, 1.1 * k, 6):
+                chim_shadow |= _shift(body, sdir[0] * t, sdir[1] * t)
         chim_body |= body
         chim_hole |= hole
     chim_shadow &= mask & ~chim_body
@@ -232,12 +241,20 @@ def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGH
     alpha = (mask * 255).astype(np.uint8)
     roof = np.dstack([np.clip(rgb, 0, 255).astype(np.uint8), alpha])
     roof_img = Image.fromarray(roof, "RGBA").resize((Wf, Hf), Image.LANCZOS)
+    # Image sans éclairage directionnel (on retire l'ombrage de pente) et normales.
+    albedo = np.dstack([np.clip(rgb / np.clip(shade, 0.6, 1.4)[..., None], 0, 255).astype(np.uint8), alpha])
+    albedo_img = Image.fromarray(albedo, "RGBA").resize((Wf, Hf), Image.LANCZOS)
+    n_xyz = np.dstack([-gx / nrm, -gy / nrm, 1.0 / nrm])
+    n_xyz = np.where(mask[..., None], n_xyz, np.array([0.0, 0.0, 1.0], np.float32))
+    normal = np.dstack([np.clip((n_xyz * 0.5 + 0.5) * 255, 0, 255).astype(np.uint8), alpha])
+    normal_img = Image.fromarray(normal, "RGBA").resize((Wf, Hf), Image.LANCZOS)
 
     # --- ombre portée au sol + occlusion de contact ------------------------
     shadow_len = 2.0 * k
     sweep = np.zeros((H, W), np.float32)
-    for t in np.linspace(0, shadow_len, 10):
-        sweep = np.maximum(sweep, _shift(mask.astype(np.float32), sdir[0] * t, sdir[1] * t))
+    if horiz > 1e-6:  # soleil au zénith : seule l'assise de contact subsiste
+        for t in np.linspace(0, shadow_len, 10):
+            sweep = np.maximum(sweep, _shift(mask.astype(np.float32), sdir[0] * t, sdir[1] * t))
     sw = Image.fromarray((sweep * 255).astype(np.uint8)).filter(
         ImageFilter.GaussianBlur(0.35 * k))
     ao = Image.fromarray((mask * 255).astype(np.uint8)).filter(
@@ -249,4 +266,4 @@ def generate_house(seed, culture: Culture, wealth=0.5, ppm=6, light=DEFAULT_LIGH
 
     meta = dict(seed=seed, culture=culture.name, wealth=wealth, wear=round(wear, 2),
                 parts=len(parts), chimneys=n_chim, size=(Wf, Hf))
-    return HouseSprite(roof_img, shadow_img, meta)
+    return HouseSprite(roof_img, shadow_img, meta, albedo_img, normal_img)
