@@ -4,8 +4,6 @@
 use crate::donnees::{Catalogue, Qte};
 use crate::monde::{Contenu, Monde, DIRS};
 use serde::Serialize;
-use std::cmp::Reverse;
-use std::collections::BinaryHeap;
 
 #[derive(Clone, Debug, Serialize)]
 pub struct Segment {
@@ -29,6 +27,10 @@ pub struct Reseau {
     /// Nombre de lieux : quartiers (0..nq) puis bâtiments (nq..).
     pub nb_lieux: usize,
     chemins: Vec<Option<Chemin>>,
+    /// Voisins traversables de chaque tile : (tile, segment).
+    adj: Vec<Vec<(usize, usize)>>,
+    /// Tiles traversables par lesquelles on accède à chaque lieu.
+    acces_lieux: Vec<Vec<usize>>,
 }
 
 const AUCUN: usize = usize::MAX;
@@ -68,7 +70,7 @@ impl Reseau {
                     cap_nominale: cat.infra.capacite_nominale,
                     cap_max: cat.infra.capacite_max,
                     charge: 0,
-                    cout: cat.infra.cout_tuile,
+                    cout: 1,
                 });
                 adj[idx].push((v, s));
                 adj[v].push((idx, s));
@@ -81,8 +83,13 @@ impl Reseau {
             if lieu < nq {
                 return vec![monde.quartiers[lieu].tuile];
             }
-            let t = monde.batiments[lieu - nq].tuile;
-            // Bâtiment domestique : il partage la tile (et les rues) de son hameau.
+            let bat = &monde.batiments[lieu - nq];
+            let t = bat.tuile;
+            // Chantier terminé sans suite (hameau sans atelier) : lieu inerte, hors du réseau.
+            if cat.batiments[bat.type_id].chantier && bat.chantier.is_none() {
+                return Vec::new();
+            }
+            // Atelier embarqué : il partage la tile (et les rues) de son hameau.
             if matches!(monde.tuiles[t].contenu, Contenu::Quartier(_)) {
                 return vec![t];
             }
@@ -100,13 +107,52 @@ impl Reseau {
             v
         };
         let acces_lieux: Vec<Vec<usize>> = (0..nb_lieux).map(acces).collect();
+        let tuile_lieu = |lieu: usize| -> usize {
+            if lieu < nq {
+                monde.quartiers[lieu].tuile
+            } else {
+                monde.batiments[lieu - nq].tuile
+            }
+        };
 
         let mut chemins: Vec<Option<Chemin>> = vec![None; nb_lieux * nb_lieux];
+        // Recherche en largeur bornée par la distance limite (tous les segments coûtent 1), avec
+        // des tableaux réutilisés d'un lieu à l'autre : seul le voisinage est parcouru.
+        let mut dist = vec![i64::MAX; n_tuiles];
+        let mut prev = vec![(AUCUN, AUCUN); n_tuiles];
+        let mut touchees: Vec<usize> = Vec::new();
+        let mut file = std::collections::VecDeque::new();
+        let aretes_max = cat.infra.distance_max - 1;
         for de in 0..nb_lieux {
             if acces_lieux[de].is_empty() {
                 continue;
             }
-            let (dist, prev) = dijkstra(&acces_lieux[de], &adj, &segments, n_tuiles);
+            for &t in &touchees {
+                dist[t] = i64::MAX;
+                prev[t] = (AUCUN, AUCUN);
+            }
+            touchees.clear();
+            file.clear();
+            for &t in &acces_lieux[de] {
+                if dist[t] == i64::MAX {
+                    dist[t] = 0;
+                    touchees.push(t);
+                    file.push_back(t);
+                }
+            }
+            while let Some(t) = file.pop_front() {
+                if dist[t] >= aretes_max {
+                    continue;
+                }
+                for &(v, sg) in &adj[t] {
+                    if dist[v] == i64::MAX {
+                        dist[v] = dist[t] + 1;
+                        prev[v] = (t, sg);
+                        touchees.push(v);
+                        file.push_back(v);
+                    }
+                }
+            }
             for vers in 0..nb_lieux {
                 // Meilleure tile d'accès de la destination (ex æquo : plus petit index).
                 let Some(&cible) = acces_lieux[vers]
@@ -116,7 +162,13 @@ impl Reseau {
                 else {
                     continue;
                 };
-                if dist[cible] > cat.sim.rayon_max_cout {
+                // Distance = nombre de tiles chemin empruntées : arêtes + 1, ou 0 sur une même tile.
+                let distance = if tuile_lieu(de) == tuile_lieu(vers) {
+                    0
+                } else {
+                    dist[cible] + 1
+                };
+                if distance > cat.infra.distance_max {
                     continue;
                 }
                 let mut segs = Vec::new();
@@ -127,7 +179,7 @@ impl Reseau {
                 }
                 segs.reverse();
                 chemins[de * nb_lieux + vers] = Some(Chemin {
-                    cout: dist[cible],
+                    cout: distance,
                     segments: segs,
                 });
             }
@@ -136,38 +188,40 @@ impl Reseau {
             segments,
             nb_lieux,
             chemins,
+            adj,
+            acces_lieux,
         }
     }
-}
 
-fn dijkstra(
-    sources: &[usize],
-    adj: &[Vec<(usize, usize)>],
-    segments: &[Segment],
-    n: usize,
-) -> (Vec<i64>, Vec<(usize, usize)>) {
-    let mut dist = vec![i64::MAX; n];
-    let mut prev = vec![(AUCUN, AUCUN); n];
-    let mut tas = BinaryHeap::new();
-    for &s in sources {
-        dist[s] = 0;
-        tas.push(Reverse((0i64, s)));
+    /// Nombre de segments à franchir depuis `source` jusqu'à chaque tile traversable
+    /// (`i64::MAX` si inaccessible).
+    pub fn distances_depuis(&self, source: usize) -> Vec<i64> {
+        self.distances_depuis_tuiles(&[source])
     }
-    while let Some(Reverse((d, t))) = tas.pop() {
-        if d > dist[t] {
-            continue;
+
+    /// Tiles traversables par lesquelles on accède au lieu.
+    pub fn acces(&self, lieu: usize) -> &[usize] {
+        &self.acces_lieux[lieu]
+    }
+
+    /// Comme `distances_depuis`, à partir de plusieurs tiles de départ.
+    pub fn distances_depuis_tuiles(&self, sources: &[usize]) -> Vec<i64> {
+        let mut d = vec![i64::MAX; self.adj.len()];
+        let mut file = std::collections::VecDeque::new();
+        for &source in sources {
+            d[source] = 0;
+            file.push_back(source);
         }
-        for &(v, s) in &adj[t] {
-            let nd = d + segments[s].cout;
-            // Départage déterministe : à coût égal, on garde le premier trouvé (ordre des segments).
-            if nd < dist[v] {
-                dist[v] = nd;
-                prev[v] = (t, s);
-                tas.push(Reverse((nd, v)));
+        while let Some(t) = file.pop_front() {
+            for &(v, _) in &self.adj[t] {
+                if d[v] == i64::MAX {
+                    d[v] = d[t] + 1;
+                    file.push_back(v);
+                }
             }
         }
+        d
     }
-    (dist, prev)
 }
 
 /// Tiles occupées par un lieu — utilitaire de test / d'affichage.

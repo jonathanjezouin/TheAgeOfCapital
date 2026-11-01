@@ -28,6 +28,8 @@ struct Brut {
     simulation: BrutSim,
     infrastructure: BrutInfra,
     habitat: BrutHabitat,
+    habitats: Vec<BrutTypeHabitat>,
+    extension: BrutExtension,
     demographie: BrutDemo,
     mobilite: BrutMobilite,
     vital: BrutVital,
@@ -43,7 +45,6 @@ struct BrutSim {
     jours_stock_sortie: f64,
     jours_stock_entree: f64,
     jours_stock_quartier: f64,
-    rayon_max_cout: i64,
     nb_rondes_appel_offres: usize,
     stock_initial_quartier_jours: f64,
     stock_initial_entree_jours: f64,
@@ -52,7 +53,7 @@ struct BrutSim {
 
 #[derive(Deserialize)]
 struct BrutInfra {
-    cout_tuile: i64,
+    distance_max: i64,
     capacite_nominale: f64,
     capacite_max: f64,
     poids_trajet_pop: f64,
@@ -60,8 +61,31 @@ struct BrutInfra {
 
 #[derive(Deserialize)]
 struct BrutHabitat {
+    densite_max_pops: u32,
+}
+
+#[derive(Deserialize)]
+struct BrutCout {
+    travail_pop_jours: f64,
+    equipe: u32,
+    bois: f64,
+}
+
+#[derive(Deserialize)]
+struct BrutTypeHabitat {
+    nom: String,
+    asset: String,
     capacite_pops: u32,
-    batiment_domestique: Option<String>,
+    atelier: Option<String>,
+    cout_creation: BrutCout,
+}
+
+#[derive(Deserialize)]
+struct BrutExtension {
+    periode_jours: u64,
+    chantiers_max: usize,
+    materiau: String,
+    couverture_donneur_jours: f64,
 }
 
 #[derive(Deserialize)]
@@ -121,7 +145,10 @@ struct BrutBatiment {
     asset: String,
     pops: u32,
     #[serde(default)]
-    domestique: bool,
+    chantier: bool,
+    #[serde(default)]
+    fertile: bool,
+    cout_creation: Option<BrutCout>,
     etapes: Vec<BrutEtape>,
 }
 
@@ -133,7 +160,6 @@ pub struct ParamsSim {
     pub jours_stock_sortie: f64,
     pub jours_stock_entree: f64,
     pub jours_stock_quartier: f64,
-    pub rayon_max_cout: i64,
     pub nb_rondes: usize,
     pub stock_initial_quartier_jours: f64,
     pub stock_initial_entree_jours: f64,
@@ -142,7 +168,8 @@ pub struct ParamsSim {
 
 #[derive(Clone, Debug)]
 pub struct ParamsInfra {
-    pub cout_tuile: i64,
+    /// Nombre maximal de tiles chemin entre deux lieux (travail, approvisionnement).
+    pub distance_max: i64,
     pub capacite_nominale: Qte,
     pub capacite_max: Qte,
     pub poids_trajet_pop: Qte,
@@ -150,9 +177,46 @@ pub struct ParamsInfra {
 
 #[derive(Clone, Debug)]
 pub struct ParamsHabitat {
+    /// Plafond de densité de toute tile d'habitat.
+    pub densite_max_pops: u32,
+}
+
+/// Coût de création : travail d'une équipe (pop-jours, milli) et matériau (milli-unités au total).
+#[derive(Clone, Debug)]
+pub struct CoutCreation {
+    pub travail: Qte,
+    pub equipe: u32,
+    pub materiau: Qte,
+}
+
+impl CoutCreation {
+    /// Matériau consommé par pop-jour de travail (milli-unités).
+    pub fn materiau_par_pop_jour(&self) -> Qte {
+        if self.travail > 0 {
+            mul_div(self.materiau, U, self.travail)
+        } else {
+            0
+        }
+    }
+}
+
+/// Type de tile d'habitat (hameau, plus tard quartier ouvrier…).
+#[derive(Clone, Debug)]
+pub struct TypeHabitat {
+    pub nom: String,
+    pub asset: String,
     pub capacite_pops: u32,
-    /// Type de bâtiment de production domestique embarqué dans chaque hameau.
-    pub domestique: Option<usize>,
+    /// Type de bâtiment (1 poste) embarqué sur la même tile : travail sur place.
+    pub atelier: Option<usize>,
+    pub cout_creation: CoutCreation,
+}
+
+#[derive(Clone, Debug)]
+pub struct ParamsExtension {
+    pub periode_jours: u64,
+    pub chantiers_max: usize,
+    pub materiau: usize,
+    pub couverture_donneur_jours: f64,
 }
 
 #[derive(Clone, Debug)]
@@ -205,10 +269,13 @@ pub struct Etape {
 pub struct TypeBatiment {
     pub nom: String,
     pub asset: String,
-    /// Effectif plein (en pops). Pour un bâtiment domestique : effectif de référence des résidents.
+    /// Effectif plein (en pops).
     pub pops: u32,
-    /// Travail fait par les résidents du hameau : ni poste, ni trajet.
-    pub domestique: bool,
+    /// Site de chantier (défrichement ou construction) ; l'équipe est propre à chaque chantier.
+    pub chantier: bool,
+    /// La production est proportionnelle à la fertilité de la tile.
+    pub fertile: bool,
+    pub cout_creation: Option<CoutCreation>,
     pub etapes: Vec<Etape>,
 }
 
@@ -250,6 +317,13 @@ impl TypeBatiment {
         v
     }
 
+    /// Le bâtiment livre-t-il `res` en sortie finale ? (sans allocation)
+    pub fn livre(&self, res: usize) -> bool {
+        self.etapes.iter().enumerate().any(|(i, e)| {
+            e.extrants.iter().any(|(r, _)| *r == res) && !self.consomme_ensuite(i, res)
+        })
+    }
+
     /// Une étape postérieure à `etape` consomme-t-elle `res` ?
     pub fn consomme_ensuite(&self, etape: usize, res: usize) -> bool {
         self.etapes[etape + 1..]
@@ -263,6 +337,8 @@ pub struct Catalogue {
     pub sim: ParamsSim,
     pub infra: ParamsInfra,
     pub habitat: ParamsHabitat,
+    pub habitats: Vec<TypeHabitat>,
+    pub extension: ParamsExtension,
     pub demo: ParamsDemo,
     pub mobilite: ParamsMobilite,
     pub vital: Vital,
@@ -297,6 +373,11 @@ impl Catalogue {
                 .position(|r| r.nom == nom)
                 .ok_or_else(|| format!("ressource inconnue : {nom}"))
         };
+        let cout_de = |c: &BrutCout| CoutCreation {
+            travail: en_milli(c.travail_pop_jours),
+            equipe: c.equipe,
+            materiau: en_milli(c.bois),
+        };
         let besoins_de = |v: &Vec<BrutBesoin>| -> Result<Vec<Besoin>, String> {
             v.iter()
                 .map(|x| {
@@ -313,7 +394,7 @@ impl Catalogue {
             if x.pops == 0 {
                 return Err(format!("bâtiment {} sans effectif", x.nom));
             }
-            if x.etapes.is_empty() {
+            if x.etapes.is_empty() && !x.chantier {
                 return Err(format!("bâtiment {} sans étape de production", x.nom));
             }
             let conv = |v: &Vec<BrutFlux>| -> Result<Vec<(usize, Qte)>, String> {
@@ -332,19 +413,31 @@ impl Catalogue {
                 nom: x.nom.clone(),
                 asset: x.asset.clone(),
                 pops: x.pops,
-                domestique: x.domestique,
+                chantier: x.chantier,
+                fertile: x.fertile,
+                cout_creation: x.cout_creation.as_ref().map(cout_de),
                 etapes,
             });
         }
-        let domestique = match &b.habitat.batiment_domestique {
-            None => None,
-            Some(nom) => Some(
-                batiments
-                    .iter()
-                    .position(|t| &t.nom == nom && t.domestique)
-                    .ok_or_else(|| format!("bâtiment domestique inconnu : {nom}"))?,
-            ),
-        };
+        let mut habitats = Vec::new();
+        for h in &b.habitats {
+            let atelier = match &h.atelier {
+                None => None,
+                Some(nom) => Some(
+                    batiments
+                        .iter()
+                        .position(|t| &t.nom == nom && !t.chantier)
+                        .ok_or_else(|| format!("{} : atelier inconnu : {nom}", h.nom))?,
+                ),
+            };
+            habitats.push(TypeHabitat {
+                nom: h.nom.clone(),
+                asset: h.asset.clone(),
+                capacite_pops: h.capacite_pops,
+                atelier,
+                cout_creation: cout_de(&h.cout_creation),
+            });
+        }
 
         let cat = Catalogue {
             sim: ParamsSim {
@@ -352,22 +445,27 @@ impl Catalogue {
                 jours_stock_sortie: b.simulation.jours_stock_sortie,
                 jours_stock_entree: b.simulation.jours_stock_entree,
                 jours_stock_quartier: b.simulation.jours_stock_quartier,
-                rayon_max_cout: b.simulation.rayon_max_cout,
                 nb_rondes: b.simulation.nb_rondes_appel_offres,
                 stock_initial_quartier_jours: b.simulation.stock_initial_quartier_jours,
                 stock_initial_entree_jours: b.simulation.stock_initial_entree_jours,
                 stock_initial_sortie_jours: b.simulation.stock_initial_sortie_jours,
             },
             infra: ParamsInfra {
-                cout_tuile: b.infrastructure.cout_tuile,
+                distance_max: b.infrastructure.distance_max,
                 capacite_nominale: en_milli(b.infrastructure.capacite_nominale),
                 capacite_max: en_milli(b.infrastructure.capacite_max),
                 poids_trajet_pop: en_milli(b.infrastructure.poids_trajet_pop),
             },
             habitat: ParamsHabitat {
-                capacite_pops: b.habitat.capacite_pops,
-                domestique,
+                densite_max_pops: b.habitat.densite_max_pops,
             },
+            extension: ParamsExtension {
+                periode_jours: b.extension.periode_jours,
+                chantiers_max: b.extension.chantiers_max,
+                materiau: id(&b.extension.materiau)?,
+                couverture_donneur_jours: b.extension.couverture_donneur_jours,
+            },
+            habitats,
             demo: ParamsDemo {
                 habitants_par_pop: b.demographie.habitants_par_pop,
                 croissance_satisfaite_ppm: en_ppm(b.demographie.croissance_satisfaite),
@@ -398,8 +496,22 @@ impl Catalogue {
         if self.infra.capacite_max < self.infra.capacite_nominale {
             return Err("capacite_max < capacite_nominale".into());
         }
-        if self.habitat.capacite_pops == 0 {
-            return Err("capacite_pops du hameau nulle".into());
+        if self.habitats.is_empty() {
+            return Err("aucun type d'habitat".into());
+        }
+        for h in &self.habitats {
+            if h.capacite_pops == 0 || h.capacite_pops > self.habitat.densite_max_pops {
+                return Err(format!(
+                    "{} : capacité hors de 1..={}",
+                    h.nom, self.habitat.densite_max_pops
+                ));
+            }
+        }
+        if self.batiments.iter().filter(|t| t.chantier).count() != 1 {
+            return Err("il faut exactement un type de bâtiment « chantier »".into());
+        }
+        if self.infra.distance_max < 1 {
+            return Err("distance_max < 1".into());
         }
         if self.mobilite.periode_jours == 0 {
             return Err("periode_jours de mobilité nulle".into());
@@ -426,7 +538,7 @@ impl Catalogue {
         if self.producteurs(self.vital.chauffage_ressource).is_empty() {
             return Err("aucun producteur de la ressource de chauffage".into());
         }
-        for t in &self.batiments {
+        for t in self.batiments.iter().filter(|t| !t.chantier) {
             for (r, _) in t.intrants_externes() {
                 if self.producteurs(r).is_empty() {
                     return Err(format!(
@@ -443,6 +555,18 @@ impl Catalogue {
         self.ressources.iter().position(|r| r.nom == nom)
     }
 
+    pub fn hab_id(&self, nom: &str) -> Option<usize> {
+        self.habitats.iter().position(|h| h.nom == nom)
+    }
+
+    /// Type de bâtiment « chantier ».
+    pub fn type_chantier(&self) -> usize {
+        self.batiments
+            .iter()
+            .position(|t| t.chantier)
+            .expect("type chantier")
+    }
+
     pub fn bat_id(&self, nom: &str) -> Option<usize> {
         self.batiments.iter().position(|b| b.nom == nom)
     }
@@ -450,12 +574,7 @@ impl Catalogue {
     /// Types de bâtiments qui livrent la ressource en sortie finale.
     pub fn producteurs(&self, res: usize) -> Vec<usize> {
         (0..self.batiments.len())
-            .filter(|&i| {
-                self.batiments[i]
-                    .extrants_finaux()
-                    .iter()
-                    .any(|(r, _)| *r == res)
-            })
+            .filter(|&i| self.batiments[i].livre(res))
             .collect()
     }
 

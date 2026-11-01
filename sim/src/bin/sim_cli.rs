@@ -10,7 +10,8 @@ fn aide() -> ! {
     eprintln!(
         "sim-cli [--annees N] [--graine N] [--hameaux N] [--occupation PCT]\n\
          \x20       [--donnees fichier.toml] [--accel X] [--csv fichier.csv] [--pas JOURS]\n\
-         \x20       [--json-final fichier.json]"
+         \x20       [--json-final fichier.json] [--carte] [--journal]\n\
+         \x20       [--rayon-fertile T] [--rayon-sterile T]"
     );
     std::process::exit(2)
 }
@@ -18,6 +19,7 @@ fn aide() -> ! {
 fn main() {
     let mut args = std::env::args().skip(1);
     let (mut annees, mut pas) = (50u64, 30u64);
+    let (mut carte, mut journal) = (false, false);
     let mut pv = ParamsVillage::default();
     let (mut donnees, mut csv, mut json, mut accel): (
         Option<String>,
@@ -37,6 +39,10 @@ fn main() {
             "--donnees" => donnees = Some(val()),
             "--csv" => csv = Some(val()),
             "--json-final" => json = Some(val()),
+            "--rayon-fertile" => pv.rayon_fertile = val().parse().unwrap_or_else(|_| aide()),
+            "--rayon-sterile" => pv.rayon_sterile = val().parse().unwrap_or_else(|_| aide()),
+            "--carte" => carte = true,
+            "--journal" => journal = true,
             _ => aide(),
         }
     }
@@ -118,7 +124,7 @@ fn main() {
 
     // Résumé lisible.
     println!(
-        "Village graine {} : {} hameaux, {} lieux de production, {} segments",
+        "Village graine {} : {} hameaux, {} lieux de production, {} segments, {} chantiers",
         pv.graine,
         sim.monde.quartiers.len(),
         sim.monde
@@ -126,7 +132,8 @@ fn main() {
             .iter()
             .filter(|b| b.quartier.is_none())
             .count(),
-        sim.reseau.segments.len()
+        sim.reseau.segments.len(),
+        sim.chantiers_en_cours()
     );
     println!(
         "Après {} ans : {} pops, {} sans poste",
@@ -153,14 +160,32 @@ fn main() {
             Limitant::Intrant(r) => format!("intrant {}", sim.cat.ressources[r].nom),
             Limitant::StockPlein => "stock plein".to_string(),
         };
-        let effectif = if t.domestique { bat.presents } else { occ[b] };
+        let effectif = occ[b];
+        let postes = sim.postes_de(b);
         println!(
             "  {:<19} {}/{} pops, production {:>3}%  limite : {lim}",
-            t.nom,
+            if bat.chantier.is_some() {
+                "(chantier)"
+            } else {
+                t.nom.as_str()
+            },
             effectif,
-            t.pops,
+            postes,
             bat.prod_ppm * 100 / PPM
         );
+    }
+    if carte {
+        println!("\n{}", sim.carte_ascii());
+    }
+    if journal {
+        for e in &sim.evenements {
+            println!(
+                "  an {:>4} jour {:>3} : {}",
+                e.jour / 365,
+                e.jour % 365,
+                e.texte
+            );
+        }
     }
     let ecart = sim.ecart_conservation();
     println!(

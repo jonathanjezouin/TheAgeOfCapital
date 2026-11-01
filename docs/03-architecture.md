@@ -75,8 +75,8 @@ Tile
   firme_id        (nullable)
   capacite_max
   stock           { ressource: qte }
-  capacite_logement (si quartier ; population = Σ des pops de la tile)
-  croissance_accumulee (si quartier ; natalité / mortalité, voir `02` §6)
+  capacite_logement (si habitat ; population = Σ des pops de la tile)
+  fertilite       (ppm de 1,0 ; multiplie la production des terres exploitées ; le terrain reste unique)
   valeur_fonciere (non utilisé POC)
 
 Firme
@@ -121,13 +121,13 @@ Pop (unité de population, 100 hab fixe)
   richesse, droits_politiques      (nullable, non utilisé POC)
 
 Hameau / Quartier (tile d'habitat)
-  capacite_pops, batiment_domestique (nullable : travail textile à domicile, même tile)
+  habitat_id (hameau | hameau_textile), capacite_pops (0 pendant la construction), atelier (nullable : bâtiment à 1 poste sur la même tile)
   stock, vital_jour, confort_jour, couverture par ressource, vital_annuel, confort_annuel
   salaire_reference (POC-B)
 
 Batiment (type)
   secteur, etapes [{intrants [{ressource, qte}], extrants [{ressource, qte}]}]   (étapes enchaînées le même jour)
-  emploi (en pops), domestique (travail des résidents du hameau : ni poste ni trajet), niveau_tech, contraintes_geo
+  emploi (en pops), fertile (production × fertilité de la tile), cout_creation (travail en pop-jours, équipe, matériau), chantier (type de site : défrichement ou construction), niveau_tech, contraintes_geo
 ```
 
 Ressources : `MAIN_OEUVRE` est une ressource ordinaire (stock dans le quartier, circule par liens, contribue à la congestion). Liste POC dans `04-poc.md`.

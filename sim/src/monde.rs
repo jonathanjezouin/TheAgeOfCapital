@@ -32,15 +32,21 @@ pub struct Tuile {
     pub contenu: Contenu,
     /// Variante visuelle (herbe, sprite de bâtiment) : pur rendu, aucune incidence économique.
     pub variante: u8,
+    /// Fertilité de la tile (ppm de 1,0) : proportionnelle à la production des terres exploitées.
+    /// Le terrain reste unique (plaine) ; seule la qualité de la terre varie.
+    pub fertilite_ppm: i64,
 }
 
 /// Un hameau : lieu de vie à faible densité (logement + travail domestique).
 #[derive(Clone, Debug, Serialize)]
 pub struct Quartier {
     pub tuile: usize,
+    /// Index dans `Catalogue::habitats`.
+    pub habitat_id: usize,
+    /// Capacité de logement (0 tant que le hameau est en construction).
     pub capacite_pops: u32,
-    /// Bâtiment de production domestique embarqué (même tuile), s'il y en a un.
-    pub domestique: Option<usize>,
+    /// Bâtiment embarqué sur la même tile (atelier textile), s'il y en a un.
+    pub atelier: Option<usize>,
     pub stock: Vec<Qte>,
     /// Besoins vitaux couverts (0..1 en ppm) lors du dernier jour.
     pub vital_jour_ppm: i64,
@@ -68,8 +74,12 @@ pub enum Limitant {
 pub struct Batiment {
     pub type_id: usize,
     pub tuile: usize,
-    /// Hameau auquel appartient un bâtiment domestique.
+    /// Hameau auquel appartient un atelier embarqué (même tile).
     pub quartier: Option<usize>,
+    /// Effectif de l'équipe, pour un site de chantier.
+    pub equipe: u32,
+    /// Travail restant avant mise en service, pour un site de chantier.
+    pub chantier: Option<Chantier>,
     pub stock_entree: Vec<Qte>,
     pub stock_sortie: Vec<Qte>,
     /// Pops arrivées au poste aujourd'hui.
@@ -77,6 +87,26 @@ pub struct Batiment {
     /// Production effective du dernier jour, en ppm de la production maximale.
     pub prod_ppm: i64,
     pub limitant: Limitant,
+}
+
+/// Ce qu'un chantier produit une fois terminé.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Cible {
+    /// Défrichement : la tile devient une terre exploitée de ce type de bâtiment.
+    Terre(usize),
+    /// Construction : le hameau d'index donné ouvre ses logements.
+    Hameau(usize),
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub struct Chantier {
+    pub cible: Cible,
+    /// En milli-pop-jours.
+    pub travail_restant: Qte,
+    /// Travail total du chantier (milli-pop-jours) et matériau total (milli-unités) :
+    /// le matériau se consomme au prorata du travail accompli, sans arrondi cumulé.
+    pub travail_total: Qte,
+    pub materiau_total: Qte,
 }
 
 #[derive(Clone, Debug, Serialize)]

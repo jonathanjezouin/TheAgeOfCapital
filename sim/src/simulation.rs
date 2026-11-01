@@ -2,7 +2,7 @@
 //! et réorientation de la main-d'œuvre selon le besoin (docs/02 §3).
 
 use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, PPM};
-use crate::monde::{Limitant, Monde};
+use crate::monde::{Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier, DIRS};
 use crate::reseau::Reseau;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -60,6 +60,22 @@ pub struct ResumeAn {
     pub confort_moy_ppm: i64,
 }
 
+/// Fait marquant, pour le journal d'événements affiché au joueur.
+#[derive(Clone, Debug, Serialize)]
+pub struct Evenement {
+    pub jour: u64,
+    pub texte: String,
+}
+
+/// Emplacement choisi pour un nouveau lieu : tile libre, tile traversable où l'on s'accroche,
+/// et éventuellement une tile de chemin à créer entre les deux.
+#[derive(Clone, Copy, Debug)]
+struct Site {
+    tuile: usize,
+    attache: usize,
+    route: Option<usize>,
+}
+
 #[derive(Clone, Debug)]
 pub struct Simulation {
     pub cat: Catalogue,
@@ -74,6 +90,7 @@ pub struct Simulation {
     pub historique: Vec<ResumeAn>,
     pub naissances_an: u32,
     pub deces_an: u32,
+    pub evenements: Vec<Evenement>,
     /// `fournisseurs[lieu_client][ressource]` = (coût, lieu fournisseur), du plus proche au plus loin.
     /// Un hameau est son propre fournisseur le plus proche (coût 0) : le producteur mange d'abord.
     fournisseurs: Vec<Vec<Vec<(i64, usize)>>>,
@@ -201,6 +218,7 @@ impl Simulation {
             historique: Vec::new(),
             naissances_an: 0,
             deces_an: 0,
+            evenements: Vec::new(),
             fournisseurs: Vec::new(),
         };
         sim.calculer_fournisseurs();
@@ -212,30 +230,56 @@ impl Simulation {
         self.monde.quartiers.len()
     }
 
-    fn est_domestique(&self, b: usize) -> bool {
-        self.cat.batiments[self.monde.batiments[b].type_id].domestique
+    /// Postes d'un lieu : effectif de l'équipe pour un chantier, effectif du type sinon.
+    pub fn postes_de(&self, b: usize) -> u32 {
+        let bat = &self.monde.batiments[b];
+        let t = &self.cat.batiments[bat.type_id];
+        if t.chantier {
+            bat.equipe
+        } else {
+            t.pops
+        }
+    }
+
+    fn est_chantier_type(&self, b: usize) -> bool {
+        self.cat.batiments[self.monde.batiments[b].type_id].chantier
+    }
+
+    fn journal(&mut self, texte: String) {
+        if self.evenements.len() < 20_000 {
+            self.evenements.push(Evenement {
+                jour: self.jour,
+                texte,
+            });
+        }
+    }
+
+    fn reconstruire_reseau(&mut self) {
+        self.reseau = Reseau::construire(&self.monde, &self.cat);
+        self.calculer_fournisseurs();
     }
 
     fn calculer_fournisseurs(&mut self) {
         let nq = self.nq();
         let nr = self.cat.ressources.len();
         let nb_lieux = nq + self.monde.batiments.len();
+        // Producteurs de chaque ressource (lieux), calculés une fois.
+        let producteurs: Vec<Vec<usize>> = (0..nr)
+            .map(|r| {
+                (0..self.monde.batiments.len())
+                    .filter(|&b| self.cat.batiments[self.monde.batiments[b].type_id].livre(r))
+                    .map(|b| nq + b)
+                    .collect()
+            })
+            .collect();
         let mut f = vec![vec![Vec::new(); nr]; nb_lieux];
         for client in 0..nb_lieux {
             for res in 0..nr {
-                let mut v: Vec<(i64, usize)> = Vec::new();
-                for (b, bat) in self.monde.batiments.iter().enumerate() {
-                    let produit = self.cat.batiments[bat.type_id]
-                        .extrants_finaux()
-                        .iter()
-                        .any(|(r, _)| *r == res);
-                    if !produit || nq + b == client {
-                        continue;
-                    }
-                    if let Some(ch) = self.reseau.chemin(client, nq + b) {
-                        v.push((ch.cout, nq + b));
-                    }
-                }
+                let mut v: Vec<(i64, usize)> = producteurs[res]
+                    .iter()
+                    .filter(|&&p| p != client)
+                    .filter_map(|&p| self.reseau.chemin(client, p).map(|ch| (ch.cout, p)))
+                    .collect();
                 v.sort();
                 f[client][res] = v;
             }
@@ -369,8 +413,9 @@ impl Simulation {
         self.resoudre_contrats();
         // 3. Main-d'œuvre : trajets domicile-travail.
         self.resoudre_main_oeuvre();
-        // 4. Production.
+        // 4. Production, avancement des chantiers.
         self.produire();
+        self.terminer_chantiers();
         // 5. Consommation des pops et couverture des besoins.
         self.consommer();
         // 6. Jauges de croissance : naissances et disparitions de pops.
@@ -382,6 +427,9 @@ impl Simulation {
         self.jour += 1;
         if self.jour % self.cat.mobilite.periode_jours == 0 {
             self.reaffecter();
+        }
+        if self.jour % self.cat.extension.periode_jours == 0 {
+            self.etendre();
         }
         if self.jour % self.cat.sim.jours_par_an as u64 == 0 {
             self.fin_annee();
@@ -416,9 +464,25 @@ impl Simulation {
                     ));
                 }
             } else {
-                let t = &self.cat.batiments[self.monde.batiments[client - nq].type_id];
-                for (r, q) in t.intrants_externes() {
-                    besoins.push((r, q, self.cat.sim.jours_stock_entree));
+                let bat = &self.monde.batiments[client - nq];
+                if let Some(ch) = &bat.chantier {
+                    // Un chantier commande le matériau dont son équipe a besoin chaque jour.
+                    let par_jour = mul_div(
+                        ch.materiau_total,
+                        bat.equipe as i64 * 1000,
+                        ch.travail_total.max(1),
+                    );
+                    if par_jour > 0 {
+                        besoins.push((
+                            self.cat.extension.materiau,
+                            par_jour,
+                            self.cat.sim.jours_stock_entree,
+                        ));
+                    }
+                } else {
+                    for (r, q) in self.cat.batiments[bat.type_id].intrants_externes() {
+                        besoins.push((r, q, self.cat.sim.jours_stock_entree));
+                    }
                 }
             }
             besoins.sort_by_key(|b| b.0);
@@ -519,14 +583,20 @@ impl Simulation {
     }
 
     fn produire(&mut self) {
-        let eff = self.effectifs();
         let cat = &self.cat;
+        let tuiles = &self.monde.tuiles;
         for b in &mut self.monde.batiments {
             let t = &cat.batiments[b.type_id];
-            if t.domestique {
-                // Travail à domicile : les résidents du hameau, sans poste ni trajet.
-                b.presents = b.quartier.map_or(0, |q| eff[q]).min(t.pops);
+            if t.chantier {
+                Self::avancer_chantier(b, cat, &mut self.bilan);
+                continue;
             }
+            // La fertilité de la tile module la production des terres exploitées.
+            let fert = if t.fertile {
+                tuiles[b.tuile].fertilite_ppm
+            } else {
+                PPM
+            };
             let f_mo = b.presents as i64 * PPM / t.pops as i64;
             let mut f_min = PPM;
             let mut limitant = Limitant::Aucun;
@@ -564,7 +634,7 @@ impl Simulation {
                     self.bilan.consomme_prod[r] += c;
                 }
                 for &(r, q) in &e.extrants {
-                    let p = mul_div(q, f, PPM);
+                    let p = mul_div(mul_div(q, f, PPM), fert, PPM);
                     self.bilan.produit[r] += p;
                     if t.consomme_ensuite(si, r) {
                         b.stock_entree[r] += p; // matière intermédiaire, consommée par l'étape suivante
@@ -586,6 +656,91 @@ impl Simulation {
                 limitant
             };
         }
+    }
+
+    /// Un jour de travail sur un chantier : l'équipe présente avance, au rythme du matériau disponible.
+    fn avancer_chantier(b: &mut Batiment, cat: &Catalogue, bilan: &mut Bilan) {
+        b.prod_ppm = 0;
+        let presents = b.presents as i64;
+        let equipe = b.equipe;
+        let Some(ch) = b.chantier.as_mut() else {
+            b.limitant = Limitant::Aucun;
+            return;
+        };
+        let mat = cat.extension.materiau;
+        // Matériau nécessaire pour la journée de travail de l'équipe présente.
+        let besoin = mul_div(ch.materiau_total, presents * 1000, ch.travail_total.max(1));
+        let f_mat = if besoin > 0 {
+            (b.stock_entree[mat] * PPM / besoin).min(PPM)
+        } else {
+            PPM
+        };
+        let progres = (presents * 1000 * f_mat / PPM).min(ch.travail_restant.max(0)); // milli-pop-jours
+        let conso =
+            mul_div(ch.materiau_total, progres, ch.travail_total.max(1)).min(b.stock_entree[mat]);
+        b.stock_entree[mat] -= conso;
+        bilan.consomme_prod[mat] += conso;
+        ch.travail_restant -= progres;
+        b.limitant = if f_mat < PPM {
+            Limitant::Intrant(mat)
+        } else if (b.presents) < equipe {
+            Limitant::MainOeuvre
+        } else {
+            Limitant::Aucun
+        };
+    }
+
+    /// Met en service les chantiers dont le travail est achevé : l'équipe devient la première main-d'œuvre.
+    fn terminer_chantiers(&mut self) {
+        let finis: Vec<usize> = (0..self.monde.batiments.len())
+            .filter(|&b| {
+                self.monde.batiments[b]
+                    .chantier
+                    .as_ref()
+                    .map_or(false, |c| c.travail_restant <= 0)
+            })
+            .collect();
+        if finis.is_empty() {
+            return;
+        }
+        for b in finis {
+            let ch = self.monde.batiments[b].chantier.take().expect("chantier");
+            let (x, y) = self.monde.xy(self.monde.batiments[b].tuile);
+            match ch.cible {
+                Cible::Terre(t) => {
+                    self.monde.batiments[b].type_id = t;
+                    self.monde.batiments[b].equipe = 0;
+                    let nom = self.cat.batiments[t].nom.clone();
+                    self.journal(format!("Nouvelle terre exploitée : {nom} en ({x}, {y})"));
+                }
+                Cible::Hameau(q) => {
+                    let h = &self.cat.habitats[self.monde.quartiers[q].habitat_id];
+                    let (cap, atelier, nom) = (h.capacite_pops, h.atelier, h.nom.clone());
+                    self.monde.quartiers[q].capacite_pops = cap;
+                    self.monde.batiments[b].equipe = 0;
+                    // Le matériau resté sur le chantier revient au hameau.
+                    let mat = self.cat.extension.materiau;
+                    let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
+                    self.monde.quartiers[q].stock[mat] += reste;
+                    if let Some(at) = atelier {
+                        self.monde.batiments[b].type_id = at;
+                        self.monde.batiments[b].quartier = Some(q);
+                        self.monde.quartiers[q].atelier = Some(b);
+                    }
+                    self.journal(format!("Nouveau hameau construit : {nom} en ({x}, {y})"));
+                }
+            }
+            // Les bras de l'équipe en surnombre redeviennent sans poste.
+            let postes = self.postes_de(b);
+            let mut equipe: Vec<usize> = (0..self.pops.len())
+                .filter(|&i| self.pops[i].emploi == Some(b))
+                .collect();
+            equipe.sort_by_key(|&i| self.pops[i].id);
+            for &i in equipe.iter().skip(postes as usize) {
+                self.pops[i].emploi = None;
+            }
+        }
+        self.calculer_fournisseurs();
     }
 
     fn consommer(&mut self) {
@@ -683,19 +838,19 @@ impl Simulation {
 
     // ---------- Postes ----------
 
-    /// Poste vacant le plus proche du hameau : (coût, taux de remplissage, index) minimal.
+    /// Poste vacant le plus proche du hameau : (distance, taux de remplissage, index) minimal.
     fn meilleur_poste(&self, q: usize, occ: &[u32]) -> Option<usize> {
         let nq = self.nq();
         let mut best: Option<((i64, i64, usize), usize)> = None;
-        for (b, bat) in self.monde.batiments.iter().enumerate() {
-            let t = &self.cat.batiments[bat.type_id];
-            if t.domestique || occ[b] >= t.pops {
+        for b in 0..self.monde.batiments.len() {
+            let postes = self.postes_de(b);
+            if occ[b] >= postes {
                 continue;
             }
             let Some(ch) = self.reseau.chemin(q, nq + b) else {
                 continue;
             };
-            let cle = (ch.cout, occ[b] as i64 * 1000 / t.pops as i64, b);
+            let cle = (ch.cout, occ[b] as i64 * 1000 / postes as i64, b);
             if best.map_or(true, |(k, _)| cle < k) {
                 best = Some((cle, b));
             }
@@ -703,25 +858,9 @@ impl Simulation {
         best.map(|(_, b)| b)
     }
 
-    /// Réorientation mensuelle des bras selon le besoin (entraide du hameau, sans salaire) :
-    /// 1. les pops sans poste prennent les postes vacants ;
-    /// 2. pour chaque ressource en tension, une pop quitte un lieu dont le stock est plein
-    ///    pour rejoindre un lieu qui produit la ressource manquante et a un poste libre.
-    fn reaffecter(&mut self) {
-        let nq = self.nq();
-        let nb = self.monde.batiments.len();
+    /// Tension par ressource : ration non couverte dans un hameau, ou intrant qui manque à un producteur.
+    fn poids_tension(&self) -> Vec<i64> {
         let nr = self.cat.ressources.len();
-        let mut occ = self.occupation();
-        for i in 0..self.pops.len() {
-            if self.pops[i].emploi.is_none() {
-                if let Some(b) = self.meilleur_poste(self.pops[i].residence, &occ) {
-                    self.pops[i].emploi = Some(b);
-                    occ[b] += 1;
-                }
-            }
-        }
-
-        // Tensions : ressources dont la ration n'est pas couverte, ou qui manquent à un producteur.
         let eff = self.effectifs();
         let seuil = self.cat.mobilite.seuil_tension_ppm;
         let mut poids = vec![0i64; nr];
@@ -741,37 +880,51 @@ impl Simulation {
                 poids[r] += PPM - bat.prod_ppm;
             }
         }
-        let mut ordre: Vec<usize> = (0..nr).filter(|&r| poids[r] > 0).collect();
+        poids
+    }
+
+    /// Ressources en tension, de la plus pressante à la moins pressante.
+    fn tensions(&self) -> Vec<usize> {
+        let poids = self.poids_tension();
+        let mut ordre: Vec<usize> = (0..poids.len()).filter(|&r| poids[r] > 0).collect();
         ordre.sort_by(|a, b| poids[*b].cmp(&poids[*a]).then(a.cmp(b)));
+        ordre
+    }
+
+    fn livre(&self, b: usize, r: usize) -> bool {
+        self.cat.batiments[self.monde.batiments[b].type_id].livre(r)
+    }
+
+    /// Réorientation mensuelle des bras selon le besoin (entraide du hameau, sans salaire) :
+    /// 1. les pops sans poste prennent les postes vacants ;
+    /// 2. pour chaque ressource en tension, une pop quitte un lieu dont le stock est plein
+    ///    pour rejoindre un lieu qui produit la ressource manquante et a un poste libre.
+    fn reaffecter(&mut self) {
+        let nq = self.nq();
+        let nb = self.monde.batiments.len();
+        let mut occ = self.occupation();
+        for i in 0..self.pops.len() {
+            if self.pops[i].emploi.is_none() {
+                if let Some(b) = self.meilleur_poste(self.pops[i].residence, &occ) {
+                    self.pops[i].emploi = Some(b);
+                    occ[b] += 1;
+                }
+            }
+        }
 
         let mut utilises = vec![false; nb];
-        for r in ordre {
+        for r in self.tensions() {
             for _ in 0..self.cat.mobilite.max_par_ressource {
-                let produit = |b: usize| {
-                    let t = &self.cat.batiments[self.monde.batiments[b].type_id];
-                    t.extrants_finaux().iter().any(|(x, _)| *x == r)
-                };
                 let receveur = (0..nb)
-                    .filter(|&b| {
-                        !self.est_domestique(b)
-                            && !utilises[b]
-                            && produit(b)
-                            && occ[b] < self.cat.batiments[self.monde.batiments[b].type_id].pops
-                    })
-                    .min_by_key(|&b| {
-                        (
-                            occ[b] as i64 * 1000
-                                / self.cat.batiments[self.monde.batiments[b].type_id].pops as i64,
-                            b,
-                        )
-                    });
+                    .filter(|&b| !utilises[b] && self.livre(b, r) && occ[b] < self.postes_de(b))
+                    .min_by_key(|&b| (occ[b] as i64 * 1000 / self.postes_de(b) as i64, b));
                 let Some(rb) = receveur else { break };
                 let donneur = (0..nb)
                     .filter(|&b| {
-                        !self.est_domestique(b)
-                            && !utilises[b]
+                        !utilises[b]
                             && b != rb
                             && occ[b] > 0
+                            && !self.est_chantier_type(b)
                             && self.monde.batiments[b].limitant == Limitant::StockPlein
                     })
                     .min_by_key(|&b| (self.monde.batiments[b].prod_ppm, b));
@@ -792,6 +945,516 @@ impl Simulation {
                 utilises[rb] = true;
             }
         }
+    }
+
+    // ---------- Extension du village ----------
+
+    pub fn chantiers_en_cours(&self) -> usize {
+        self.monde
+            .batiments
+            .iter()
+            .filter(|b| b.chantier.is_some())
+            .count()
+    }
+
+    /// Habitat dont l'atelier livre la ressource.
+    fn habitat_producteur(&self, r: usize) -> Option<usize> {
+        self.cat.habitats.iter().position(|h| {
+            h.atelier.map_or(false, |a| {
+                self.cat.batiments[a]
+                    .extrants_finaux()
+                    .iter()
+                    .any(|(x, _)| *x == r)
+            })
+        })
+    }
+
+    /// Type de terre exploitée qu'on peut défricher pour produire la ressource.
+    fn type_terre_pour(&self, r: usize) -> Option<usize> {
+        (0..self.cat.batiments.len()).find(|&t| {
+            let ty = &self.cat.batiments[t];
+            !ty.chantier
+                && ty.cout_creation.is_some()
+                && ty.extrants_finaux().iter().any(|(x, _)| *x == r)
+        })
+    }
+
+    /// Les producteurs de la ressource sont-ils bloqués par un intrant manquant ? Alors la cause
+    /// racine est ailleurs (la fibre, pas les vêtements) : en bâtir davantage ne servirait à rien.
+    fn producteurs_bloques_par_intrant(&self, r: usize) -> bool {
+        self.monde
+            .batiments
+            .iter()
+            .enumerate()
+            .any(|(b, bat)| self.livre(b, r) && matches!(bat.limitant, Limitant::Intrant(_)))
+    }
+
+    /// Un chantier produira-t-il déjà cette ressource ?
+    fn chantier_pour(&self, r: usize) -> bool {
+        self.monde.batiments.iter().any(|b| match &b.chantier {
+            Some(Chantier {
+                cible: Cible::Terre(t),
+                ..
+            }) => self.cat.batiments[*t]
+                .extrants_finaux()
+                .iter()
+                .any(|(x, _)| *x == r),
+            Some(Chantier {
+                cible: Cible::Hameau(q),
+                ..
+            }) => {
+                let h = &self.cat.habitats[self.monde.quartiers[*q].habitat_id];
+                h.atelier.map_or(false, |a| {
+                    self.cat.batiments[a]
+                        .extrants_finaux()
+                        .iter()
+                        .any(|(x, _)| *x == r)
+                })
+            }
+            None => false,
+        })
+    }
+
+    /// Décisions saisonnières de la communauté, après la réaffectation mensuelle (donc une fois
+    /// tous les postes disponibles pris) : loger les pops qui attendent, puis défricher pour
+    /// la ressource la plus en tension tant que des bras restent sans poste.
+    pub fn etendre(&mut self) {
+        // Les chantiers incomplets recrutent à nouveau ; vide, un chantier réquisitionne (corvée).
+        for b in 0..self.monde.batiments.len() {
+            if self.monde.batiments[b].chantier.is_none() {
+                continue;
+            }
+            let equipe = self.monde.batiments[b].equipe;
+            let present = self.pops.iter().filter(|p| p.emploi == Some(b)).count() as u32;
+            if present < equipe {
+                self.recruter(b, equipe - present, present == 0);
+            }
+        }
+        if self.chantiers_en_cours() >= self.cat.extension.chantiers_max {
+            return;
+        }
+        let nq = self.nq();
+        let seuil = self.seuil_croissance();
+        let tensions = self.tensions();
+        let hameau_en_cours = (0..nq).any(|q| self.monde.quartiers[q].capacite_pops == 0);
+
+        // 1. Logement : des pops à jauge pleine attendent une place.
+        let attente: Vec<usize> = (0..self.pops.len())
+            .filter(|&i| self.pops[i].croissance >= seuil)
+            .collect();
+        if !attente.is_empty() && !hameau_en_cours {
+            let habitat = tensions
+                .iter()
+                .filter(|&&r| !self.producteurs_bloques_par_intrant(r))
+                .find_map(|&r| self.habitat_producteur(r))
+                .unwrap_or(0);
+            let motif = format!("{} pops attendent un logement", attente.len());
+            for centre in self.centres(attente.iter().map(|&i| self.pops[i].residence)) {
+                if self.lancer_hameau(centre, habitat, &motif) {
+                    return;
+                }
+            }
+        }
+
+        // 2. Terres : des bras restent sans poste alors qu'une ressource manque.
+        let sans: Vec<usize> = self
+            .pops
+            .iter()
+            .filter(|p| p.emploi.is_none())
+            .map(|p| p.residence)
+            .collect();
+        if sans.is_empty() {
+            return;
+        }
+        let centres = self.centres(sans.into_iter());
+        let nb_sans = self.sans_poste();
+        for r in tensions {
+            if self.chantier_pour(r) || self.producteurs_bloques_par_intrant(r) {
+                continue;
+            }
+            let motif = format!(
+                "{} manque, {} pops sans poste",
+                self.cat.ressources[r].nom, nb_sans
+            );
+            let mut lance = false;
+            for &centre in &centres {
+                lance = if let Some(t) = self.type_terre_pour(r) {
+                    self.lancer_terre(centre, t, &motif)
+                } else if let (Some(h), false) = (self.habitat_producteur(r), hameau_en_cours) {
+                    self.lancer_hameau(centre, h, &motif)
+                } else {
+                    false
+                };
+                if lance {
+                    break;
+                }
+            }
+            if lance {
+                return;
+            }
+        }
+    }
+
+    /// Hameaux d'origine à essayer, sans doublon, dans l'ordre où on les rencontre.
+    fn centres(&self, residences: impl Iterator<Item = usize>) -> Vec<usize> {
+        let mut v: Vec<usize> = Vec::new();
+        for q in residences {
+            if !v.contains(&q) {
+                v.push(q);
+            }
+        }
+        v
+    }
+
+    /// Meilleur emplacement pour un nouveau lieu, à portée du hameau `centre` :
+    /// soit accolé à une tile traversable, soit au bout d'une nouvelle tile de chemin.
+    /// Terre fertile : fertilité / distance maximale ; sinon : le plus proche, sur la terre la plus pauvre.
+    /// `requis` : groupes de ressources dont l'une au moins doit avoir un producteur à portée du site.
+    fn meilleur_site(&self, centre: usize, fertile: bool, requis: &[Vec<usize>]) -> Option<Site> {
+        let nq = self.nq();
+        let d = self
+            .reseau
+            .distances_depuis(self.monde.quartiers[centre].tuile);
+        // Distance (en segments) de chaque tile aux producteurs de chaque groupe requis.
+        let portees: Vec<Vec<i64>> = requis
+            .iter()
+            .map(|groupe| {
+                let mut sources: Vec<usize> = Vec::new();
+                for b in 0..self.monde.batiments.len() {
+                    if groupe.iter().any(|&r| self.livre(b, r)) {
+                        sources.extend_from_slice(self.reseau.acces(nq + b));
+                    }
+                }
+                self.reseau.distances_depuis_tuiles(&sources)
+            })
+            .collect();
+        let dmax = self.cat.infra.distance_max;
+        let vide = |t: usize| self.monde.tuiles[t].contenu == Contenu::Vide;
+        // Le lieu posé au bout de `attache` (+ une tile de route éventuelle) est-il desservi ?
+        // Un hameau est lui-même traversable : sa propre tile compte une tile de plus dans le trajet.
+        let extra = if fertile { 0 } else { 1 };
+        let desservi = |attache: usize, route: bool| {
+            portees
+                .iter()
+                .all(|dp| dp[attache] != i64::MAX && dp[attache] + route as i64 + 1 + extra <= dmax)
+        };
+        let mut best: Option<((i64, i64, i64, usize), Site)> = None;
+        let essayer = |tuile: usize,
+                       attache: usize,
+                       route: Option<usize>,
+                       dist: i64,
+                       best: &mut Option<((i64, i64, i64, usize), Site)>| {
+            let fert = self.monde.tuiles[tuile].fertilite_ppm;
+            let cle = if fertile {
+                (
+                    -(fert * 1000 / (dist + 1)),
+                    dist,
+                    route.is_some() as i64,
+                    tuile,
+                )
+            } else {
+                (dist, route.is_some() as i64, fert, tuile)
+            };
+            if best.as_ref().map_or(true, |(k, _)| cle < *k) {
+                *best = Some((
+                    cle,
+                    Site {
+                        tuile,
+                        attache,
+                        route,
+                    },
+                ));
+            }
+        };
+        for p in 0..self.monde.tuiles.len() {
+            if d[p] == i64::MAX {
+                continue;
+            }
+            for dir in 0..4 {
+                let Some(t1) = self.monde.voisin(p, dir) else {
+                    continue;
+                };
+                if !vide(t1) {
+                    continue;
+                }
+                if d[p] + 1 + extra <= dmax && desservi(p, false) {
+                    essayer(t1, p, None, d[p] + 1, &mut best);
+                }
+                if d[p] + 2 + extra <= dmax && desservi(p, true) {
+                    for dir2 in 0..4 {
+                        if DIRS[dir2].3 == DIRS[dir].0 {
+                            continue; // pas de demi-tour
+                        }
+                        let Some(t2) = self.monde.voisin(t1, dir2) else {
+                            continue;
+                        };
+                        if vide(t2) {
+                            essayer(t2, p, Some(t1), d[p] + 2, &mut best);
+                        }
+                    }
+                }
+            }
+        }
+        best.map(|(_, s)| s)
+    }
+
+    /// Relie deux tiles voisines en posant les demi-directions des tiles de chemin.
+    fn relier(&mut self, a: usize, b: usize) {
+        let (ax, ay) = self.monde.xy(a);
+        let (bx, by) = self.monde.xy(b);
+        let (dx, dy) = (bx as i32 - ax as i32, by as i32 - ay as i32);
+        let d = DIRS
+            .iter()
+            .position(|&(_, ddx, ddy, _)| ddx == dx && ddy == dy)
+            .expect("tiles non voisines");
+        if let Contenu::Chemin { masque } = &mut self.monde.tuiles[a].contenu {
+            *masque |= DIRS[d].0;
+        }
+        if let Contenu::Chemin { masque } = &mut self.monde.tuiles[b].contenu {
+            *masque |= DIRS[d].3;
+        }
+    }
+
+    fn poser_site(&mut self, site: Site) {
+        match site.route {
+            Some(r) => {
+                self.monde.tuiles[r].contenu = Contenu::Chemin { masque: 0 };
+                self.relier(site.attache, r);
+                self.relier(r, site.tuile);
+            }
+            None => self.relier(site.attache, site.tuile),
+        }
+    }
+
+    fn nouveau_chantier(
+        &self,
+        tuile: usize,
+        cible: Cible,
+        cout: &crate::donnees::CoutCreation,
+    ) -> Batiment {
+        let nr = self.cat.ressources.len();
+        Batiment {
+            type_id: self.cat.type_chantier(),
+            tuile,
+            quartier: None,
+            equipe: cout.equipe,
+            chantier: Some(Chantier {
+                cible,
+                travail_restant: cout.travail,
+                travail_total: cout.travail,
+                materiau_total: cout.materiau,
+            }),
+            stock_entree: vec![0; nr],
+            stock_sortie: vec![0; nr],
+            presents: 0,
+            prod_ppm: 0,
+            limitant: Limitant::Aucun,
+        }
+    }
+
+    fn lancer_terre(&mut self, centre: usize, type_id: usize, motif: &str) -> bool {
+        let Some(cout) = self.cat.batiments[type_id].cout_creation.clone() else {
+            return false;
+        };
+        let requis: Vec<Vec<usize>> = if cout.materiau > 0 {
+            vec![vec![self.cat.extension.materiau]]
+        } else {
+            Vec::new()
+        };
+        let Some(site) = self.meilleur_site(centre, true, &requis) else {
+            return false;
+        };
+        self.poser_site(site);
+        let b = self.monde.batiments.len();
+        let chantier = self.nouveau_chantier(site.tuile, Cible::Terre(type_id), &cout);
+        self.monde.batiments.push(chantier);
+        self.monde.tuiles[site.tuile].contenu = Contenu::Batiment(b);
+        self.monde.tuiles[site.tuile].variante = (b % 4) as u8;
+        let (x, y) = self.monde.xy(site.tuile);
+        let nom = self.cat.batiments[type_id].nom.clone();
+        self.journal(format!(
+            "Chantier lancé : défricher {nom} en ({x}, {y}) — {motif}"
+        ));
+        self.reconstruire_reseau();
+        self.recruter(b, cout.equipe, false);
+        true
+    }
+
+    fn lancer_hameau(&mut self, centre: usize, habitat_id: usize, motif: &str) -> bool {
+        let cout = self.cat.habitats[habitat_id].cout_creation.clone();
+        // Un hameau doit pouvoir être bâti (matériau), chauffé et nourri à portée de son site.
+        let nutritives: Vec<usize> = (0..self.cat.ressources.len())
+            .filter(|&r| self.cat.ressources[r].nutritive_milli > 0)
+            .collect();
+        let mut requis = vec![vec![self.cat.vital.chauffage_ressource], nutritives];
+        if cout.materiau > 0 {
+            requis.push(vec![self.cat.extension.materiau]);
+        }
+        let Some(site) = self.meilleur_site(centre, false, &requis) else {
+            return false;
+        };
+        self.poser_site(site);
+        // Un hameau s'ajoute aux quartiers : les lieux « bâtiment » se décalent d'un cran.
+        let nq = self.nq();
+        for d in &mut self.differes {
+            if d.fournisseur >= nq {
+                d.fournisseur += 1;
+            }
+            if d.client >= nq {
+                d.client += 1;
+            }
+        }
+        let q = nq;
+        let nr = self.cat.ressources.len();
+        self.monde.quartiers.push(Quartier {
+            tuile: site.tuile,
+            habitat_id,
+            capacite_pops: 0,
+            atelier: None,
+            stock: vec![0; nr],
+            vital_jour_ppm: PPM,
+            confort_jour_ppm: PPM,
+            sat_par_ressource_ppm: vec![PPM; nr],
+            cumul_vital_ppm: 0,
+            cumul_confort_ppm: 0,
+            jours_an: 0,
+            vital_annuel_ppm: PPM,
+            confort_annuel_ppm: PPM,
+        });
+        let b = self.monde.batiments.len();
+        let chantier = self.nouveau_chantier(site.tuile, Cible::Hameau(q), &cout);
+        self.monde.batiments.push(chantier);
+        self.monde.tuiles[site.tuile].contenu = Contenu::Quartier(q);
+        self.monde.tuiles[site.tuile].variante = (q % 4) as u8;
+        let (x, y) = self.monde.xy(site.tuile);
+        let nom = self.cat.habitats[habitat_id].nom.clone();
+        self.journal(format!(
+            "Chantier lancé : bâtir un {nom} en ({x}, {y}) — {motif}"
+        ));
+        self.reconstruire_reseau();
+        self.recruter(b, cout.equipe, false);
+        true
+    }
+
+    /// Constitue l'équipe d'un chantier : d'abord les pops sans poste les plus proches ; à défaut,
+    /// des bras pris dans les lieux dont le stock couvre largement les besoins.
+    fn recruter(&mut self, chantier: usize, n: u32, corvee: bool) {
+        let nq = self.nq();
+        let mut libres: Vec<(i64, u32, usize)> = (0..self.pops.len())
+            .filter(|&i| self.pops[i].emploi.is_none())
+            .filter_map(|i| {
+                self.reseau
+                    .chemin(self.pops[i].residence, nq + chantier)
+                    .map(|c| (c.cout, self.pops[i].id, i))
+            })
+            .collect();
+        libres.sort();
+        let mut pris = 0;
+        for &(_, _, i) in libres.iter().take(n as usize) {
+            self.pops[i].emploi = Some(chantier);
+            pris += 1;
+        }
+        if pris >= n {
+            return;
+        }
+        // Corvée : un chantier resté sans équipe prend des bras même aux lieux sans excédent.
+        let seuil = if corvee {
+            0
+        } else {
+            (self.cat.extension.couverture_donneur_jours * 1000.0) as i64
+        };
+        let mut donneurs: Vec<(i64, i64, u32, usize)> = Vec::new();
+        for i in 0..self.pops.len() {
+            let Some(db) = self.pops[i].emploi else {
+                continue;
+            };
+            if db == chantier || self.est_chantier_type(db) {
+                continue;
+            }
+            let couverture = self.couverture_milli_jours(db);
+            let Some(ch) = self.reseau.chemin(self.pops[i].residence, nq + chantier) else {
+                continue;
+            };
+            if couverture >= seuil {
+                donneurs.push((-couverture, ch.cout, self.pops[i].id, i));
+            }
+        }
+        donneurs.sort();
+        for &(_, _, _, i) in donneurs.iter().take((n - pris) as usize) {
+            self.pops[i].emploi = Some(chantier);
+        }
+    }
+
+    /// Jours de production en stock de sortie (×1000) pour le premier extrant final du lieu.
+    fn couverture_milli_jours(&self, b: usize) -> i64 {
+        let bat = &self.monde.batiments[b];
+        match self.cat.batiments[bat.type_id].extrants_finaux().first() {
+            Some(&(r, q)) if q > 0 => bat.stock_sortie[r] * 1000 / q,
+            _ => 0,
+        }
+    }
+
+    /// Plan ASCII du village (pour l'observation en ligne de commande).
+    /// H hameau, T hameau textile, C champ, P pâturage, V verger, F forêt, L lin, W laine,
+    /// + chemin, minuscules = chantier de la lettre correspondante, # chantier de hameau.
+    pub fn carte_ascii(&self) -> String {
+        let m = &self.monde;
+        let lettre = |t: usize| -> char {
+            match self.cat.batiments[t].nom.as_str() {
+                "champ" => 'C',
+                "paturage" => 'P',
+                "verger" => 'V',
+                "foret_exploitee" => 'F',
+                "champ_lin" => 'L',
+                "elevage_laine" => 'W',
+                n => n.chars().next().unwrap_or('?').to_ascii_uppercase(),
+            }
+        };
+        let glyphe = |i: usize| -> char {
+            match m.tuiles[i].contenu {
+                Contenu::Vide => ' ',
+                Contenu::Chemin { .. } => '+',
+                Contenu::Quartier(q) => {
+                    if m.quartiers[q].capacite_pops == 0 {
+                        '#'
+                    } else if m.quartiers[q].atelier.is_some() {
+                        'T'
+                    } else {
+                        'H'
+                    }
+                }
+                Contenu::Batiment(b) => match &m.batiments[b].chantier {
+                    Some(Chantier {
+                        cible: Cible::Terre(t),
+                        ..
+                    }) => lettre(*t).to_ascii_lowercase(),
+                    Some(_) => '#',
+                    None => lettre(m.batiments[b].type_id),
+                },
+            }
+        };
+        let occupees: Vec<(usize, usize)> = (0..m.tuiles.len())
+            .filter(|&i| m.tuiles[i].contenu != Contenu::Vide)
+            .map(|i| m.xy(i))
+            .collect();
+        if occupees.is_empty() {
+            return String::new();
+        }
+        let (x0, x1) = (
+            occupees.iter().map(|p| p.0).min().unwrap(),
+            occupees.iter().map(|p| p.0).max().unwrap(),
+        );
+        let (y0, y1) = (
+            occupees.iter().map(|p| p.1).min().unwrap(),
+            occupees.iter().map(|p| p.1).max().unwrap(),
+        );
+        let mut out = String::new();
+        for y in y0..=y1 {
+            let ligne: String = (x0..=x1).map(|x| glyphe(m.idx(x, y))).collect();
+            out.push_str(ligne.trim_end());
+            out.push('\n');
+        }
+        out
     }
 
     fn perimer(&mut self) {

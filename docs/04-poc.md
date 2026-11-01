@@ -2,19 +2,19 @@
 
 ## Objectif
 
-Une **économie de subsistance** : un hameau isolé de **1750**, simulé de façon autonome (sans intervention du joueur). Des pops vivent à la campagne, travaillent des terres exploitées et fabriquent chez elles ce qu'il faut pour se vêtir. La couverture de leurs besoins pilote la croissance ou le déclin de chaque pop. Pas de monnaie, pas d'atelier, pas de firme : le maire est inactif.
+Une **économie de subsistance** : un village isolé de **1750**, simulé de façon autonome (sans intervention du joueur). Des pops vivent dans des hameaux, travaillent des terres exploitées alentour, et certains hameaux fabriquent sur place de quoi vêtir tout le monde. La couverture de leurs besoins pilote la croissance ou le déclin de chaque pop, et **les habitants étendent eux-mêmes le village** (défrichement, nouveaux hameaux) quand il le faut. Pas de monnaie, pas de manufacture, pas de firme : le maire est inactif.
 
 **Deux étapes**
 
 | Étape | Contenu |
 |---|---|
-| **POC-A — subsistance** | Production continue (pas de saisons), circulation des marchandises (production, stock, distribution, consommation), besoins vitaux et de confort, croissance par jauge de pop, réorientation des bras selon le besoin. Carte initiale générée, personne ne construit. |
-| **POC-B — monnaie et marché** | Extension du village (défrichement, nouveaux hameaux, voir `05`), puis salaires, prix, firmes, surplus qui quitte le village. |
+| **POC-A — subsistance** | Production continue (pas de saisons), circulation des marchandises (production, stock, distribution, consommation), besoins vitaux et de confort, croissance par jauge de pop, réorientation des bras selon le besoin, **extension du village par ses habitants** (voir `02` §7). Village initial généré. |
+| **POC-B — monnaie et marché** | Salaires, prix, firmes, surplus qui quitte le village (dîme, marché), placement des bâtiments par des firmes. |
 
 **Critères de succès**
 - La simulation tourne indéfiniment sans blocage ni dérive absurde.
 - Les quantités produites / consommées restent proportionnellement cohérentes (conservation de la matière vérifiée).
-- Les dynamiques de subsistance émergent : croissance lente (+0,5 %/an quand le confort manque, +1,5 %/an quand tout est couvert), déclin en cas de manque vital, pénuries localisées, production qui s'ajuste au besoin (les bras se déplacent vers ce qui manque).
+- Les dynamiques de subsistance émergent : croissance lente (+0,5 %/an quand le confort manque, +1,5 %/an quand tout est couvert), déclin en cas de manque vital, pénuries localisées, production qui s'ajuste au besoin (les bras se déplacent vers ce qui manque), **extension du village qui plafonne d'elle-même** (la terre lointaine est plus pauvre), population en « dents de scie » autour de ce plafond.
 - **Chaque mécanisme est lisible** par le joueur (voir « Ce que voit le joueur »).
 
 ## Périmètre
@@ -24,16 +24,16 @@ Une **économie de subsistance** : un hameau isolé de **1750**, simulé de faç
 | Carte | 200×200 tiles, **un village généré** (graine, aléatoire mais cohérent, voir ci-dessous), vue micro uniquement |
 | Personnage | Un seul : **le maire**, **inactif** (aucune décision, ne construit pas). Ni leviers (pouvoir / capital / influence), ni postes, ni fortune dans le POC |
 | Population | **Pops de 100 hab**, une seule strate (paysans), une seule culture / religion / orientation, attributs fixes. **Une jauge de croissance par pop** : à +100 hab elle se duplique, à −100 elle disparaît (voir `02` §6). La satisfaction du confort servira plus tard à la promotion vers d'autres classes |
-| Habitat | Une seule : le **hameau** (tile de vie à faible densité, **2 pops = 200 hab**), qui embarque le travail textile domestique |
-| Production | Des **terres exploitées** sans logement (champ, pâturage, verger, forêt, lin, laine), travaillées par les pops des hameaux. Ni filature ni atelier (voir `05`) |
+| Habitat | Deux types : le **hameau** (**2 pops = 200 hab**, toutes travaillent aux terres alentour) et le **hameau textile** (**3 pops = 300 hab**, dont 1 travaille à l'atelier sur place). Plafond de densité d'une tile d'habitat : 10 pops |
+| Production | Des **terres exploitées** sans logement (champ, pâturage, verger, forêt, lin, laine), travaillées par les pops des hameaux ; l'**atelier textile** des hameaux textiles. Ni filature ni atelier de couture indépendants (voir `05`) |
 | Monnaie | Aucune (autoconsommation, échanges en nature entre voisins) |
-| Construction | Aucune en POC-A : hameaux et terres fixes. Le défrichement et la fondation de hameaux sont à définir (voir `05`) |
+| Construction | Par la **communauté** : défrichement de terres et bâtiment de hameaux, par des équipes de pops, avec du bois, à rythme saisonnier (voir `02` §7) |
 | Firmes | Aucune en POC-A |
 | Terrain | Un seul : **plaine** (herbe) |
 | Infrastructure | Une seule : **chemin de terre** (orthogonal) |
 | Temps | Production **continue**, pas de saisons |
 | Niveau technologique | 0 (production primitive) |
-| Transport | Le lien **pop → hameau de résidence → lieu de travail** est matérialisé et le coût de distance détermine le fournisseur le plus proche. Congestion et livraisons différées : **en sommeil** (capacités très au-dessus des flux) |
+| Transport | Le lien **pop → hameau de résidence → lieu de travail** est matérialisé. **Distance = nombre de tiles chemin à emprunter**, bâtiment accolé à un chemin, aucune pénalité mais **limite de 10 tiles** pour travailler ou s'approvisionner, et approvisionnement au plus proche. Congestion et livraisons différées : **en sommeil** (capacités très au-dessus des flux) |
 | Intermédiaires | Aucun (relation directe fournisseur ↔ client) |
 
 ## Ressources
@@ -41,14 +41,14 @@ Une **économie de subsistance** : un hameau isolé de **1750**, simulé de faç
 | Catégorie | Ressources POC | Reporté |
 |---|---|---|
 | Nourriture | grain, viande, fruit — **interchangeables** pour le besoin vital (unités nutritives) | poisson ; nourriture industrielle |
-| Textile | lin, laine → tissu → vêtements, **à domicile** | coton ; manufacture |
+| Textile | lin, laine → tissu → vêtements, **à l'atelier du hameau textile** | coton ; manufacture |
 | Bois | bois (chauffage), consommé directement | transformation |
 | Travail | les pops | qualifications |
 
 ## Catalogue des tiles (identifiants d'assets)
 
 `terrain_plaine` (8 à 12 variantes d'herbe raccordables) · `infra_chemin_terre` (POC : **orthogonal seulement**, 15 combinaisons de demi-directions ; diagonales plus tard) ·
-`bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_hameau`
+`bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_hameau` · `bat_hameau_textile` · `bat_chantier` (variantes selon l'avancement à prévoir)
 
 Reportés : `bat_filature`, `bat_atelier_couture` (manufacture), `bat_quartier_rural` (bassin de peuplement de 1 000 hab).
 
@@ -67,16 +67,16 @@ Ce qui compte est la **proportion**, pas la valeur absolue. Effectifs en **pops*
 | Champ de lin | 4 | 40 lin | 10 |
 | Élevage laine | 2 | 20 laine | 10 |
 
-### Travail textile à domicile (dans chaque hameau)
+### Atelier textile (hameau textile)
 
-Fait par les **résidents** du hameau, sans poste ni trajet (travail d'appoint, tout au long de l'année dans ce POC sans saisons). Capacité proportionnelle au nombre de résidents (référence : 2) :
+**1 pop** du hameau y travaille, sur place (distance 0). Un hameau textile = 3 pops : 1 à l'atelier, 2 aux terres alentour. Une pop à l'atelier fait **4 vêtements par jour**, soit les besoins de 8 pops :
 
-| Étape | Intrants | Extrants (à 2 résidents) |
+| Étape | Intrants | Extrants (1 pop) |
 |---|---|---|
-| Tissage | 3 lin + 1,5 laine | 2,25 tissu |
-| Couture | 2,25 tissu | 1,5 vêtement |
+| Tissage | 8 lin + 4 laine | 6 tissu |
+| Couture | 6 tissu | 4 vêtements |
 
-(Recettes : 4 lin + 2 laine → 3 tissu ; 3 tissu → 2 vêtements.) Un hameau plein produit 1,5 vêtement/jour pour 1 consommé : le surplus peut partir chez les voisins.
+(Recettes : 4 lin + 2 laine → 3 tissu ; 3 tissu → 2 vêtements.) Le nombre de hameaux textiles est **déduit** des besoins : pour 10 hameaux, 3 hameaux textiles (23 pops de capacité, ~11,5 vêtements/jour, 12 produits au maximum).
 
 ### Besoins d'une pop (par jour)
 
@@ -101,20 +101,27 @@ Fait par les **résidents** du hameau, sans poste ni trajet (travail d'appoint, 
 | Vital couvert, confort insuffisant (**insatisfaite**) | **+0,5 %** (interpolé selon le confort) |
 | Vital insuffisant (**manque**) | de +0,5 % à **−8 %** quand le vital tombe à zéro (linéaire) |
 
+### Fertilité, distance et extension
+- **Fertilité** d'une tile : bruit lissé entre 0,85 et 1,3, qui s'effondre autour du centre du village (pleine jusqu'à 3 tiles, puis déclin linéaire jusqu'à 0,15 à 7 tiles). Elle multiplie la production des terres exploitées.
+- **Distance maximale** : 10 tiles chemin entre deux lieux (travail, approvisionnement). À calibrer.
+- **Coûts de création** (travail en pop-jours, équipe, bois) : voir `02` §7.
+- Avec ces valeurs, le village plafonne vers **60 à 90 pops** (6 000 à 9 000 hab.) en « dents de scie », après plusieurs siècles. Un terroir plus large plafonne plus haut (170 pops à 4/9, 240 pops à 5/11).
+
 ### Proportions qui en découlent
-- Un village de **10 hameaux** (20 pops, 2 000 hab) demande 1 champ, 1 pâturage, 1 verger, 1 forêt, 1 champ de lin et 1 élevage de laine, soit **19 pops de travail** pour 20 pops. À ce stade, les bras ne sont pas en excès : tout le monde travaille, c'est l'image d'une société agraire.
-- Le hameau étant plein à 2 pops, la croissance est d'abord limitée par le **logement**, pas par la nourriture : l'extension du village est la prochaine mécanique à définir (`05`).
+- Un village de **10 hameaux** (dont 3 textiles, 23 pops) demande 1 champ, 1 pâturage, 1 verger, 1 forêt, 1 champ de lin et 1 élevage de laine, soit **19 pops de travail + 3 à l'atelier**, pour 23 pops. Les bras ne sont pas en excès : c'est l'image d'une société agraire.
+- Le générateur démarre à 80 % de la capacité de logement. La croissance est d'abord limitée par le **logement**, puis par la **nourriture** à mesure que l'on gagne sur des terres plus pauvres.
 
 ### ⚠️ Points de calibration
-- **Tranché** : bloc discret de 100 hab (`00` §3), effectifs en pops, recettes textiles, nourriture interchangeable, taux de croissance 1,5 % / 0,5 % / −8 %.
-- **À calibrer** avec le CLI headless : seuils vitaux, capacité du hameau (1 ou 2 pops), taille de village de départ, `mortalite_famine`.
-- **Plus tard** : POC-B (prix, salaires, seuils de réinvestissement) ; aléa de récolte ; rendements décroissants des terres (voir `05`).
+- **Tranché** : bloc discret de 100 hab (`00` §3), effectifs en pops, hameau 2 pops et hameau textile 3 pops (1 à l'atelier), plafond de densité 10, recettes textiles, nourriture interchangeable, taux de croissance 1,5 % / 0,5 % / −8 %, distance = tiles chemin avec limite, extension par la communauté.
+- **À calibrer** avec le CLI headless : seuils vitaux, `mortalite_famine`, `distance_max`, coûts de création, fertilité (rayons du terroir), taille de village de départ.
+- **Plus tard** : POC-B (prix, salaires, seuils) ; aléa de récolte ; saisons ; rendements décroissants par pop ; abandon des lieux en déclin.
 
 ## Générateur de village
 
-- **Déterministe** (même graine, même village), progressif : un hameau de 1750 à évolution lente et production quasi stable, puis un deuxième village avec liens économiques, puis un troisième, puis une ville. Simple en POC, il gagnera en finesse à chaque étape.
-- Dimensionné pour être **proche de l'équilibre** : le nombre de terres de chaque type est déduit des besoins des hameaux (jamais un ratio codé), pops initiales à 80 % de la capacité de logement (donc quelques postes vacants), stocks initiaux non nuls, jauges de croissance décalées pour éviter les duplications synchrones.
-- Réseau de chemins connexe reliant hameaux et terres (chemin principal et antennes).
+- **Déterministe** (même graine, même village), progressif : un village de 1750 à évolution lente et production quasi stable, puis un deuxième village avec liens économiques, puis un troisième, puis une ville. Simple en POC, il gagnera en finesse à chaque étape.
+- **Disposition en croix** de chemins de terre, compacte pour rester sous la distance limite ; hameaux et terres accolés aux bras, ou au bout d'une antenne d'une tile. Si une disposition viole les contraintes d'accès, une autre est tirée de façon déterministe.
+- Dimensionné pour être **proche de l'équilibre** : le nombre de terres de chaque type et de hameaux textiles est déduit des besoins (jamais un ratio codé), pops initiales à 80 % de la capacité de logement, stocks initiaux non nuls, jauges de croissance décalées.
+- Champ de **fertilité** tiré avec la graine, centré sur le village.
 
 ## Outillage de test et d'observation
 
@@ -129,14 +136,15 @@ Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregist
 
 | Niveau | Contenu |
 |---|---|
-| Hameau | Ses pops et leur lieu de travail, état de chaque pop (satisfaite / insatisfaite / en manque), couverture de chaque ration (reçu/requis, et auprès de quel fournisseur), jauge de croissance, travail textile à domicile |
-| Terre exploitée | Production effective %, facteur limitant, stocks, pops affectées et leurs hameaux, clients |
+| Hameau | Ses pops et leur lieu de travail, état de chaque pop (satisfaite / insatisfaite / en manque), couverture de chaque ration (reçu/requis, et auprès de quel fournisseur), jauge de croissance, atelier textile sur place |
+| Terre exploitée | Production effective %, **fertilité de la tile**, facteur limitant, stocks, pops affectées et leurs hameaux, clients |
+| Chantier | Ce qui est construit, travail restant, équipe présente, bois reçu, **motif** (« grain manque, 2 pops sans poste ») |
 | Pop sans poste | Pastille distincte dans la liste du hameau |
-| Modes de carte | Couverture des besoins, pénuries, utilisation des terres |
-| Global | Date, vitesse, courbes (pop, production vs consommation), journal d'événements (naissance, disparition, bras réorientés vers…) |
+| Modes de carte | Couverture des besoins, pénuries, utilisation des terres, **fertilité**, portée (tiles chemin) autour d'un lieu |
+| Global | Date, vitesse, courbes (pop, production vs consommation), journal d'événements (naissance, disparition, bras réorientés vers…, **chantier lancé / terminé**) |
 | Temps | Jour/nuit par teinte globale ; une pop = un sprite, au travail le jour, au logement la nuit |
 | Debug | Choc de récolte (« mauvaise récolte »), modifier un paramètre en direct |
 
 ## Prochaine étape de design identifiée
 
-**Extension du village par ses habitants** (défrichement de nouvelles terres, fondation de hameaux) : mécanisme communautaire, saisonnier, sans monnaie. Proposition à valider dans `05`. Elle précède le placement automatique par des firmes (POC-B), qui en sera la généralisation.
+**Déclin et abandon** : quand la population baisse durablement, que deviennent les hameaux vides et les terres sans bras ? Aujourd'hui rien ne s'abandonne. Viendront ensuite les **saisons**, l'**aléa de récolte**, puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.

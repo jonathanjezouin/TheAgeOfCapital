@@ -7,24 +7,39 @@ jours_par_an = 365
 jours_stock_sortie = 10.0          # plafond du stock d'extrant d'un bâtiment (jours de production)
 jours_stock_entree = 5.0           # plafond du stock d'intrants (jours de besoin)
 jours_stock_quartier = 10.0        # cible de stock d'un hameau (jours de consommation)
-rayon_max_cout = 4000              # périmètre d'un lieu (coût de transport), 100 = 1 tile
 nb_rondes_appel_offres = 3
 stock_initial_quartier_jours = 5.0
 stock_initial_entree_jours = 3.0
 stock_initial_sortie_jours = 2.0
 
-# Transport : en sommeil dans le POC (capacités très au-dessus des flux). Le lien
-# résidence → lieu de travail et le coût de distance restent actifs.
+# Distance : nombre de tiles « chemin » à emprunter entre deux lieux (0 sur une même tile, 1 pour
+# deux lieux accolés à la même tile). Aucune pénalité selon la distance, mais l'on s'approvisionne
+# au plus proche, et l'on ne va ni travailler ni s'approvisionner au-delà de la limite.
+# Congestion : en sommeil dans le POC (capacités très au-dessus des flux).
 [infrastructure]
-cout_tuile = 100
+distance_max = 10
 capacite_nominale = 4000.0
 capacite_max = 8000.0
 poids_trajet_pop = 10.0
 
-# Habitat : le hameau est une tile de vie à faible densité (logement + production domestique).
+# Habitat : plafond de densité de toute tile d'habitat (les quartiers ouvriers y viendront).
 [habitat]
-capacite_pops = 2                  # 2 pops = 200 hab
-batiment_domestique = "textile_domestique"
+densite_max_pops = 10
+
+# Hameau ordinaire : 2 pops, qui travaillent toutes dans les terres alentour.
+[[habitats]]
+nom = "hameau"
+asset = "bat_hameau"
+capacite_pops = 2
+cout_creation = { travail_pop_jours = 300.0, equipe = 2, bois = 200.0 }
+
+# Hameau textile : 3 pops, dont 1 travaille sur place (tissage, couture) ; les 2 autres aux terres alentour.
+[[habitats]]
+nom = "hameau_textile"
+asset = "bat_hameau_textile"
+capacite_pops = 3
+atelier = "atelier_textile"
+cout_creation = { travail_pop_jours = 400.0, equipe = 2, bois = 260.0 }
 
 [demographie]
 habitants_par_pop = 100
@@ -38,6 +53,14 @@ acceleration = 1.0                 # facteur sur le taux net (observation du POC
 periode_jours = 30
 seuil_tension = 0.97               # satisfaction d'une ressource sous laquelle on réoriente des bras
 deplacements_max_par_ressource = 1
+
+# Extension du village par ses habitants (décisions saisonnières, sans monnaie) :
+# les pops prennent d'abord tous les postes disponibles, puis ouvrent un chantier.
+[extension]
+periode_jours = 90
+chantiers_max = 2                  # chantiers simultanés
+materiau = "bois"
+couverture_donneur_jours = 5.0     # un lieu dont le stock couvre au moins ce nombre de jours peut prêter des bras
 
 # Besoins vitaux : sans eux, la population décline.
 [vital]
@@ -99,45 +122,67 @@ ressource = "vetements"
 par_pop_jour = 0.5
 
 # Terres exploitées : lieux de production sans logement, travaillés par les pops des hameaux.
+# `fertile` : la production est proportionnelle à la fertilité de la tile.
+# `cout_creation` : défricher / aménager = travail (pop-jours) par une équipe, + matériau.
 [[batiments]]
 nom = "champ"
 asset = "bat_champ"
 pops = 4
+fertile = true
+cout_creation = { travail_pop_jours = 240.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "grain", qte = 100.0 }] }]
 [[batiments]]
 nom = "paturage"
 asset = "bat_paturage"
 pops = 2
+fertile = true
+cout_creation = { travail_pop_jours = 90.0, equipe = 1, bois = 20.0 }
 etapes = [{ extrants = [{ ressource = "viande", qte = 20.0 }] }]
 [[batiments]]
 nom = "verger"
 asset = "bat_verger"
 pops = 3
+fertile = true
+cout_creation = { travail_pop_jours = 300.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "fruit", qte = 30.0 }] }]
 [[batiments]]
 nom = "foret_exploitee"
 asset = "bat_foret_exploitee"
 pops = 4
+fertile = true
+cout_creation = { travail_pop_jours = 120.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "bois", qte = 50.0 }] }]
 [[batiments]]
 nom = "champ_lin"
 asset = "bat_champ_lin"
 pops = 4
+fertile = true
+cout_creation = { travail_pop_jours = 200.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "lin", qte = 40.0 }] }]
 [[batiments]]
 nom = "elevage_laine"
 asset = "bat_elevage_laine"
 pops = 2
+fertile = true
+cout_creation = { travail_pop_jours = 100.0, equipe = 1, bois = 20.0 }
 etapes = [{ extrants = [{ ressource = "laine", qte = 20.0 }] }]
 
-# Travail textile à domicile (filage, tissage, couture) : fait par les résidents du hameau,
-# sans poste ni trajet. Capacité proportionnelle au nombre de résidents (effectif de référence : 2).
+# Atelier textile : 1 pop du hameau textile, qui travaille sur place (distance 0).
+# 1 pop fait 4 vêtements par jour (soit les besoins de 8 pops).
 [[batiments]]
-nom = "textile_domestique"
-asset = "bat_hameau"
-domestique = true
-pops = 2
+nom = "atelier_textile"
+asset = "bat_hameau_textile"
+pops = 1
 etapes = [
-  { intrants = [{ ressource = "lin", qte = 3.0 }, { ressource = "laine", qte = 1.5 }], extrants = [{ ressource = "tissu", qte = 2.25 }] },
-  { intrants = [{ ressource = "tissu", qte = 2.25 }], extrants = [{ ressource = "vetements", qte = 1.5 }] },
+  { intrants = [{ ressource = "lin", qte = 8.0 }, { ressource = "laine", qte = 4.0 }], extrants = [{ ressource = "tissu", qte = 6.0 }] },
+  { intrants = [{ ressource = "tissu", qte = 6.0 }], extrants = [{ ressource = "vetements", qte = 4.0 }] },
 ]
+
+# Site de chantier : la même entité sert à défricher une terre ou à bâtir un hameau.
+# L'équipe est propre à chaque chantier (le champ `pops` n'est pas utilisé).
+[[batiments]]
+nom = "chantier"
+asset = "bat_chantier"
+pops = 1
+chantier = true
+etapes = []

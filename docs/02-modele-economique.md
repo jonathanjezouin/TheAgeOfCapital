@@ -3,7 +3,7 @@
 ## 1. La tile
 
 - **Usage unique** par tile : terrain naturel, infrastructure, bâtiment de production, quartier d'habitation.
-- Exception : la **tile quartier embarque nativement une infrastructure de circulation** (rues). Le **hameau** (POC) embarque en plus un **travail de production domestique** (textile) sur la même tile : habitat et production y sont mêlés, comme dans une économie de subsistance. Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard).
+- Exception : la **tile quartier embarque nativement une infrastructure de circulation** (rues). Le **hameau textile** (POC) embarque en plus un **atelier** (1 poste, tissage et couture) sur la même tile : habitat et travail y sont mêlés, comme dans une économie de subsistance. Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard).
 - **Unité comptable, pas géographique** : la surface implicite dépend du type.
 
 | Type de tile | Surface implicite | Population |
@@ -11,12 +11,14 @@
 | Champ | ~5 km² | — |
 | Pâturage | ~10 km² | — |
 | Exploitation forestière | ~20 km² | — |
-| Hameau (POC) | ~0,5 km² | capacité 2 pops = 200 hab |
+| Hameau (POC) | ~0,5 km² | capacité 2 pops = 200 hab, toutes travaillent aux terres alentour |
+| Hameau textile (POC) | ~0,5 km² | capacité 3 pops = 300 hab, dont 1 travaille sur place (atelier) |
 | Quartier rural | ~0,5 km² | capacité 1 000 hab |
 | Quartier urbain (futur) | ~0,1 km² | capacité ~5 000 hab |
 
 - **Une tile d'habitat est une capacité de logement** (2 pops = 200 hab pour le hameau du POC, 1 000 hab pour un quartier rural), occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops. Une tile quartier rurale représente un **bassin de peuplement** (villages et hameaux agrégés), pas un hameau isolé.
-- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants.
+- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants. **Plafond de densité : 10 pops par tile** (quartiers ouvriers à terme).
+- **Fertilité** : le terrain reste unique (plaine), mais chaque tile porte une `fertilite` (ppm de 1,0) qui multiplie la production des terres exploitées. Elle est tirée par le générateur (bruit lissé, appauvri avec la distance au centre). C'est ce qui fait de la terre, même « toute exploitable », un facteur limitant : on défriche d'abord la meilleure terre accessible, puis de moins en moins productive.
 - `valeur_fonciere` existe dès le départ mais n'est pas utilisée dans le POC (futur moteur de la ségrégation spatiale).
 
 ### Le ratio habitat / production : indicateur émergent
@@ -52,7 +54,7 @@ perte prolongée        → faillite, tile abandonnée
 - Unité de population : **100 habitants, fixe**. Attributs discrets : tile de résidence, tile d'emploi (nullable), strate, culture, religion, orientation (voir `00`).
 - Dans le POC : une seule strate (paysan), une seule culture et religion, attributs fixes.
 - **Bloc discret** (décision, voir `00` §3) : une pop a une seule résidence et un seul emploi ; la main-d'œuvre d'un bâtiment est la somme des pops affectées (effectifs exprimés en pops). Résidence ≠ travail : consommation au quartier, production au lieu d'emploi.
-- **Consommation** : chaque jour, une pop consomme sur le stock de son hameau (5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement, voir `04`). **Pas de monnaie côté pops dans le POC-A** : elles consomment ce que leur hameau reçoit. **Le producteur mange d'abord** : le fournisseur le plus proche d'un hameau est son propre travail domestique (coût 0).
+- **Consommation** : chaque jour, une pop consomme sur le stock de son hameau (5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement, voir `04`). **Pas de monnaie côté pops dans le POC-A** : elles consomment ce que leur hameau reçoit. **Le producteur mange d'abord** : le fournisseur le plus proche d'un hameau textile est son propre atelier (distance 0).
 
 ### Personnages (lien avec la vision)
 Les firmes et institutions sont dirigées par des personnages, créés par des **postes** (voir `00`). Dans le POC : **un seul personnage, le maire**, coquille vide **inactive** (présent dans les données, aucune décision ; il ne construit pas).
@@ -63,7 +65,7 @@ Tout circule dans le même modèle : marchandises **et main-d'œuvre**.
 
 - Un quartier **produit** de la main-d'œuvre et **consomme** des biens.
 - Un bâtiment de production **consomme** main-d'œuvre + intrants, **produit** des extrants.
-- **Périmètre** d'une tile = ensemble des tiles accessibles via infrastructure continue, pondéré par le coût de transport (graphe, pas rayon fixe).
+- **Distance** entre deux lieux = **nombre de tiles « chemin » à emprunter** (0 sur une même tile ; 1 pour deux lieux accolés à la même tile de chemin). Un bâtiment doit être **accolé à un chemin** (ou à un hameau, dont les rues sont natives) pour être accessible. **Aucune pénalité selon la distance** : on s'approvisionne simplement au plus proche, et l'on ne va ni travailler ni s'approvisionner **au-delà de la limite** (`distance_max`, 10 tiles dans le POC, à calibrer).
 - Un quartier met sa population à disposition dans son périmètre ; une usine met ses ressources à disposition dans son périmètre.
 - Les **pops** sont l'unité de ce flux : chaque pop est affectée à un seul lieu de travail (résolution par le marché journalier ci-dessous).
 
@@ -71,11 +73,11 @@ Tout circule dans le même modèle : marchandises **et main-d'œuvre**.
 Créé entre deux tiles quand :
 1. l'une produit ce que l'autre consomme ;
 2. elles sont reliées par une infrastructure continue ;
-3. la distance (coût de transport) est acceptable.
+3. la distance est inférieure ou égale à `distance_max`.
 
-Sélection du fournisseur : **appel d'offres local** — le client choisit, dans son périmètre, le fournisseur au **coût livré** (prix + transport) le plus bas. Les chemins sont **précalculés** à la création du lien et recalculés uniquement si le réseau change.
+Sélection du fournisseur : **appel d'offres local** — le client choisit, à portée (`distance_max`), le fournisseur au **coût livré** le plus bas. Les chemins sont **précalculés** à la création du lien et recalculés uniquement si le réseau change.
 
-**POC-A (sans prix)** : coût livré = coût de transport seul, donc le fournisseur le plus proche qui a du stock. **En pénurie, rationnement au pro rata des demandes** (règle simple, sans biais d'ordre de traitement).
+**POC-A (sans prix)** : coût livré = distance seule, donc le fournisseur le plus proche qui a du stock. **En pénurie, rationnement au pro rata des demandes** (règle simple, sans biais d'ordre de traitement).
 
 ### Transport (POC)
 - **Implicite** : personne ne « réalise » le transport ; son coût est calculé et absorbé dans le prix de transaction.
@@ -98,7 +100,8 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, dans
 | Duplication d'une pop | La nouvelle pop prend le **poste vacant le plus proche** de son hameau (coût de transport) ; à égalité, le lieu le moins rempli ; sinon elle est **sans poste** (elle consomme, ne produit pas) |
 | Disparition d'une pop | La pop dont la jauge a franchi −100 ; son poste devient vacant |
 | **Chaque mois** | 1. Les pops sans poste prennent les postes vacants les plus proches. 2. **Réorientation selon le besoin** : pour chaque ressource en tension (ration couverte à moins de 97 %, ou intrant qui manque à un producteur), une pop quitte un lieu dont le stock est plein (excédent) pour un lieu qui produit la ressource manquante et a un poste libre (la pop la plus proche de la destination). Au plus un déplacement par ressource et par mois |
-| **Travail domestique** | Textile : fait par les résidents du hameau, sans poste ni trajet. Capacité proportionnelle au nombre de résidents |
+| **Travail sur place** | L'atelier d'un hameau textile est un poste ordinaire, à distance 0 : un résident y travaille sans trajet. Les autres pops du hameau vont aux terres alentour |
+| **Chantier** | Un chantier (défrichement, construction) emploie une équipe comme n'importe quel lieu de travail (voir §7) |
 | Accès au poste | Le trajet domicile-travail charge les segments. Si la pop n'atteint pas son poste un jour donné (congestion, en sommeil dans le POC), la production de ce jour est réduite ; la main-d'œuvre ne se reporte pas à J+1 |
 
 Boucle qui se corrige seule : des disparitions créent des postes vacants, la production baisse, les duplications reprennent les postes ; un manque de grain attire des bras vers les champs depuis les lieux en excédent. Le **travail saisonnier** (hiver : filage et couture) est hors POC (production continue).
@@ -205,7 +208,7 @@ jauge_pop   += 100 hab × taux / 365                               # chaque jour
 ```
 - Le taux net est multiplié par `acceleration` (observation du POC) ; les valeurs de départ sont dans `sim/donnees/poc.toml`.
 - Une jauge plutôt qu'un dé quotidien : même espérance mathématique, mais déterministe, rejouable et explicable. Les jauges initiales sont décalées pour éviter des duplications synchrones.
-- La population est bornée par la capacité de logement. **Personne ne crée de logement en POC-A** : la saturation est un résultat attendu.
+- La population est bornée par la capacité de logement. Quand tous les logements à portée sont pleins, la jauge attend, plafonnée, et **fait bâtir un hameau** (voir §7).
 - La main-d'œuvre se compte **en pops** : une pop employée fournit une unité, une pop sans poste ne produit pas. Âge et condition individuelle ne sont pas modélisés (équivalence 1 pop ≈ 50 travailleurs réels : calibration seulement, voir `00` §3).
 - Hors POC : mobilité, promotion de classe (par le confort), bascule des attributs (voir `00`).
 
@@ -213,3 +216,50 @@ jauge_pop   += 100 hab × taux / 365                               # chaque jour
 ```
 pops, capacité, vital_jour, confort_jour, couverture par ressource, vital_annuel, confort_annuel
 ```
+
+## 7. Extension du village par ses habitants (POC-A)
+
+Aucune firme, aucune monnaie : la **communauté** étend le village, à rythme **saisonnier** (tous les 90 jours), **après** la réaffectation mensuelle. Les pops prennent d'abord tous les postes disponibles, et ne s'étendent que ce qui reste.
+
+### Quand
+| Situation | Réaction |
+|---|---|
+| **Des pops attendent un logement** (jauge pleine, plus de place à portée) | Bâtir un **hameau**. Textile si les ateliers manquent de capacité, sinon ordinaire |
+| **Une ressource est en tension** et des pops restent **sans poste** | **Défricher** une terre du type qui produit la ressource |
+| Les producteurs de la ressource sont **bloqués par un intrant manquant** (ex. ateliers sans lin) | On ne les multiplie pas : la tension est reportée sur l'intrant (champ de lin) |
+| Un chantier est déjà en cours pour cette ressource | On attend |
+
+Au plus `chantiers_max` chantiers en même temps.
+
+### Où
+Un site doit être **libre**, **accolé à une tile traversable** (chemin ou hameau), éventuellement **au bout d'une nouvelle tile de chemin**, à **moins de `distance_max`** du hameau demandeur, et **desservi** : dans la limite de distance d'un producteur de chaque besoin du lieu (matériau de construction ; pour un hameau aussi chauffage et nourriture). Un hameau est lui-même traversable : sa propre tile compte une tile de plus dans le trajet. Parmi les sites possibles :
+- **terre exploitée** : maximise `fertilité / (distance + 1)` ;
+- **hameau** : le plus proche, sur la terre la plus pauvre (on ne bâtit pas sur la meilleure terre).
+
+### Coût
+Un chantier est un lieu de travail temporaire : une **équipe** de pops (venues du hameau demandeur) y fournit un nombre de **pop-jours**, et le **matériau** (bois) arrive par le réseau comme n'importe quelle marchandise, consommé au prorata du travail. Sans bois, le chantier n'avance pas. À la fin, l'équipe devient la première main-d'œuvre du lieu.
+
+| Création | Travail (pop-jours) | Équipe | Bois | Durée minimale |
+|---|---|---|---|---|
+| Champ | 240 | 2 | 0 | 120 j |
+| Pâturage | 90 | 1 | 20 | 90 j |
+| Verger | 300 | 2 | 0 | 150 j |
+| Exploitation forestière | 120 | 2 | 0 | 60 j |
+| Champ de lin | 200 | 2 | 0 | 100 j |
+| Élevage laine | 100 | 1 | 20 | 100 j |
+| **Hameau** | 300 | 2 | 200 | 150 j |
+| **Hameau textile** | 400 | 2 | 260 | 200 j |
+
+(Valeurs de départ plausibles, à calibrer : un champ se défriche en quelques mois à deux pops ; un hameau demande une saison de travail et quelques jours de production de bois. Le verger tarde à produire dans la réalité, ce délai n'est pas modélisé.)
+
+### Équipe
+1. Les pops **sans poste** les plus proches ; 2. à défaut, des bras pris dans les lieux dont le stock couvre au moins 5 jours (excédent) ; 3. un chantier resté **sans équipe** réquisitionne des bras (corvée) à chaque saison, même sans excédent. Un chantier incomplet recrute à nouveau à chaque saison.
+
+### Le frein : la qualité de la terre
+Rien n'interdit de défricher une plaine entière, mais les terres lointaines sont plus pauvres : quand une pop de plus ne produit plus de quoi se nourrir (et se chauffer) sur la terre qu'elle défriche, la population plafonne. La taille d'équilibre **émerge** de la fertilité et de la distance ; elle oscille en « dents de scie » autour de ce plafond (déclin lent si le vital manque, reprise ensuite). Le confort (viande, vêtements) **ne freine pas** la croissance (une pop insatisfaite croît à +0,5 %/an) : c'est le premier luxe que l'on abandonne quand la terre est ingrate.
+
+### Journal
+Chaque lancement et chaque fin de chantier est inscrit au journal d'événements, avec son **motif** (« grain manque, 2 pops sans poste » ; « 1 pops attendent un logement »).
+
+### Limites connues
+Pas d'abandon : un hameau vidé par un déclin reste debout, une terre sans bras reste inactive. Pas de délai de production d'un verger. Pas de réaffectation de l'équipe en cas de besoin urgent ailleurs.
