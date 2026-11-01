@@ -39,7 +39,9 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | Dossier | Contenu |
 |---|---|
 | `sim/` | Moteur Rust pur + CLI headless (`cargo run --release --bin sim-cli`), tests d'invariants (`cargo test --release`). Voir `sim/README.md` |
-| `graphGeneration/` | Générateur d'assets (référence graphique) |
+| `sim-wasm/` | Pont WebAssembly du moteur (interface C, instantanés JSON) ; `node sim-wasm/test.mjs` |
+| `app/` | Application web : carte PixiJS + interface Vue 3 + moteur en WebAssembly. Voir `app/README.md` |
+| `graphGeneration/` | Générateur d'assets : atlas de 49 tiles dans `app/public/assets/` (référence graphique) |
 
 ## Principes non négociables
 

@@ -132,7 +132,7 @@ Ce qui compte est la **proportion**, pas la valeur absolue. Effectifs en **pops*
 - **Déterminisme** : quantités en entiers, itérations ordonnées.
 - Paramètres (bâtiments, recettes, besoins) en **fichiers de données**, pas en dur.
 
-## Ce que voit le joueur (POC)
+## Ce que voit le joueur (POC) — implémenté dans `app/` (voir `app/README.md`)
 
 Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregistre quel `min()` a mordu : main-d'œuvre, intrant, stock plein).
 

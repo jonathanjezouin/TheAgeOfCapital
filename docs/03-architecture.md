@@ -37,6 +37,9 @@ Pas de GC (pas de micro-freezes), compilé natif, parallélisme réel (Rayon). C
 - Wrapper **napi-rs** mince pour Electron. En dev, le renderer est une page web ordinaire (Vite) reliée à la sim par un petit serveur local : pas d'Electron avant le packaging Steam (Electron ou Tauri à trancher à ce moment).
 - Rendu validé visuellement en Chromium headless (captures).
 
+### Hôte actuel : le navigateur (WebAssembly)
+Pour le POC, le moteur tourne **dans la page** : `sim-wasm` compile la crate `sim` en WebAssembly (interface C, sans `wasm-bindgen`) et expose des instantanés JSON ; `app/` (Vue 3 + PixiJS) les affiche. Aucun serveur, aucun pont Node : la page marche dans un navigateur, un Artifact, et plus tard dans Electron. Le moteur natif (napi-rs) reste l'hôte prévu pour la version Steam ; seul l'hôte change, pas la crate `sim`.
+
 ## 2. Tiles passives, bâtiments actifs
 
 | | Tiles | Bâtiments |

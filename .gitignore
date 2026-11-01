@@ -3,3 +3,7 @@ __pycache__/
 graphGeneration/out/
 target/
 Cargo.lock.bak
+sim-wasm/target/
+node_modules/
+app/dist/
+app/public/sim_wasm.wasm
