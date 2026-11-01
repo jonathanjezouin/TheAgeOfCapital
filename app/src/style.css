@@ -1,5 +1,5 @@
 :root {
-  color-scheme: dark light;
+  color-scheme: dark;
   --fond: #15130e;
   --panneau: #1f1c14;
   --panneau-2: #28241a;
@@ -14,6 +14,7 @@
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme='dark']) {
+    color-scheme: light;
     --fond: #e9e4d4;
     --panneau: #f6f2e6;
     --panneau-2: #ebe5d2;
@@ -27,7 +28,6 @@
     --piste: #d9d1b6;
   }
 }
-:root[data-theme='dark'] { color-scheme: dark; }
 :root[data-theme='light'] {
   color-scheme: light;
   --fond: #e9e4d4; --panneau: #f6f2e6; --panneau-2: #ebe5d2; --bord: #c2b894; --texte: #2b261a;
@@ -64,14 +64,14 @@ small, .doux { color: var(--doux); }
 .haut { grid-area: haut; }
 .zone-carte { grid-area: carte; position: relative; min-height: 0; background: #6c7a3a; overflow: hidden; }
 .zone-carte canvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
-.infos { grid-area: infos; overflow-y: auto; background: var(--panneau); border-left: 1px solid var(--bord); padding: 12px 14px; }
+.infos { grid-area: infos; overflow-y: auto; background: var(--panneau); border-left: 1px solid var(--bord); padding: 12px max(16px, env(safe-area-inset-right, 0px)) 12px 16px; }
 .bas { grid-area: bas; display: grid; grid-template-columns: 1.15fr 1fr 1fr; background: var(--panneau); border-top: 1px solid var(--bord); min-height: 0; }
-.bas > section { padding: 8px 12px; min-width: 0; overflow: auto; }
+.bas > section { padding: 8px 16px; min-width: 0; overflow: auto; }
 .bas > section + section { border-left: 1px solid var(--bord); }
 
 .haut {
   display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
-  padding: 8px 12px; background: var(--panneau); border-bottom: 1px solid var(--bord);
+  padding: 8px 16px 8px max(16px, env(safe-area-inset-left, 0px)); background: var(--panneau); border-bottom: 1px solid var(--bord);
 }
 .haut .titre { font-weight: 700; letter-spacing: 0.02em; }
 .haut .date { font-variant-numeric: tabular-nums; min-width: 9.5em; color: var(--accent); font-weight: 600; }

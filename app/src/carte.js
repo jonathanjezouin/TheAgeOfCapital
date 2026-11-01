@@ -1,6 +1,7 @@
 // Rendu de la carte avec PixiJS : couches sol / infrastructure / bâtiments / pops, caméra et sélection.
 // Vue strictement de dessus, soleil au zénith ; le jour/nuit est une teinte globale.
 
+import 'pixi.js/unsafe-eval' // aucune génération de code à l'exécution : compatible avec une CSP stricte
 import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture, Point } from 'pixi.js'
 import { store } from './store.js'
 

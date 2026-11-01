@@ -9,6 +9,7 @@ npm run wasm      # compile le moteur (cargo, cible wasm32) -> public/sim_wasm.w
 npm run assets    # (re)génère l'atlas de tiles -> public/assets/ (Python, voir ../graphGeneration)
 npm run dev       # http://localhost:5173
 npm run build     # dist/index.html (JS et CSS inclus) + sim_wasm.wasm + assets/
+npm run artifact  # build + dist/artifact/ : fragment HTML prêt à publier comme Artifact, avec ses fichiers voisins
 node tests/capture.mjs dist /tmp/captures   # validation visuelle : captures Chromium sans écran
 ```
 

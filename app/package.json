@@ -9,7 +9,8 @@
     "assets": "cd ../graphGeneration && python3 generate_assets.py",
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "artifact": "vite build && node tools/artifact.mjs"
   },
   "dependencies": {
     "pixi.js": "^8.9.0",
