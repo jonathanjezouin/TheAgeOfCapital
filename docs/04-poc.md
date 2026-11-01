@@ -147,4 +147,4 @@ Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregist
 
 ## Prochaine étape de design identifiée
 
-**Déclin et abandon** : quand la population baisse durablement, que deviennent les hameaux vides et les terres sans bras ? Aujourd'hui rien ne s'abandonne. Viendront ensuite les **saisons**, l'**aléa de récolte**, puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.
+**Représentation visuelle** : voir le village vivre (carte, vitesse de simulation, informations par tile). Le **déclin et l'abandon** des lieux, les **saisons**, l'**aléa de récolte** et les autres fonctionnalités écartées sont consignés dans `05` (« Fonctionnalités écartées du POC-A ») et seront repris plus tard. Puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.

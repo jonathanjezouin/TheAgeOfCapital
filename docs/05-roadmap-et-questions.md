@@ -37,9 +37,22 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Niveaux technologiques > 0
 - Niveaux de zoom méso et macro
 
+## Fonctionnalités écartées du POC-A (à reprendre)
+
+| Sujet | État actuel | Pourquoi on y reviendra |
+|---|---|---|
+| **Déclin et abandon** des lieux | Un hameau vidé reste debout, une terre sans bras reste inactive, un chantier sans équipe attend | Réalisme du recul démographique ; réutilisation des lieux ; lisibilité de la carte |
+| **Aléa de récolte** / famines ponctuelles | Seul le test « grain ÷ 4 » ; pas de choc extérieur | Source naturelle des dents de scie historiques ; outil de debug prévu |
+| **Saisons**, stocks annuels (greniers) | Production continue | Travail d'hiver (filage, couture), soudure, famines de fin d'hiver |
+| **Délai de production d'un verger** | Immédiat à la fin du chantier | Investissement lent réaliste |
+| **Réaffectation d'une équipe de chantier** vers un besoin urgent | L'équipe finit son chantier | Réactivité de la communauté |
+| **Rendements décroissants par pop** | Effectif fixe par terre, production proportionnelle à la fertilité | Sous-emploi agraire réaliste |
+| **Le confort freine la croissance** | Non : une pop insatisfaite croît à +0,5 %/an | À reconsidérer avec la promotion de classe |
+| **Prélèvements** (dîme, rente, impôts) | Aucun | Le surplus qui quitte le village : amorce du marché et du capital |
+
 ## Questions ouvertes
 
-1. **Déclin et abandon** — prochain gros sujet (voir `04`). L'extension communautaire est faite (`02` §7) ; reste à traiter ce qui se passe quand la population baisse : hameaux vides, terres sans bras, équipes de chantier orphelines, mémoire des lieux abandonnés.
+1. **Déclin et abandon** — *écarté pour l'instant, à reprendre plus tard*. L'extension communautaire est faite (`02` §7) ; reste à traiter ce qui se passe quand la population baisse durablement : hameaux vides, terres sans bras, équipes de chantier orphelines, mémoire des lieux abandonnés (et leur réutilisation).
 1b. **Placement automatique des bâtiments par les firmes** (POC-B) : généralisation de l'extension communautaire, avec des critères de rentabilité à la place des besoins de subsistance.
 2. **Formation des prix** : simple offre/demande hebdomadaire ? négociation des contrats cadre ? prix plancher ?
 3. **Qui construit** : personne en POC-A ; en POC-B, les firmes (réinvestissement) et/ou le maire ? Articulation des deux logiques.
