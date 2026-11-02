@@ -2,7 +2,7 @@
 //! et réorientation de la main-d'œuvre selon le besoin (docs/02 §3).
 
 use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, PPM};
-use crate::monde::{cout_dir, oppose, Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier};
+use crate::monde::{cout_dir, Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier};
 use crate::reseau::Reseau;
 use serde::Serialize;
 use std::collections::BTreeMap;

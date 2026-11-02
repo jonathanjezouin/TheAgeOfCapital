@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Représentation visuelle du POC : carte PixiJS, interface Vue 3, moteur Rust en WebAssembly",
   "scripts": {
-    "wasm": "cd ../sim-wasm && cargo build --release --target wasm32-unknown-unknown && cp target/wasm32-unknown-unknown/release/sim_wasm.wasm ../app/public/sim_wasm.wasm",
+    "wasm": "cd ../sim-wasm && cargo build --release --target wasm32-unknown-unknown && node -e \"require('fs').copyFileSync('target/wasm32-unknown-unknown/release/sim_wasm.wasm', '../app/public/sim_wasm.wasm')\"",
     "assets": "cd ../graphGeneration && python3 generate_assets.py",
     "dev": "vite",
     "build": "vite build",
