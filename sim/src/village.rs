@@ -1,7 +1,6 @@
 //! Générateur de village : déterministe (graine), aléatoire mais cohérent.
 //!
-//! Économie de subsistance de 1750 : des hameaux (2 pops, ou 3 pops dont une travaille à
-//! l'atelier textile du hameau) et des terres exploitées (champs, pâturages, vergers, forêt,
+//! Économie de subsistance de 1750 : des hameaux (2 pops, textile fait à la maison) et des terres exploitées (champs, pâturages, vergers, forêt,
 //! lin, laine) disposés le long d'une croix de chemins de terre (arêtes, voir docs/02 §9), directement
 //! ou au bout d'une antenne d'une tile. Le nombre de terres de chaque type découle des besoins des hameaux
 //! (jamais d'un ratio codé en dur) pour démarrer proche de l'équilibre.
@@ -18,7 +17,7 @@ use crate::PPM;
 #[derive(Clone, Debug)]
 pub struct ParamsVillage {
     pub graine: u64,
-    /// Nombre total de hameaux (dont les hameaux textiles, calculés d'après les besoins).
+    /// Nombre total de hameaux.
     pub nb_hameaux: usize,
     /// Pops initiales, en % de la capacité de logement totale.
     pub occupation_initiale_pct: u32,
@@ -51,44 +50,22 @@ enum Item {
     Terre(usize),
 }
 
-/// Combien de bâtiments de chaque type, et combien de hameaux textiles.
+/// Combien de bâtiments de chaque type.
 #[derive(Clone, Debug)]
 pub struct Composition {
-    /// Par type de bâtiment (l'atelier est compté à raison d'un par hameau textile).
+    /// Par type de bâtiment (l'atelier domestique est compté à raison d'un par hameau).
     pub batiments: Vec<usize>,
-    pub hameaux_textiles: usize,
 }
 
-/// Dimensionne un village de `nb_hameaux` hameaux pleins : d'abord le nombre de hameaux
-/// textiles nécessaires pour vêtir tout le monde, puis les terres, en remontant les chaînes
-/// de production (intrants compris).
+/// Dimensionne un village de `nb_hameaux` hameaux pleins : les terres, en remontant les chaînes
+/// de production (intrants compris) d'après les besoins des pops. Chaque hameau fait lui-même
+/// ses vêtements (atelier domestique), avec ses jours libres.
 pub fn composition(cat: &Catalogue, nb_hameaux: usize) -> Composition {
     let nr = cat.ressources.len();
-    let normal = 0;
-    let textile = cat.habitats.iter().position(|h| h.atelier.is_some());
-    let capacite = |t: usize| {
-        cat.habitats[normal].capacite_pops as i64 * (nb_hameaux - t) as i64
-            + textile.map_or(0, |h| cat.habitats[h].capacite_pops as i64 * t as i64)
-    };
-    let demande_de = |r: usize, t: usize| cat.ration_pop(r) as f64 * capacite(t) as f64;
-
-    // Plus petit nombre de hameaux textiles dont les ateliers couvrent les besoins.
-    let mut t_textiles = 0;
-    if let Some(h) = textile {
-        let atelier = cat.habitats[h].atelier.unwrap();
-        let finaux = cat.batiments[atelier].extrants_finaux();
-        t_textiles = (0..=nb_hameaux)
-            .find(|&t| {
-                finaux
-                    .iter()
-                    .all(|&(r, q)| (q * t as i64) as f64 >= demande_de(r, t))
-            })
-            .unwrap_or(nb_hameaux);
-    }
-
+    let capacite = cat.habitats[0].capacite_pops as i64 * nb_hameaux as i64;
     let mut demande = vec![0f64; nr];
     for b in &cat.besoins {
-        demande[b.ressource] = demande_de(b.ressource, t_textiles);
+        demande[b.ressource] = cat.ration_pop(b.ressource) as f64 * capacite as f64;
     }
     let producteur: Vec<Option<usize>> = (0..nr)
         .map(|r| cat.producteurs(r).first().copied())
@@ -123,7 +100,7 @@ pub fn composition(cat: &Catalogue, nb_hameaux: usize) -> Composition {
             .1 as f64;
         let besoin = demande[r] / q_ext;
         compte[t] = if est_atelier(t) {
-            t_textiles
+            nb_hameaux
         } else {
             compte[t].max(besoin.round().max(1.0) as usize)
         };
@@ -131,10 +108,7 @@ pub fn composition(cat: &Catalogue, nb_hameaux: usize) -> Composition {
             demande[i] += besoin * q_in as f64;
         }
     }
-    Composition {
-        batiments: compte,
-        hameaux_textiles: t_textiles,
-    }
+    Composition { batiments: compte }
 }
 
 fn isqrt(n: u64) -> u64 {
@@ -276,13 +250,7 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
 fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulation, String> {
     // --- Éléments à placer ---
     let compo = composition(cat, p.nb_hameaux);
-    let textile = cat.habitats.iter().position(|h| h.atelier.is_some());
-    let mut items: Vec<Item> = (0..p.nb_hameaux - compo.hameaux_textiles)
-        .map(|_| Item::Hameau(0))
-        .collect();
-    if let Some(h) = textile {
-        items.extend((0..compo.hameaux_textiles).map(|_| Item::Hameau(h)));
-    }
+    let mut items: Vec<Item> = (0..p.nb_hameaux).map(|_| Item::Hameau(0)).collect();
     for (t, &n) in compo.batiments.iter().enumerate() {
         let est_atelier = cat.habitats.iter().any(|h| h.atelier == Some(t));
         if !est_atelier && !cat.batiments[t].chantier {
@@ -468,7 +436,14 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
 
     // --- Affectation aux postes (proportionnelle, pops les plus proches d'abord) ---
     let postes: Vec<u32> = (0..nb)
-        .map(|b| cat.batiments[monde.batiments[b].type_id].pops)
+        .map(|b| {
+            let t = &cat.batiments[monde.batiments[b].type_id];
+            if t.domestique {
+                0 // travail domestique : pas de poste
+            } else {
+                t.pops
+            }
+        })
         .collect();
     let total_postes: u32 = postes.iter().sum();
     let total_pops: u32 = n0.iter().sum();

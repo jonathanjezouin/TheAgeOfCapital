@@ -12,7 +12,7 @@ assert.equal(w.sim_creer(1, 10, 3, 7, 80), 0, "création du village");
 const meta = json(w.sim_meta_json());
 assert.equal(meta.largeur, 200);
 assert.equal(meta.ressources.length, 8);
-assert.deepEqual(meta.habitats.map((h) => h.capacite), [2, 3]);
+assert.deepEqual(meta.habitats.map((h) => h.capacite), [2]);
 
 const carte = json(w.sim_carte_json());
 assert.ok(carte.tuiles.length > 20);

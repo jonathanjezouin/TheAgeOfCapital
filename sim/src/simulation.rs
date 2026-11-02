@@ -236,6 +236,8 @@ impl Simulation {
         let t = &self.cat.batiments[bat.type_id];
         if t.chantier {
             bat.equipe
+        } else if t.domestique {
+            0 // pas de poste : le travail domestique prend le temps libre des pops du hameau
         } else {
             t.pops
         }
@@ -480,8 +482,23 @@ impl Simulation {
                         ));
                     }
                 } else {
-                    for (r, q) in self.cat.batiments[bat.type_id].intrants_externes() {
-                        besoins.push((r, q, self.cat.sim.jours_stock_entree));
+                    let t = &self.cat.batiments[bat.type_id];
+                    // Un atelier domestique ne commande que de quoi vêtir les pops de son hameau,
+                    // pas de quoi tourner à plein régime (sinon il accapare la fibre).
+                    let frac = match (t.domestique, bat.quartier) {
+                        (true, Some(q)) => t
+                            .extrants_finaux()
+                            .iter()
+                            .map(|&(r, qf)| {
+                                mul_div(self.cat.ration_pop(r) * eff[q] as i64, PPM, qf.max(1))
+                            })
+                            .max()
+                            .unwrap_or(PPM)
+                            .min(PPM),
+                        _ => PPM,
+                    };
+                    for (r, q) in t.intrants_externes() {
+                        besoins.push((r, mul_div(q, frac, PPM), self.cat.sim.jours_stock_entree));
                     }
                 }
             }
@@ -582,7 +599,19 @@ impl Simulation {
         }
     }
 
+    /// Temps libre de chaque hameau, en pop-jours par jour (milli) : une pop sans poste y consacre
+    /// tout son temps, une pop employée la part `temps_libre_actif`.
+    fn temps_libre(&self) -> Vec<i64> {
+        let mut libre = vec![0i64; self.nq()];
+        let actif = self.cat.domestique.temps_libre_actif_ppm;
+        for p in &self.pops {
+            libre[p.residence] += if p.emploi.is_some() { actif } else { PPM };
+        }
+        libre.iter().map(|&l| l * 1000 / PPM).collect()
+    }
+
     fn produire(&mut self) {
+        let libre = self.temps_libre();
         let cat = &self.cat;
         let tuiles = &self.monde.tuiles;
         for b in &mut self.monde.batiments {
@@ -597,7 +626,13 @@ impl Simulation {
             } else {
                 PPM
             };
-            let f_mo = b.presents as i64 * PPM / t.pops as i64;
+            let f_mo = if t.domestique {
+                // Travail domestique : temps libre du hameau / travail requis à plein régime.
+                let q = b.quartier.expect("atelier domestique sans hameau");
+                (libre[q] * PPM / (t.pops as i64 * 1000)).min(PPM)
+            } else {
+                b.presents as i64 * PPM / t.pops as i64
+            };
             let mut f_min = PPM;
             let mut limitant = Limitant::Aucun;
             let mut f_dernier = 0;
@@ -961,10 +996,12 @@ impl Simulation {
     fn habitat_producteur(&self, r: usize) -> Option<usize> {
         self.cat.habitats.iter().position(|h| {
             h.atelier.map_or(false, |a| {
-                self.cat.batiments[a]
-                    .extrants_finaux()
-                    .iter()
-                    .any(|(x, _)| *x == r)
+                // Un atelier domestique existe dans tout hameau : en bâtir un de plus n'aide pas.
+                !self.cat.batiments[a].domestique
+                    && self.cat.batiments[a]
+                        .extrants_finaux()
+                        .iter()
+                        .any(|(x, _)| *x == r)
             })
         })
     }
@@ -1005,10 +1042,11 @@ impl Simulation {
             }) => {
                 let h = &self.cat.habitats[self.monde.quartiers[*q].habitat_id];
                 h.atelier.map_or(false, |a| {
-                    self.cat.batiments[a]
-                        .extrants_finaux()
-                        .iter()
-                        .any(|(x, _)| *x == r)
+                    !self.cat.batiments[a].domestique
+                        && self.cat.batiments[a]
+                            .extrants_finaux()
+                            .iter()
+                            .any(|(x, _)| *x == r)
                 })
             }
             None => false,
@@ -1383,7 +1421,7 @@ impl Simulation {
     }
 
     /// Plan ASCII du village (pour l'observation en ligne de commande).
-    /// H hameau, T hameau textile, C champ, P pâturage, V verger, F forêt, L lin, W laine,
+    /// H hameau, C champ, P pâturage, V verger, F forêt, L lin, W laine,
     /// + chemin, minuscules = chantier de la lettre correspondante, # chantier de hameau.
     pub fn carte_ascii(&self) -> String {
         let m = &self.monde;
@@ -1405,8 +1443,6 @@ impl Simulation {
                 Contenu::Quartier(q) => {
                     if m.quartiers[q].capacite_pops == 0 {
                         '#'
-                    } else if m.quartiers[q].atelier.is_some() {
-                        'T'
                     } else {
                         'H'
                     }

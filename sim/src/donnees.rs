@@ -29,6 +29,7 @@ struct Brut {
     infrastructure: BrutInfra,
     habitat: BrutHabitat,
     habitats: Vec<BrutTypeHabitat>,
+    domestique: BrutDomestique,
     extension: BrutExtension,
     demographie: BrutDemo,
     mobilite: BrutMobilite,
@@ -78,6 +79,11 @@ struct BrutTypeHabitat {
     capacite_pops: u32,
     atelier: Option<String>,
     cout_creation: BrutCout,
+}
+
+#[derive(Deserialize)]
+struct BrutDomestique {
+    temps_libre_actif: f64,
 }
 
 #[derive(Deserialize)]
@@ -148,6 +154,8 @@ struct BrutBatiment {
     chantier: bool,
     #[serde(default)]
     fertile: bool,
+    #[serde(default)]
+    domestique: bool,
     cout_creation: Option<BrutCout>,
     etapes: Vec<BrutEtape>,
 }
@@ -206,9 +214,17 @@ pub struct TypeHabitat {
     pub nom: String,
     pub asset: String,
     pub capacite_pops: u32,
-    /// Type de bâtiment (1 poste) embarqué sur la même tile : travail sur place.
+    /// Type de bâtiment embarqué sur la même tile : travail sur place (atelier domestique, ou 1 poste).
     pub atelier: Option<usize>,
     pub cout_creation: CoutCreation,
+}
+
+/// Temps libre des pops (docs/02 §8.3, étape 1 : budget lissé sans saisons).
+#[derive(Clone, Debug)]
+pub struct ParamsDomestique {
+    /// Part du temps d'une pop employée qui reste libre pour le travail domestique (ppm).
+    /// Une pop sans poste y consacre tout son temps.
+    pub temps_libre_actif_ppm: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -275,6 +291,9 @@ pub struct TypeBatiment {
     pub chantier: bool,
     /// La production est proportionnelle à la fertilité de la tile.
     pub fertile: bool,
+    /// Travail domestique (docs/02 §8.4) : pas de poste ; la main-d'œuvre vient du temps libre des
+    /// pops du hameau. `pops` est alors le travail requis à plein régime, en pop-jours par jour.
+    pub domestique: bool,
     pub cout_creation: Option<CoutCreation>,
     pub etapes: Vec<Etape>,
 }
@@ -338,6 +357,7 @@ pub struct Catalogue {
     pub infra: ParamsInfra,
     pub habitat: ParamsHabitat,
     pub habitats: Vec<TypeHabitat>,
+    pub domestique: ParamsDomestique,
     pub extension: ParamsExtension,
     pub demo: ParamsDemo,
     pub mobilite: ParamsMobilite,
@@ -415,6 +435,7 @@ impl Catalogue {
                 pops: x.pops,
                 chantier: x.chantier,
                 fertile: x.fertile,
+                domestique: x.domestique,
                 cout_creation: x.cout_creation.as_ref().map(cout_de),
                 etapes,
             });
@@ -466,6 +487,9 @@ impl Catalogue {
                 couverture_donneur_jours: b.extension.couverture_donneur_jours,
             },
             habitats,
+            domestique: ParamsDomestique {
+                temps_libre_actif_ppm: en_ppm(b.domestique.temps_libre_actif),
+            },
             demo: ParamsDemo {
                 habitants_par_pop: b.demographie.habitants_par_pop,
                 croissance_satisfaite_ppm: en_ppm(b.demographie.croissance_satisfaite),

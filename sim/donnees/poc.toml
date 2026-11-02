@@ -26,20 +26,20 @@ poids_trajet_pop = 10.0
 [habitat]
 densite_max_pops = 10
 
-# Hameau ordinaire : 2 pops, qui travaillent toutes dans les terres alentour.
+# Hameau : 2 pops, qui travaillent toutes dans les terres alentour. Le textile (tissage, couture) est
+# un travail domestique d'hiver, fait à la maison avec le temps libre des pops (docs/02 §8.4) : tout
+# hameau embarque donc un atelier domestique, sans poste.
 [[habitats]]
 nom = "hameau"
 asset = "bat_hameau"
 capacite_pops = 2
+atelier = "atelier_domestique"
 cout_creation = { travail_pop_jours = 300.0, equipe = 2, bois = 200.0 }
 
-# Hameau textile : 3 pops, dont 1 travaille sur place (tissage, couture) ; les 2 autres aux terres alentour.
-[[habitats]]
-nom = "hameau_textile"
-asset = "bat_hameau_textile"
-capacite_pops = 3
-atelier = "atelier_textile"
-cout_creation = { travail_pop_jours = 400.0, equipe = 2, bois = 260.0 }
+# Temps libre (docs/02 §8.3, étape 1 : budget lissé, sans saisons). Le travail des champs n'occupe
+# qu'environ un tiers de l'année d'un actif en 1750 ; le reste va à l'élevage, au bois et au textile.
+[domestique]
+temps_libre_actif = 0.5            # part du temps d'une pop employée qui reste libre (une pop sans poste : tout)
 
 [demographie]
 habitants_par_pop = 100
@@ -167,12 +167,13 @@ fertile = true
 cout_creation = { travail_pop_jours = 100.0, equipe = 1, bois = 20.0 }
 etapes = [{ extrants = [{ ressource = "laine", qte = 20.0 }] }]
 
-# Atelier textile : 1 pop du hameau textile, qui travaille sur place (distance 0).
-# 1 pop fait 4 vêtements par jour (soit les besoins de 8 pops).
+# Atelier domestique : textile fait à la maison (distance 0), sans poste. `pops` = travail requis à plein
+# régime, en pop-jours par jour : 1 pop-jour fait 4 vêtements (soit les besoins de 8 pops).
 [[batiments]]
-nom = "atelier_textile"
-asset = "bat_hameau_textile"
+nom = "atelier_domestique"
+asset = "bat_hameau"
 pops = 1
+domestique = true
 etapes = [
   { intrants = [{ ressource = "lin", qte = 8.0 }, { ressource = "laine", qte = 4.0 }], extrants = [{ ressource = "tissu", qte = 6.0 }] },
   { intrants = [{ ressource = "tissu", qte = 6.0 }], extrants = [{ ressource = "vetements", qte = 4.0 }] },

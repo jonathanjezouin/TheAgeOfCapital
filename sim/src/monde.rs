@@ -65,7 +65,7 @@ pub struct Quartier {
     pub habitat_id: usize,
     /// Capacité de logement (0 tant que le hameau est en construction).
     pub capacite_pops: u32,
-    /// Bâtiment embarqué sur la même tile (atelier textile), s'il y en a un.
+    /// Atelier domestique embarqué sur la même tile (textile fait à la maison), s'il y en a un.
     pub atelier: Option<usize>,
     pub stock: Vec<Qte>,
     /// Besoins vitaux couverts (0..1 en ppm) lors du dernier jour.
@@ -94,7 +94,7 @@ pub enum Limitant {
 pub struct Batiment {
     pub type_id: usize,
     pub tuile: usize,
-    /// Hameau auquel appartient un atelier embarqué (même tile).
+    /// Hameau auquel appartient un atelier domestique embarqué (même tile).
     pub quartier: Option<usize>,
     /// Effectif de l'équipe, pour un site de chantier.
     pub equipe: u32,

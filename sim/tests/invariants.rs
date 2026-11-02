@@ -48,17 +48,20 @@ fn donnees_par_defaut_valides() {
     // 6 terres exploitées, 1 atelier, 1 type chantier.
     assert_eq!(c.batiments.len(), 8);
     assert_eq!(c.batiments.iter().filter(|b| b.chantier).count(), 1);
-    // Hameau ordinaire : 2 pops ; hameau textile : 3 pops dont 1 à l'atelier ; densité max 10.
+    // Un seul type de hameau (2 pops) ; densité max 10. Le textile est un travail domestique :
+    // l'atelier du hameau n'a pas de poste, il demande 1 pop-jour par jour à plein régime.
     assert_eq!(
         c.habitats
             .iter()
             .map(|h| h.capacite_pops)
             .collect::<Vec<_>>(),
-        vec![2, 3]
+        vec![2]
     );
     assert_eq!(c.habitat.densite_max_pops, 10);
-    let atelier = c.habitats[1].atelier.expect("atelier du hameau textile");
+    let atelier = c.habitats[0].atelier.expect("atelier domestique du hameau");
+    assert!(c.batiments[atelier].domestique);
     assert_eq!(c.batiments[atelier].pops, 1);
+    assert_eq!(c.domestique.temps_libre_actif_ppm, PPM / 2);
     // Terres exploitées : 19 pops pour une exploitation de chaque type.
     let postes: u32 = c
         .batiments
@@ -82,7 +85,7 @@ fn donnees_incoherentes_refusees() {
     // Densité au-delà du plafond de 10 pops par tile.
     assert!(Catalogue::depuis_toml(&t.replace("capacite_pops = 2", "capacite_pops = 11")).is_err());
     assert!(Catalogue::depuis_toml(
-        &t.replace("atelier = \"atelier_textile\"", "atelier = \"inconnu\"")
+        &t.replace("atelier = \"atelier_domestique\"", "atelier = \"inconnu\"")
     )
     .is_err());
     assert!(Catalogue::depuis_toml(&t.replace("distance_max = 110", "distance_max = 0")).is_err());
@@ -92,10 +95,9 @@ fn donnees_incoherentes_refusees() {
 fn composition_equilibree() {
     let c = Catalogue::defaut();
     let nb = |n: &sim::village::Composition, nom: &str| n.batiments[c.bat_id(nom).unwrap()];
-    // 10 hameaux : il faut 3 hameaux textiles (3 ateliers × 4 vêtements ≥ besoins de 23 pops).
+    // 10 hameaux : chacun fait ses vêtements (un atelier domestique par hameau).
     let n = sim::village::composition(&c, 10);
-    assert_eq!(n.hameaux_textiles, 3);
-    assert_eq!(nb(&n, "atelier_textile"), 3);
+    assert_eq!(nb(&n, "atelier_domestique"), 10);
     assert_eq!(
         (
             nb(&n, "champ"),
@@ -106,9 +108,9 @@ fn composition_equilibree() {
         (1, 1, 1, 1)
     );
     assert_eq!((nb(&n, "champ_lin"), nb(&n, "elevage_laine")), (1, 1));
-    // Un village deux fois plus grand a deux fois plus de champs et de hameaux textiles.
+    // Un village deux fois plus grand a deux fois plus de champs et d'ateliers domestiques.
     let n = sim::village::composition(&c, 20);
-    assert_eq!(n.hameaux_textiles, 6);
+    assert_eq!(nb(&n, "atelier_domestique"), 20);
     assert_eq!(
         (
             nb(&n, "champ"),
@@ -161,8 +163,8 @@ fn villages_toujours_connexes_et_pourvus() {
         }
         for (i, q) in s.monde.quartiers.iter().enumerate() {
             assert_eq!(s.monde.tuiles[q.tuile].contenu, Contenu::Quartier(i));
-            // Un hameau textile embarque son atelier sur la même tile.
-            assert_eq!(q.atelier.is_some(), q.habitat_id == 1);
+            // Tout hameau bâti embarque son atelier domestique sur la même tile.
+            assert_eq!(q.atelier.is_some(), q.capacite_pops > 0);
             if let Some(a) = q.atelier {
                 assert_eq!(s.monde.batiments[a].tuile, q.tuile);
             }
@@ -395,7 +397,7 @@ fn la_population_suit_ce_que_la_terre_nourrit() {
 fn le_producteur_mange_d_abord() {
     let s = village(1);
     let nq = s.monde.quartiers.len();
-    // Le plus proche fournisseur de vêtements d'un hameau textile est son propre atelier (distance 0).
+    // Le plus proche fournisseur de vêtements d'un hameau est son propre atelier (distance 0).
     let mut vu = 0;
     for (q, qu) in s.monde.quartiers.iter().enumerate() {
         if let Some(a) = qu.atelier {
@@ -406,9 +408,8 @@ fn le_producteur_mange_d_abord() {
     assert!(vu >= 1);
 }
 
-#[test]
-fn le_travail_sur_place_demande_une_pop_du_hameau() {
-    let mut s = village(1);
+/// Hameau (et son atelier) dont on garde `n` pops employées, avec des stocks d'intrants confortables.
+fn hameau_avec_pops(s: &mut Simulation, n: usize) -> usize {
     let q = s
         .monde
         .quartiers
@@ -416,11 +417,45 @@ fn le_travail_sur_place_demande_une_pop_du_hameau() {
         .position(|q| q.atelier.is_some())
         .unwrap();
     let a = s.monde.quartiers[q].atelier.unwrap();
-    for p in s.pops.iter_mut().filter(|p| p.emploi == Some(a)) {
-        p.emploi = None;
+    let mut gardees = 0;
+    s.pops.retain(|p| {
+        if p.residence != q {
+            return true;
+        }
+        gardees += 1;
+        gardees <= n
+    });
+    for p in s.pops.iter_mut().filter(|p| p.residence == q) {
+        p.emploi = Some(0); // employée : elle ne garde que la moitié de son temps pour la maison
     }
+    for r in ["lin", "laine"] {
+        let r = s.cat.res_id(r).unwrap();
+        s.monde.batiments[a].stock_entree[r] = 100_000;
+    }
+    for r in s.monde.batiments[a].stock_sortie.iter_mut() {
+        *r = 0;
+    }
+    a
+}
+
+#[test]
+fn le_textile_domestique_prend_le_temps_libre_du_hameau() {
+    // Deux pops employées : 2 × 50 % = 1 pop-jour libre, soit le travail requis à plein régime.
+    let mut s = sans_extension(village(1));
+    let a = hameau_avec_pops(&mut s, 2);
     s.jour_suivant();
-    assert_eq!(s.monde.batiments[a].presents, 0);
+    assert_eq!(s.monde.batiments[a].prod_ppm, PPM);
+    assert_eq!(s.monde.batiments[a].presents, 0, "aucun poste : personne n'y est affecté");
+    // Une seule pop employée : 50 % de temps libre, le travail domestique est le facteur limitant.
+    let mut s = sans_extension(village(1));
+    let a = hameau_avec_pops(&mut s, 1);
+    s.jour_suivant();
+    assert_eq!(s.monde.batiments[a].prod_ppm, PPM / 2);
+    assert_eq!(s.monde.batiments[a].limitant, sim::monde::Limitant::MainOeuvre);
+    // Aucune pop : pas de temps libre, pas de production.
+    let mut s = sans_extension(village(1));
+    let a = hameau_avec_pops(&mut s, 0);
+    s.jour_suivant();
     assert_eq!(s.monde.batiments[a].prod_ppm, 0);
 }
 
