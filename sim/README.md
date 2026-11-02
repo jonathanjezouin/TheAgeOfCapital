@@ -29,8 +29,21 @@ cargo test --release
 | `src/monde.rs` | tiles passives, quartiers, bâtiments, **arêtes** (demi-arêtes dans 8 directions par tile, coûts 10 / 14, pas de croisement de diagonales) |
 | `src/reseau.rs` | segments (arêtes), Dijkstra à coûts entiers borné par `distance_max`, chemins précalculés entre lieux |
 | `src/village.rs` | génération déterministe (croix de chemins, champ de fertilité), dimensionnée près de l'équilibre |
-| `src/simulation.rs` | jour : différés → contrats (pro rata) → main-d'œuvre → production → consommation → jauges de croissance → péremption ; mois : réorientation des bras ; saison : extension (chantiers) |
-| `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, réorientation des bras, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, corvée, jamais bloqués), extension, congestion en sommeil |
+| `src/simulation.rs` | jour : différés → contrats (pro rata) → budget de jours de travail → production → consommation → jauges de croissance → péremption ; saison : extension (chantiers de maison, de défrichement, de hameau) |
+| `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, budget de jours, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, jamais bloqués), terres d'un seul tenant, extension, congestion en sommeil |
+
+## Terres sur N tiles et budget de jours (docs/02 §8.2, §8.3)
+La tile fait 250 m. Une **terre exploitée** est un bâtiment actif qui occupe N tiles contiguës (`emprise`) ;
+extrants (par tile et par jour, à fertilité 1) et travail (jours-personne par tile et par an) sont par tile,
+la fertilité est la moyenne de l'emprise. Elle naît à `tuiles_par_defrichement` tiles (4) et s'agrandit par
+blocs de 4 tiles voisines (les plus fertiles d'abord), jusqu'à `emprise_max` ; au-delà on en fonde une autre.
+Le **travail** n'est plus un poste : chaque jour, le temps des pops (1 pop = 1 pop-jour, hors équipes de
+chantier) est réparti entre les terres à portée au prorata du temps disponible par hameau, les terres dont
+la ressource est en tension d'abord ; une terre au stock de sortie presque plein demande peu. Ce qui reste est
+le **temps libre** du hameau (textile domestique). L'emploi d'une pop n'est qu'un affichage : sa terre
+principale (`None` si presque inoccupée). Les nouvelles routes peuvent traverser des tiles occupées ; un
+hameau se fonde en périphérie du réseau quand il n'y a plus de terre à portée, et des pops sans poste s'y
+installent.
 
 ## Une maison par pop (docs/02 §9.4)
 La capacité d'un hameau se crée **maison par maison** : un chantier de maison (150 pop-jours, équipe de 1,

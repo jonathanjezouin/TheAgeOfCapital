@@ -61,15 +61,26 @@ fn donnees_par_defaut_valides() {
     let atelier = c.habitats[0].atelier.expect("atelier domestique du hameau");
     assert!(c.batiments[atelier].domestique);
     assert_eq!(c.batiments[atelier].pops, 1);
-    assert_eq!(c.domestique.temps_libre_actif_ppm, PPM / 2);
-    // Terres exploitées : 19 pops pour une exploitation de chaque type.
-    let postes: u32 = c
+    // Budget de jours : une pop fournit 12 500 jours-personne par an.
+    assert_eq!(c.travail.jours_personne_par_pop_an, 12_500);
+    // Terres exploitées sur N tiles : extrants par tile et par jour, travail par tile et par an.
+    let champ = &c.batiments[c.bat_id("champ").unwrap()];
+    assert!(champ.par_tile && champ.fertile);
+    assert_eq!((champ.jours_par_tile_an, champ.emprise_max), (250, 36));
+    assert_eq!(c.extension.tuiles_par_defrichement, 4);
+    let terres = c.batiments.iter().filter(|b| b.par_tile).count();
+    assert_eq!(terres, 6);
+    // 20 pops : le travail des terres n'occupe qu'environ un tiers de leur temps (docs/04, référence 1750).
+    let n = sim::village::composition(&c, 10);
+    let jours: i64 = c
         .batiments
         .iter()
-        .filter(|b| !b.chantier && b.cout_creation.is_some())
-        .map(|b| b.pops)
+        .enumerate()
+        .filter(|(_, b)| b.par_tile)
+        .map(|(t, b)| n.batiments[t] as i64 * b.jours_par_tile_an)
         .sum();
-    assert_eq!(postes, 19);
+    let part = jours as f64 / (20.0 * c.travail.jours_personne_par_pop_an as f64);
+    assert!((0.25..0.5).contains(&part), "part du temps aux terres : {part}");
     // Économie de subsistance : ni filature ni atelier de couture.
     assert!(c.bat_id("filature").is_none() && c.bat_id("atelier_couture").is_none());
 }
@@ -88,37 +99,28 @@ fn donnees_incoherentes_refusees() {
         &t.replace("atelier = \"atelier_domestique\"", "atelier = \"inconnu\"")
     )
     .is_err());
-    assert!(Catalogue::depuis_toml(&t.replace("distance_max = 110", "distance_max = 0")).is_err());
+    assert!(Catalogue::depuis_toml(&t.replace("distance_max = 100", "distance_max = 0")).is_err());
 }
 
 #[test]
 fn composition_equilibree() {
     let c = Catalogue::defaut();
     let nb = |n: &sim::village::Composition, nom: &str| n.batiments[c.bat_id(nom).unwrap()];
-    // 10 hameaux : chacun fait ses vêtements (un atelier domestique par hameau).
+    // 10 hameaux (20 pops) : chacun fait ses vêtements ; le reste est en tiles, déduites des rations
+    // (ration par pop × pops ÷ production par tile).
     let n = sim::village::composition(&c, 10);
     assert_eq!(nb(&n, "atelier_domestique"), 10);
-    assert_eq!(
-        (
-            nb(&n, "champ"),
-            nb(&n, "paturage"),
-            nb(&n, "verger"),
-            nb(&n, "foret_exploitee")
-        ),
-        (1, 1, 1, 1)
-    );
-    assert_eq!((nb(&n, "champ_lin"), nb(&n, "elevage_laine")), (1, 1));
-    // Un village deux fois plus grand a deux fois plus de champs et d'ateliers domestiques.
-    let n = sim::village::composition(&c, 20);
-    assert_eq!(nb(&n, "atelier_domestique"), 20);
-    assert_eq!(
-        (
-            nb(&n, "champ"),
-            nb(&n, "paturage"),
-            nb(&n, "foret_exploitee")
-        ),
-        (2, 2, 2)
-    );
+    assert_eq!(nb(&n, "champ"), 250); // 5 grain × 20 pops ÷ 0,40
+    assert_eq!(nb(&n, "paturage"), 48); // 1 viande × 20 ÷ 0,42
+    assert_eq!(nb(&n, "verger"), 20); // 1 fruit × 20 ÷ 1,0
+    assert_eq!(nb(&n, "foret_exploitee"), 114); // 2 bois × 20 ÷ 0,35
+    // Vêtements : 0,5 × 20 = 10 par jour ; 1 pop-jour en fait 4 avec 8 lin et 4 laine.
+    assert_eq!(nb(&n, "champ_lin"), 17); // 20 lin ÷ 1,2
+    assert_eq!(nb(&n, "elevage_laine"), 67); // 10 laine ÷ 0,15
+    // Un village deux fois plus grand a deux fois plus de tiles (à l'arrondi près).
+    let n2 = sim::village::composition(&c, 20);
+    assert_eq!(nb(&n2, "atelier_domestique"), 20);
+    assert_eq!(nb(&n2, "champ"), 500);
 }
 
 #[test]
@@ -146,21 +148,21 @@ fn villages_toujours_connexes_et_pourvus() {
             },
         )
         .unwrap_or_else(|e| panic!("graine {graine} : {e}"));
-        let nq = s.monde.quartiers.len();
-        let dmax = s.cat.infra.distance_max;
-        for p in &s.pops {
-            if let Some(b) = p.emploi {
-                let ch = s
-                    .reseau
-                    .chemin(p.residence, nq + b)
-                    .unwrap_or_else(|| panic!("graine {graine} : poste inaccessible"));
-                assert!(ch.cout <= dmax);
+        // Chaque terre occupe N tiles contiguës, dont sa tile « nœud » desservie par le réseau.
+        for (b, bat) in s.monde.batiments.iter().enumerate() {
+            assert!(bat.emprise.contains(&bat.tuile));
+            if s.cat.batiments[bat.type_id].par_tile {
+                assert!(bat.emprise.len() >= 2, "graine {graine} : terre d'une seule tile");
+                assert!(bat.emprise.len() <= s.cat.batiments[bat.type_id].emprise_max as usize);
+                assert_ne!(s.monde.masque(bat.tuile), 0, "graine {graine} : terre non desservie");
+            }
+            if s.cat.batiments[bat.type_id].par_tile {
+                for &t in &bat.emprise {
+                    assert_eq!(s.monde.tuiles[t].contenu, Contenu::Batiment(b));
+                }
             }
         }
-        let occ = s.occupation();
-        for b in 0..s.monde.batiments.len() {
-            assert!(occ[b] <= s.postes_de(b));
-        }
+        assert!(s.pops.iter().all(|p| p.emploi.is_none()), "le travail se répartit chaque jour");
         for (i, q) in s.monde.quartiers.iter().enumerate() {
             assert_eq!(s.monde.tuiles[q.tuile].contenu, Contenu::Quartier(i));
             // Tout hameau bâti embarque son atelier domestique sur la même tile.
@@ -266,7 +268,7 @@ fn deux_diagonales_ne_se_croisent_pas() {
 
 #[test]
 fn au_dela_de_la_limite_on_ne_va_ni_travailler_ni_s_approvisionner() {
-    let court = sim::donnees::DONNEES_POC.replace("distance_max = 110", "distance_max = 30");
+    let court = sim::donnees::DONNEES_POC.replace("distance_max = 100", "distance_max = 30");
     let s = generer(
         Catalogue::depuis_toml(&court).unwrap(),
         &ParamsVillage {
@@ -357,8 +359,9 @@ fn la_production_suit_la_fertilite_de_la_tile() {
             .iter()
             .position(|b| s.cat.batiments[b.type_id].nom == "champ")
             .unwrap();
-        let tuile = s.monde.batiments[champ].tuile;
-        s.monde.tuiles[tuile].fertilite_ppm = fertilite;
+        for &t in &s.monde.batiments[champ].emprise.clone() {
+            s.monde.tuiles[t].fertilite_ppm = fertilite;
+        }
         // Plein effectif et stock vide : toute la production du jour s'ajoute au stock.
         s.monde.batiments[champ]
             .stock_sortie
@@ -373,7 +376,7 @@ fn la_production_suit_la_fertilite_de_la_tile() {
     assert!(plein > 0);
     // Les autres champs sont inchangés : seule la part du champ modifié varie.
     assert!(
-        moitie < plein && moitie > plein / 3,
+        moitie < plein && moitie > plein / 4,
         "plein {plein} moitié {moitie}"
     );
 }
@@ -408,8 +411,8 @@ fn le_producteur_mange_d_abord() {
     assert!(vu >= 1);
 }
 
-/// Hameau (et son atelier) dont on garde `n` pops employées, avec des stocks d'intrants confortables.
-fn hameau_avec_pops(s: &mut Simulation, n: usize) -> usize {
+/// Hameau dont on ne garde que `n` pops ; son atelier reçoit des intrants confortables et un stock vide.
+fn hameau_avec_pops(s: &mut Simulation, n: usize) -> (usize, usize) {
     let q = s
         .monde
         .quartiers
@@ -425,9 +428,6 @@ fn hameau_avec_pops(s: &mut Simulation, n: usize) -> usize {
         gardees += 1;
         gardees <= n
     });
-    for p in s.pops.iter_mut().filter(|p| p.residence == q) {
-        p.emploi = Some(0); // employée : elle ne garde que la moitié de son temps pour la maison
-    }
     for r in ["lin", "laine"] {
         let r = s.cat.res_id(r).unwrap();
         s.monde.batiments[a].stock_entree[r] = 100_000;
@@ -435,27 +435,24 @@ fn hameau_avec_pops(s: &mut Simulation, n: usize) -> usize {
     for r in s.monde.batiments[a].stock_sortie.iter_mut() {
         *r = 0;
     }
-    a
+    (q, a)
 }
 
 #[test]
 fn le_textile_domestique_prend_le_temps_libre_du_hameau() {
-    // Deux pops employées : 2 × 50 % = 1 pop-jour libre, soit le travail requis à plein régime.
+    // Le temps libre est ce que les terres n'ont pas pris ; la production suit (travail requis : 1 pop-jour).
     let mut s = sans_extension(village(1));
-    let a = hameau_avec_pops(&mut s, 2);
+    let (q, a) = hameau_avec_pops(&mut s, 2);
     s.jour_suivant();
-    assert_eq!(s.monde.batiments[a].prod_ppm, PPM);
+    let libre = s.libre_milli[q];
+    assert!(libre > 0, "temps libre du hameau : {libre}");
+    assert_eq!(s.monde.batiments[a].prod_ppm, (libre * PPM / 1000).min(PPM));
     assert_eq!(s.monde.batiments[a].presents, 0, "aucun poste : personne n'y est affecté");
-    // Une seule pop employée : 50 % de temps libre, le travail domestique est le facteur limitant.
-    let mut s = sans_extension(village(1));
-    let a = hameau_avec_pops(&mut s, 1);
-    s.jour_suivant();
-    assert_eq!(s.monde.batiments[a].prod_ppm, PPM / 2);
-    assert_eq!(s.monde.batiments[a].limitant, sim::monde::Limitant::MainOeuvre);
     // Aucune pop : pas de temps libre, pas de production.
     let mut s = sans_extension(village(1));
-    let a = hameau_avec_pops(&mut s, 0);
+    let (q, a) = hameau_avec_pops(&mut s, 0);
     s.jour_suivant();
+    assert_eq!(s.libre_milli[q], 0);
     assert_eq!(s.monde.batiments[a].prod_ppm, 0);
 }
 
@@ -504,45 +501,54 @@ fn sans_logement_la_jauge_attend() {
 }
 
 #[test]
-fn les_sans_poste_prennent_les_postes_vacants() {
-    let mut s = sans_extension(village(2));
-    for p in s.pops.iter_mut().take(3) {
-        p.emploi = None;
-    }
-    assert_eq!(s.sans_poste(), 3);
-    s.avancer(s.cat.mobilite.periode_jours); // réaffectation mensuelle
-    assert_eq!(s.sans_poste(), 0);
-    let occ = s.occupation();
-    for b in 0..s.monde.batiments.len() {
-        assert!(occ[b] <= s.postes_de(b));
+fn le_budget_de_jours_est_conserve() {
+    // Chaque jour, le temps des pops se répartit entre équipes de chantier, terres et temps libre,
+    // sans jamais dépasser ce qu'elles fournissent (1 pop = 1 pop-jour par jour).
+    let mut s = village(2);
+    for _ in 0..200 {
+        s.avancer(30);
+        let total = s.pops.len() as i64 * 1000;
+        let terres: i64 = s
+            .monde
+            .batiments
+            .iter()
+            .filter(|b| s.cat.batiments[b.type_id].par_tile)
+            .map(|b| b.mo_milli)
+            .sum();
+        let equipes: i64 = s.monde.batiments.iter().map(|b| b.presents as i64 * 1000).sum();
+        let libre: i64 = s.libre_milli.iter().sum();
+        assert!(terres + libre <= total - equipes + 3, "jour {} : {terres}+{libre} > {total}-{equipes}", s.jour);
     }
 }
 
 #[test]
-fn les_bras_vont_la_ou_le_besoin_se_fait_sentir() {
+fn sans_bras_une_terre_ne_produit_pas_et_le_travail_va_aux_terres_en_tension() {
     let mut s = sans_extension(village(1));
-    let champ = s
-        .monde
-        .batiments
-        .iter()
-        .position(|b| s.cat.batiments[b.type_id].nom == "champ")
-        .unwrap();
-    let foret = s
-        .monde
-        .batiments
-        .iter()
-        .position(|b| s.cat.batiments[b.type_id].nom == "foret_exploitee")
-        .unwrap();
-    for p in s.pops.iter_mut().filter(|p| p.emploi == Some(champ)) {
-        p.emploi = Some(foret);
+    s.pops.clear();
+    s.jour_suivant();
+    for b in &s.monde.batiments {
+        if s.cat.batiments[b.type_id].par_tile {
+            assert_eq!(b.mo_milli, 0);
+            assert_eq!(b.prod_ppm, 0);
+        }
     }
-    assert_eq!(s.occupation()[champ], 0);
-    s.avancer(365 * 3);
-    assert!(
-        s.occupation()[champ] >= 2,
-        "le champ a retrouvé des bras : {}",
-        s.occupation()[champ]
-    );
+}
+
+#[test]
+fn une_terre_au_stock_plein_ne_demande_presque_pas_de_travail() {
+    // Stock de sortie plein : la production s'arrêterait de toute façon, le temps va ailleurs.
+    let mut s = sans_extension(village(1));
+    let champ = s.cat.bat_id("champ").unwrap();
+    let b = s
+        .monde
+        .batiments
+        .iter()
+        .position(|b| b.type_id == champ)
+        .unwrap();
+    let g = s.cat.res_id("grain").unwrap();
+    s.monde.batiments[b].stock_sortie[g] = 10_000_000;
+    s.jour_suivant();
+    assert!(s.monde.batiments[b].mo_milli <= 1, "travail reçu : {}", s.monde.batiments[b].mo_milli);
 }
 
 // ---------- Extension ----------
@@ -673,14 +679,15 @@ fn le_village_s_etend_selon_le_besoin_sans_deborder_la_distance() {
         "croissance de {pops0} à {}",
         s.pops.len()
     );
+    // Les terres s'agrandissent tile par tile, et les maisons s'ajoutent une à une.
     assert!(s
         .evenements
         .iter()
-        .any(|e| e.texte.starts_with("Nouveau hameau construit")));
+        .any(|e| e.texte.starts_with("Terre agrandie")));
     assert!(s
         .evenements
         .iter()
-        .any(|e| e.texte.starts_with("Nouvelle terre exploitée")));
+        .any(|e| e.texte.starts_with("Nouvelle maison")));
     let nq = s.monde.quartiers.len();
     let dmax = s.cat.infra.distance_max;
     // Tout poste reste accessible dans la distance limite, aucun logement n'est dépassé.
@@ -765,5 +772,39 @@ fn par_defaut_la_congestion_est_en_sommeil() {
         s.jour_suivant();
         assert_eq!((s.stats.nb_differes, s.stats.retards_pops), (0, 0));
         assert!(s.stats.charge_max_ppm < PPM / 2);
+    }
+}
+
+#[test]
+fn les_terres_restent_d_un_seul_tenant_en_s_agrandissant() {
+    let mut s = village(1);
+    s.avancer(365 * 120);
+    assert!(s
+        .evenements
+        .iter()
+        .any(|e| e.texte.starts_with("Terre agrandie")));
+    for (b, bat) in s.monde.batiments.iter().enumerate() {
+        if !s.cat.batiments[bat.type_id].par_tile || bat.chantier.is_some() {
+            continue;
+        }
+        // Parcours en largeur depuis la tile nœud, par les côtés, à l'intérieur de l'emprise.
+        let mut vu = vec![bat.tuile];
+        let mut i = 0;
+        while i < vu.len() {
+            for d in [0usize, 2, 4, 6] {
+                if let Some(v) = s.monde.voisin(vu[i], d) {
+                    if bat.emprise.contains(&v) && !vu.contains(&v) {
+                        vu.push(v);
+                    }
+                }
+            }
+            i += 1;
+        }
+        assert_eq!(vu.len(), bat.emprise.len(), "terre {b} en plusieurs morceaux");
+        // Chaque tile n'appartient qu'à une terre.
+        for &t in &bat.emprise {
+            assert_eq!(s.monde.tuiles[t].contenu, Contenu::Batiment(b));
+        }
+        assert!(bat.emprise.len() <= s.cat.batiments[bat.type_id].emprise_max as usize);
     }
 }

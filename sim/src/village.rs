@@ -1,11 +1,12 @@
 //! Générateur de village : déterministe (graine), aléatoire mais cohérent.
 //!
-//! Économie de subsistance de 1750 : des hameaux (2 pops, textile fait à la maison) et des terres exploitées (champs, pâturages, vergers, forêt,
-//! lin, laine) disposés le long d'une croix de chemins de terre (arêtes, voir docs/02 §9), directement
-//! ou au bout d'une antenne d'une tile. Le nombre de terres de chaque type découle des besoins des hameaux
-//! (jamais d'un ratio codé en dur) pour démarrer proche de l'équilibre.
-//! La croix est compacte : tout reste à moins de `distance_max` (coût des arêtes).
-//! Version volontairement simple : elle gagnera en finesse avec les villages suivants.
+//! Économie de subsistance de 1750 sur des tiles de 250 m : de petits hameaux (2 pops, textile fait à la
+//! maison) et des terres exploitées de N tiles (champs, pâturages, vergers, forêt, lin, laine) disposés le
+//! long d'une croix de chemins de terre (arêtes, voir docs/02 §9). Les hameaux sont près du centre ; chaque
+//! terre est un bloc de tiles contiguës dont la tile « nœud » est reliée à un bras. Le nombre de tiles de
+//! chaque type découle des besoins des hameaux (jamais d'un ratio codé en dur) pour démarrer proche de
+//! l'équilibre. La croix est compacte : tout reste à moins de `distance_max` (coût des arêtes).
+//! Un village plus grand que la croix ne tient pas : il faudrait plusieurs groupes de hameaux.
 
 use crate::donnees::Catalogue;
 use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile};
@@ -33,12 +34,12 @@ impl Default for ParamsVillage {
     fn default() -> Self {
         ParamsVillage {
             graine: 1,
-            nb_hameaux: 10,
+            nb_hameaux: 4,
             occupation_initiale_pct: 80,
             largeur: 200,
             hauteur: 200,
-            rayon_fertile: 3,
-            rayon_sterile: 7,
+            rayon_fertile: 12,
+            rayon_sterile: 28,
         }
     }
 }
@@ -47,13 +48,14 @@ impl Default for ParamsVillage {
 enum Item {
     /// Index dans `Catalogue::habitats`.
     Hameau(usize),
-    Terre(usize),
+    /// Type de terre et nombre de tiles.
+    Terre(usize, usize),
 }
 
-/// Combien de bâtiments de chaque type.
+/// Combien de bâtiments de chaque type : des tiles pour les terres, un atelier par hameau.
 #[derive(Clone, Debug)]
 pub struct Composition {
-    /// Par type de bâtiment (l'atelier domestique est compté à raison d'un par hameau).
+    /// Par type de bâtiment : tiles de terre exploitée à fournir, ou nombre d'ateliers domestiques.
     pub batiments: Vec<usize>,
 }
 
@@ -128,7 +130,7 @@ fn isqrt(n: u64) -> u64 {
 /// Fertilité d'une tile (ppm) : bruit de valeur lissé (0,85 à 1,3), qui s'effondre
 /// entre `rayon_fertile` et `rayon_sterile` autour du centre. Pur entier.
 fn champ_fertilite(p: &ParamsVillage, rng: &mut Rng) -> Vec<i64> {
-    const CELLULE: usize = 6;
+    const CELLULE: usize = 24; // ~6 km : le bruit de fertilité varie à l'échelle du terroir (tile de 250 m)
     let (gw, gh) = (p.largeur / CELLULE + 2, p.hauteur / CELLULE + 2);
     let grille: Vec<i64> = (0..gw * gh).map(|_| rng.dans(1001) as i64).collect();
     let (cx, cy) = (p.largeur as i64 / 2, p.hauteur as i64 / 2);
@@ -193,37 +195,28 @@ fn nouveau_batiment(
         type_id,
         tuile,
         quartier,
+        emprise: vec![tuile],
         equipe: 0,
         chantier: None,
         stock_entree: vec![0; nr],
         stock_sortie: vec![0; nr],
         presents: 0,
+        mo_milli: 0,
         prod_ppm: 0,
         limitant: Limitant::Aucun,
     }
 }
 
-fn poser(monde: &mut Monde, cat: &Catalogue, item: Item, t: usize, rng: &mut Rng) {
-    match item {
-        Item::Hameau(h) => {
-            let q = monde.quartiers.len();
-            monde.quartiers.push(nouveau_hameau(t, h, cat));
-            monde.tuiles[t].contenu = Contenu::Quartier(q);
-            if let Some(atelier) = cat.habitats[h].atelier {
-                let b = monde.batiments.len();
-                monde
-                    .batiments
-                    .push(nouveau_batiment(atelier, t, Some(q), cat));
-                monde.quartiers[q].atelier = Some(b);
-            }
-        }
-        Item::Terre(type_id) => {
-            let b = monde.batiments.len();
-            monde
-                .batiments
-                .push(nouveau_batiment(type_id, t, None, cat));
-            monde.tuiles[t].contenu = Contenu::Batiment(b);
-        }
+fn poser_hameau(monde: &mut Monde, cat: &Catalogue, h: usize, t: usize, rng: &mut Rng) {
+    let q = monde.quartiers.len();
+    monde.quartiers.push(nouveau_hameau(t, h, cat));
+    monde.tuiles[t].contenu = Contenu::Quartier(q);
+    if let Some(atelier) = cat.habitats[h].atelier {
+        let b = monde.batiments.len();
+        monde
+            .batiments
+            .push(nouveau_batiment(atelier, t, Some(q), cat));
+        monde.quartiers[q].atelier = Some(b);
     }
     monde.tuiles[t].variante = rng.dans(4) as u8;
 }
@@ -247,24 +240,48 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
     ))
 }
 
+/// Découpe `tiles` tiles de terre en blocs d'au plus `max` tiles, de tailles voisines.
+fn blocs(tiles: usize, max: usize) -> Vec<usize> {
+    let n = tiles.div_ceil(max.max(1)).max(1);
+    (0..n).map(|i| tiles / n + usize::from(i < tiles % n)).collect()
+}
+
 fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulation, String> {
     // --- Éléments à placer ---
     let compo = composition(cat, p.nb_hameaux);
-    let mut items: Vec<Item> = (0..p.nb_hameaux).map(|_| Item::Hameau(0)).collect();
+    let hameaux: Vec<Item> = (0..p.nb_hameaux).map(|_| Item::Hameau(0)).collect();
+    // Terres : un bloc de chaque type d'abord (pour que chaque ressource ait un producteur près du
+    // centre), puis les autres blocs.
+    let mut par_type: Vec<Vec<usize>> = Vec::new();
     for (t, &n) in compo.batiments.iter().enumerate() {
-        let est_atelier = cat.habitats.iter().any(|h| h.atelier == Some(t));
-        if !est_atelier && !cat.batiments[t].chantier {
-            items.extend((0..n).map(|_| Item::Terre(t)));
+        let ty = &cat.batiments[t];
+        if ty.par_tile && n > 0 {
+            par_type.push(blocs(n, ty.emprise_max as usize).into_iter().map(|taille| t * 1000 + taille).collect());
         }
     }
-    rng.melanger(&mut items);
+    rng.melanger(&mut par_type);
+    let mut terres: Vec<Item> = Vec::new();
+    let mut rang = 0;
+    loop {
+        let mut vu = false;
+        for liste in &par_type {
+            if let Some(&c) = liste.get(rang) {
+                terres.push(Item::Terre(c / 1000, c % 1000));
+                vu = true;
+            }
+        }
+        if !vu {
+            break;
+        }
+        rang += 1;
+    }
 
     // --- Disposition en croix ---
     let (w, h) = (p.largeur, p.hauteur);
-    let n_items = items.len();
-    let mut l_base = (n_items * 14).div_ceil(80).max(3);
     let (cx, cy) = (w / 2, h / 2);
-    if cx < l_base + 6 || cy < l_base + 6 {
+    // Longueur des bras : le fond d'un bras reste à portée de tous les hameaux (coût 10 par tile).
+    let longueur = ((cat.infra.distance_max / 10) as usize).saturating_sub(3).clamp(3, 8);
+    if cx < longueur + 20 || cy < longueur + 20 {
         return Err("carte trop petite pour ce village".into());
     }
     let mut monde = Monde {
@@ -283,81 +300,121 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
             fertilite_ppm: fertilite[i],
         })
         .collect();
-
-    // Bras : E, S, O, N. Longueurs tirées autour de `l_base`, agrandies si les emplacements manquent.
     let dirs: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
-    let mut longueurs = [0usize; 4];
-    for l in longueurs.iter_mut() {
-        *l = (l_base + rng.dans(3)).saturating_sub(1).max(2);
-    }
-    while longueurs.iter().sum::<usize>() * 2 < n_items + n_items / 4 + 2 {
-        l_base += 1;
-        for l in longueurs.iter_mut() {
-            *l += 1;
-        }
-    }
     let centre = monde.idx(cx, cy);
-    // Une tile est libre si elle est vide et traversée par aucune arête (pas encore constructible sinon).
-    let libre = |m: &Monde, t: usize| m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0;
-    // Emplacements : (tile libre, tile du bras où s'accrocher, direction vers l'extérieur du bras).
-    let mut slots: Vec<(usize, usize, (i32, i32))> = Vec::new();
-    for (d, &(dx, dy)) in dirs.iter().enumerate() {
+    let tuile_a = |m: &Monde, d: usize, k: i32, lat: i32| -> Option<usize> {
+        let (dx, dy) = dirs[d];
+        let (px, py) = (-dy, dx);
+        let (x, y) = (cx as i32 + dx * k + px * lat, cy as i32 + dy * k + py * lat);
+        if x < 1 || y < 1 || x >= w as i32 - 1 || y >= h as i32 - 1 {
+            None
+        } else {
+            Some(m.idx(x as usize, y as usize))
+        }
+    };
+    for d in 0..4 {
         let mut prec = centre;
-        for k in 1..=longueurs[d] as i32 {
-            let (x, y) = ((cx as i32 + dx * k) as usize, (cy as i32 + dy * k) as usize);
-            let t = monde.idx(x, y);
+        for k in 1..=longueur as i32 {
+            let t = tuile_a(&monde, d, k, 0).ok_or("bras hors de la carte")?;
             monde.relier(prec, t);
             prec = t;
         }
     }
-    for (d, &(dx, dy)) in dirs.iter().enumerate() {
-        for k in 1..=longueurs[d] as i32 {
-            let (x, y) = ((cx as i32 + dx * k) as usize, (cy as i32 + dy * k) as usize);
-            let arm = monde.idx(x, y);
-            for (px, py) in [(-dy, dx), (dy, -dx)] {
-                let (sx, sy) = (x as i32 + px, y as i32 + py);
-                let s = monde.idx(sx as usize, sy as usize);
-                if libre(&monde, s) && !slots.iter().any(|e| e.0 == s) {
-                    slots.push((s, arm, (px, py)));
+    let libre = |m: &Monde, t: usize| m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0;
+
+    // Hameaux : au plus près du centre, de part et d'autre des bras (k = 1 puis 2).
+    let mut slots: Vec<(usize, usize)> = Vec::new(); // (tile du hameau, tile du bras)
+    for k in 1..=2 {
+        for d in 0..4 {
+            for lat in [1, -1] {
+                if let (Some(t), Some(arm)) = (tuile_a(&monde, d, k, lat), tuile_a(&monde, d, k, 0)) {
+                    // Le coin entre deux bras est un emplacement commun aux deux : une seule fois.
+                    if !slots.iter().any(|&(u, _)| u == t) {
+                        slots.push((t, arm));
+                    }
                 }
             }
         }
     }
-    for item in items {
+    // On remplit d'abord les emplacements de k = 1, dans un ordre tiré au sort.
+    let k1 = slots.iter().filter(|&&(_, arm)| {
+        // les emplacements de k = 1 sont ceux dont la tile de bras est voisine du centre
+        let (ax, ay) = monde.xy(arm);
+        ax.abs_diff(cx) + ay.abs_diff(cy) == 1
+    }).count();
+    let (proches, loin) = slots.split_at(k1.min(slots.len()));
+    let mut proches = proches.to_vec();
+    let mut loin = loin.to_vec();
+    rng.melanger(&mut proches);
+    rng.melanger(&mut loin);
+    proches.extend(loin);
+    if hameaux.len() > proches.len() {
+        return Err("plus d'emplacement pour les hameaux".into());
+    }
+    for (item, &(t, arm)) in hameaux.iter().zip(&proches) {
+        if let Item::Hameau(hh) = *item {
+            poser_hameau(&mut monde, cat, hh, t, rng);
+            monde.relier(arm, t);
+        }
+    }
+
+    // Terres : blocs de largeur 3 (le long du bras) et de profondeur suffisante, au plus près du centre.
+    let mut ordre_bras: Vec<usize> = (0..4).collect();
+    for item in &terres {
+        let Item::Terre(type_id, taille) = *item else {
+            continue;
+        };
+        rng.melanger(&mut ordre_bras);
         let mut place = false;
-        if rng.chance(30) && !slots.is_empty() {
-            // Antenne d'une tile : l'emplacement devient chemin, le lieu est posé au-delà.
-            let i = rng.dans(slots.len());
-            let (s, arm, (px, py)) = slots[i];
-            let (sx, sy) = monde.xy(s);
-            let (ox, oy) = (sx as i32 + px, sy as i32 + py);
-            if ox >= 0 && oy >= 0 && (ox as usize) < w && (oy as usize) < h {
-                let o = monde.idx(ox as usize, oy as usize);
-                if libre(&monde, o) && libre(&monde, s) {
-                    monde.relier(arm, s);
-                    poser(&mut monde, cat, item, o, rng);
-                    monde.relier(s, o);
-                    slots.remove(i);
-                    place = true;
+        'recherche: for k in 3..=(longueur as i32) {
+            for &d in &ordre_bras {
+                for lat in [1i32, -1] {
+                    for largeur in [3i32, 4, 2] {
+                        if k + largeur - 1 > longueur as i32 {
+                            continue;
+                        }
+                        let profondeur = (taille as i32 + largeur - 1) / largeur;
+                        let mut tuiles: Vec<usize> = Vec::new();
+                        let mut valide = true;
+                        'bloc: for j in 0..profondeur {
+                            for i in 0..largeur {
+                                if tuiles.len() == taille {
+                                    break 'bloc;
+                                }
+                                match tuile_a(&monde, d, k + i, lat * (1 + j)) {
+                                    Some(t) if libre(&monde, t) => tuiles.push(t),
+                                    _ => {
+                                        valide = false;
+                                        break 'bloc;
+                                    }
+                                }
+                            }
+                        }
+                        if !valide || tuiles.len() != taille {
+                            continue;
+                        }
+                        let arm = tuile_a(&monde, d, k, 0).unwrap();
+                        let b = monde.batiments.len();
+                        let mut bat = nouveau_batiment(type_id, tuiles[0], None, cat);
+                        bat.emprise = tuiles.clone();
+                        monde.batiments.push(bat);
+                        for &t in &tuiles {
+                            monde.tuiles[t].contenu = Contenu::Batiment(b);
+                            monde.tuiles[t].variante = rng.dans(4) as u8;
+                        }
+                        monde.relier(arm, tuiles[0]);
+                        place = true;
+                        break 'recherche;
+                    }
                 }
             }
         }
         if !place {
-            let libres: Vec<usize> = (0..slots.len())
-                .filter(|&i| libre(&monde, slots[i].0))
-                .collect();
-            if libres.is_empty() {
-                return Err("plus d'emplacement le long de la croix".into());
-            }
-            let i = libres[rng.dans(libres.len())];
-            let (s, arm, _) = slots[i];
-            poser(&mut monde, cat, item, s, rng);
-            monde.relier(arm, s);
-            slots.remove(i);
+            return Err("plus d'emplacement le long de la croix".into());
         }
     }
 
-    // --- Pops initiales : réparties sur les hameaux (ordre tiré au hasard) ---
+// --- Pops initiales : réparties sur les hameaux (ordre tiré au hasard) ---
     let nq = monde.quartiers.len();
     let cap_totale: u32 = monde.quartiers.iter().map(|q| q.capacite_pops).sum();
     let total0 = ((cap_totale * p.occupation_initiale_pct + 50) / 100)
@@ -434,79 +491,20 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
         }
     }
 
-    // --- Affectation aux postes (proportionnelle, pops les plus proches d'abord) ---
-    let postes: Vec<u32> = (0..nb)
-        .map(|b| {
-            let t = &cat.batiments[monde.batiments[b].type_id];
-            if t.domestique {
-                0 // travail domestique : pas de poste
-            } else {
-                t.pops
-            }
-        })
-        .collect();
-    let total_postes: u32 = postes.iter().sum();
-    let total_pops: u32 = n0.iter().sum();
-    let cibles: Vec<u32> = if total_pops >= total_postes {
-        postes.clone()
-    } else {
-        let mut c: Vec<u32> = postes
-            .iter()
-            .map(|&x| x * total_pops / total_postes)
-            .collect();
-        let mut fr: Vec<(u32, usize)> = postes
-            .iter()
-            .enumerate()
-            .map(|(i, &x)| ((x * total_pops) % total_postes, i))
-            .collect();
-        fr.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
-        let mut reste = total_pops - c.iter().sum::<u32>();
-        for (_, i) in fr {
-            if reste == 0 {
-                break;
-            }
-            c[i] += 1;
-            reste -= 1;
-        }
-        c
-    };
+    // --- Pops initiales : sans emploi, le travail se répartit chaque jour (budget de jours) ---
     let seuil = cat.demo.habitants_par_pop * 1_000_000;
-    let mut restantes = n0.clone();
     let mut pops: Vec<Pop> = Vec::new();
     let mut id = 0u32;
-    let mut nouvelle = |residence: usize, emploi: Option<usize>, rng: &mut Rng| {
-        // Jauges décalées pour que les duplications ne soient pas synchrones.
-        let p = Pop {
-            id,
-            residence,
-            emploi,
-            croissance: (rng.u64() % seuil as u64) as i64,
-        };
-        id += 1;
-        p
-    };
-    // Les ateliers d'abord : leur pop est celle du hameau (distance 0).
-    let mut ordre_bat: Vec<usize> = (0..nb)
-        .filter(|&b| monde.batiments[b].quartier.is_some())
-        .collect();
-    ordre_bat.extend((0..nb).filter(|&b| monde.batiments[b].quartier.is_none()));
-    for &b in &ordre_bat {
-        for _ in 0..cibles[b] {
-            let Some(q) = (0..nq)
-                .filter(|&q| restantes[q] > 0)
-                .filter_map(|q| reseau.chemin(q, nq + b).map(|c| ((c.cout, q), q)))
-                .min()
-                .map(|(_, q)| q)
-            else {
-                break;
-            };
-            restantes[q] -= 1;
-            pops.push(nouvelle(q, Some(b), rng));
-        }
-    }
     for q in 0..nq {
-        for _ in 0..restantes[q] {
-            pops.push(nouvelle(q, None, rng));
+        for _ in 0..n0[q] {
+            // Jauges décalées pour que les duplications ne soient pas synchrones.
+            pops.push(Pop {
+                id,
+                residence: q,
+                emploi: None,
+                croissance: (rng.u64() % seuil as u64) as i64,
+            });
+            id += 1;
         }
     }
     Ok(Simulation::nouvelle(cat.clone(), monde, pops))

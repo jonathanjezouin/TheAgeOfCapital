@@ -29,7 +29,7 @@ struct Brut {
     infrastructure: BrutInfra,
     habitat: BrutHabitat,
     habitats: Vec<BrutTypeHabitat>,
-    domestique: BrutDomestique,
+    travail: BrutTravail,
     extension: BrutExtension,
     demographie: BrutDemo,
     mobilite: BrutMobilite,
@@ -84,8 +84,8 @@ struct BrutTypeHabitat {
 }
 
 #[derive(Deserialize)]
-struct BrutDomestique {
-    temps_libre_actif: f64,
+struct BrutTravail {
+    jours_personne_par_pop_an: f64,
 }
 
 #[derive(Deserialize)]
@@ -93,7 +93,7 @@ struct BrutExtension {
     periode_jours: u64,
     chantiers_max: usize,
     materiau: String,
-    couverture_donneur_jours: f64,
+    tuiles_par_defrichement: u32,
 }
 
 #[derive(Deserialize)]
@@ -107,9 +107,7 @@ struct BrutDemo {
 
 #[derive(Deserialize)]
 struct BrutMobilite {
-    periode_jours: u64,
     seuil_tension: f64,
-    deplacements_max_par_ressource: usize,
 }
 
 #[derive(Deserialize)]
@@ -151,9 +149,16 @@ struct BrutEtape {
 struct BrutBatiment {
     nom: String,
     asset: String,
+    #[serde(default)]
     pops: u32,
     #[serde(default)]
     chantier: bool,
+    #[serde(default)]
+    par_tile: bool,
+    #[serde(default)]
+    jours_par_tile_an: f64,
+    #[serde(default)]
+    emprise_max: u32,
     #[serde(default)]
     fertile: bool,
     #[serde(default)]
@@ -227,12 +232,11 @@ pub struct TypeHabitat {
     pub cout_creation: CoutCreation,
 }
 
-/// Temps libre des pops (docs/02 §8.3, étape 1 : budget lissé sans saisons).
+/// Budget de jours de travail (docs/02 §8.3, étape 1 : lissé sur l'année, sans saisons).
 #[derive(Clone, Debug)]
-pub struct ParamsDomestique {
-    /// Part du temps d'une pop employée qui reste libre pour le travail domestique (ppm).
-    /// Une pop sans poste y consacre tout son temps.
-    pub temps_libre_actif_ppm: i64,
+pub struct ParamsTravail {
+    /// Jours-personne qu'une pop fournit par an (~50 travailleurs × 250 jours).
+    pub jours_personne_par_pop_an: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -240,7 +244,8 @@ pub struct ParamsExtension {
     pub periode_jours: u64,
     pub chantiers_max: usize,
     pub materiau: usize,
-    pub couverture_donneur_jours: f64,
+    /// Tiles défrichées d'un coup : taille d'une terre à sa fondation et d'une extension.
+    pub tuiles_par_defrichement: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -254,9 +259,7 @@ pub struct ParamsDemo {
 
 #[derive(Clone, Debug)]
 pub struct ParamsMobilite {
-    pub periode_jours: u64,
     pub seuil_tension_ppm: i64,
-    pub max_par_ressource: usize,
 }
 
 /// Besoins vitaux par pop et par jour.
@@ -293,8 +296,15 @@ pub struct Etape {
 pub struct TypeBatiment {
     pub nom: String,
     pub asset: String,
-    /// Effectif plein (en pops).
+    /// Travail requis à plein régime, en pop-jours par jour (atelier domestique ; 0 pour une terre, qui
+    /// l'exprime par tile avec `jours_par_tile_an`).
     pub pops: u32,
+    /// Terre exploitée sur N tiles contiguës (un seul bâtiment actif) : extrants et travail par tile.
+    pub par_tile: bool,
+    /// Travail par tile et par an, en jours-personne (docs/04 : ~250 pour les céréales).
+    pub jours_par_tile_an: i64,
+    /// Nombre maximal de tiles d'une terre de ce type (au-delà, on en fonde une autre).
+    pub emprise_max: u32,
     /// Site de chantier (défrichement ou construction) ; l'équipe est propre à chaque chantier.
     pub chantier: bool,
     /// La production est proportionnelle à la fertilité de la tile.
@@ -365,7 +375,7 @@ pub struct Catalogue {
     pub infra: ParamsInfra,
     pub habitat: ParamsHabitat,
     pub habitats: Vec<TypeHabitat>,
-    pub domestique: ParamsDomestique,
+    pub travail: ParamsTravail,
     pub extension: ParamsExtension,
     pub demo: ParamsDemo,
     pub mobilite: ParamsMobilite,
@@ -419,7 +429,11 @@ impl Catalogue {
 
         let mut batiments = Vec::new();
         for x in &b.batiments {
-            if x.pops == 0 {
+            if x.par_tile {
+                if x.jours_par_tile_an <= 0.0 || x.emprise_max < b.extension.tuiles_par_defrichement {
+                    return Err(format!("terre {} : jours par tile ou emprise maximale incohérents", x.nom));
+                }
+            } else if x.pops == 0 {
                 return Err(format!("bâtiment {} sans effectif", x.nom));
             }
             if x.etapes.is_empty() && !x.chantier {
@@ -444,6 +458,9 @@ impl Catalogue {
                 chantier: x.chantier,
                 fertile: x.fertile,
                 domestique: x.domestique,
+                par_tile: x.par_tile,
+                jours_par_tile_an: x.jours_par_tile_an.round() as i64,
+                emprise_max: x.emprise_max,
                 cout_creation: x.cout_creation.as_ref().map(cout_de),
                 etapes,
             });
@@ -494,11 +511,11 @@ impl Catalogue {
                 periode_jours: b.extension.periode_jours,
                 chantiers_max: b.extension.chantiers_max,
                 materiau: id(&b.extension.materiau)?,
-                couverture_donneur_jours: b.extension.couverture_donneur_jours,
+                tuiles_par_defrichement: b.extension.tuiles_par_defrichement,
             },
             habitats,
-            domestique: ParamsDomestique {
-                temps_libre_actif_ppm: en_ppm(b.domestique.temps_libre_actif),
+            travail: ParamsTravail {
+                jours_personne_par_pop_an: b.travail.jours_personne_par_pop_an.round() as i64,
             },
             demo: ParamsDemo {
                 habitants_par_pop: b.demographie.habitants_par_pop,
@@ -508,9 +525,7 @@ impl Catalogue {
                 acceleration_ppm: en_ppm(b.demographie.acceleration),
             },
             mobilite: ParamsMobilite {
-                periode_jours: b.mobilite.periode_jours,
                 seuil_tension_ppm: en_ppm(b.mobilite.seuil_tension),
-                max_par_ressource: b.mobilite.deplacements_max_par_ressource,
             },
             vital: Vital {
                 nourriture: en_milli(b.vital.nourriture),
@@ -557,8 +572,8 @@ impl Catalogue {
         if self.infra.distance_max < 1 {
             return Err("distance_max < 1".into());
         }
-        if self.mobilite.periode_jours == 0 {
-            return Err("periode_jours de mobilité nulle".into());
+        if self.travail.jours_personne_par_pop_an <= 0 || self.extension.tuiles_par_defrichement == 0 {
+            return Err("jours de travail par pop ou tuiles par défrichement nuls".into());
         }
         if !self.ressources.iter().any(|r| r.nutritive_milli > 0) {
             return Err("aucune ressource nutritive".into());
@@ -620,6 +635,17 @@ impl Catalogue {
         (0..self.batiments.len())
             .filter(|&i| self.batiments[i].livre(res))
             .collect()
+    }
+
+    /// Travail requis à plein régime, en milli pop-jours par jour : pour une terre de `n` tiles,
+    /// `n × jours_par_tile_an / jours_personne_par_pop_an` ; sinon l'effectif plein du type.
+    pub fn besoin_mo_milli(&self, type_id: usize, n_tiles: usize) -> i64 {
+        let t = &self.batiments[type_id];
+        if t.par_tile {
+            n_tiles as i64 * t.jours_par_tile_an * 1000 / self.travail.jours_personne_par_pop_an
+        } else {
+            t.pops as i64 * 1000
+        }
     }
 
     /// Ration journalière d'une pop pour une ressource (0 si aucune).

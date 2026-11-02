@@ -93,7 +93,10 @@ pub enum Limitant {
 #[derive(Clone, Debug, Serialize)]
 pub struct Batiment {
     pub type_id: usize,
+    /// Tile « nœud » du bâtiment : celle par laquelle il est desservi par le réseau.
     pub tuile: usize,
+    /// Tiles occupées (au moins `tuile`) : N tiles contiguës pour une terre exploitée, 1 sinon.
+    pub emprise: Vec<usize>,
     /// Hameau auquel appartient un atelier domestique embarqué (même tile).
     pub quartier: Option<usize>,
     /// Effectif de l'équipe, pour un site de chantier.
@@ -102,8 +105,10 @@ pub struct Batiment {
     pub chantier: Option<Chantier>,
     pub stock_entree: Vec<Qte>,
     pub stock_sortie: Vec<Qte>,
-    /// Pops arrivées au poste aujourd'hui.
+    /// Pops arrivées au poste aujourd'hui (équipe d'un chantier).
     pub presents: u32,
+    /// Travail reçu aujourd'hui par une terre ou un atelier domestique, en milli pop-jours.
+    pub mo_milli: i64,
     /// Production effective du dernier jour, en ppm de la production maximale.
     pub prod_ppm: i64,
     pub limitant: Limitant,
@@ -118,6 +123,8 @@ pub enum Cible {
     Hameau(usize),
     /// Une maison de plus (une pop) dans le hameau d'index donné.
     Maison(usize),
+    /// Défrichement de tiles de plus pour la terre exploitée d'index donné.
+    Extension(usize),
 }
 
 #[derive(Clone, Debug, Serialize)]

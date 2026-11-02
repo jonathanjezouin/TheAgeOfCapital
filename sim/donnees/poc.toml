@@ -17,7 +17,7 @@ stock_initial_sortie_jours = 2.0
 # l'on ne va ni travailler ni s'approvisionner au-delà de la limite.
 # Congestion : en sommeil dans le POC (capacités très au-dessus des flux).
 [infrastructure]
-distance_max = 110                 # 11 pas d'arête (ancien « 10 tiles de chemin » + le pas d'accès) ; 100 à la calibration à 250 m
+distance_max = 100                 # 10 tiles-équivalents = 2,5 km à pied (tile de 250 m, docs/02 §1)
 capacite_nominale = 4000.0
 capacite_max = 8000.0
 poids_trajet_pop = 10.0
@@ -41,10 +41,12 @@ capacite_max_pops = 4
 atelier = "atelier_domestique"
 cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
 
-# Temps libre (docs/02 §8.3, étape 1 : budget lissé, sans saisons). Le travail des champs n'occupe
-# qu'environ un tiers de l'année d'un actif en 1750 ; le reste va à l'élevage, au bois et au textile.
-[domestique]
-temps_libre_actif = 0.5            # part du temps d'une pop employée qui reste libre (une pop sans poste : tout)
+# Budget de jours de travail (docs/02 §8.3, étape 1 : lissé sur l'année, sans saisons). Une pop fournit
+# 12 500 jours-personne par an (~50 travailleurs × 250 jours). Chaque jour, les pops de chaque hameau
+# (hors équipes de chantier) donnent leur temps aux terres à portée, les plus en tension d'abord ; ce qui
+# reste est le temps libre du hameau, que le textile domestique utilise (docs/02 §8.4).
+[travail]
+jours_personne_par_pop_an = 12500.0
 
 [demographie]
 habitants_par_pop = 100
@@ -53,11 +55,10 @@ croissance_insatisfaite = 0.005    # /an : besoins vitaux couverts, confort insu
 mortalite_famine = 0.08            # /an à besoins vitaux nuls (interpolation linéaire entre les deux)
 acceleration = 1.0                 # facteur sur le taux net (observation du POC)
 
-# Réorientation de la main-d'œuvre selon le besoin (entraide du hameau), POC : poste stable sinon.
+# Priorité du travail : une ressource est « en tension » quand sa ration est couverte à moins de ce seuil ;
+# les terres qui la produisent sont servies les premières.
 [mobilite]
-periode_jours = 30
-seuil_tension = 0.97               # satisfaction d'une ressource sous laquelle on réoriente des bras
-deplacements_max_par_ressource = 1
+seuil_tension = 0.97
 
 # Extension du village par ses habitants (décisions saisonnières, sans monnaie) :
 # les pops prennent d'abord tous les postes disponibles, puis ouvrent un chantier.
@@ -65,7 +66,7 @@ deplacements_max_par_ressource = 1
 periode_jours = 90
 chantiers_max = 2                  # chantiers simultanés
 materiau = "bois"
-couverture_donneur_jours = 5.0     # un lieu dont le stock couvre au moins ce nombre de jours peut prêter des bras
+tuiles_par_defrichement = 4        # tiles défrichées d'un coup : taille d'une terre fondée, ou d'une extension
 
 # Besoins vitaux : sans eux, la population décline.
 [vital]
@@ -126,51 +127,65 @@ par_pop_jour = 2.0
 ressource = "vetements"
 par_pop_jour = 0.5
 
-# Terres exploitées : lieux de production sans logement, travaillés par les pops des hameaux.
-# `fertile` : la production est proportionnelle à la fertilité de la tile.
-# `cout_creation` : défricher / aménager = travail (pop-jours) par une équipe, + matériau.
+# Terres exploitées (docs/02 §8.2) : un seul bâtiment actif sur N tiles contiguës de 250 m. Les extrants
+# sont par tile et par jour (à fertilité 1) et le travail par tile et par an, en jours-personne (docs/04 :
+# références de 1750, ~34 tiles de terroir par pop, dont ~13 de labours et ~6 de bois). `emprise_max` :
+# au-delà, on fonde une autre terre. `fertile` : la production suit la fertilité de chaque tile.
+# `cout_creation` : défricher = travail (pop-jours) PAR TILE par une équipe, + matériau par tile.
 [[batiments]]
 nom = "champ"
 asset = "bat_champ"
-pops = 4
+par_tile = true
+jours_par_tile_an = 250.0
+emprise_max = 36
 fertile = true
-cout_creation = { travail_pop_jours = 240.0, equipe = 2, bois = 0.0 }
-etapes = [{ extrants = [{ ressource = "grain", qte = 100.0 }] }]
+cout_creation = { travail_pop_jours = 10.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "grain", qte = 0.40 }] }]
 [[batiments]]
 nom = "paturage"
 asset = "bat_paturage"
-pops = 2
+par_tile = true
+jours_par_tile_an = 80.0
+emprise_max = 30
 fertile = true
-cout_creation = { travail_pop_jours = 90.0, equipe = 1, bois = 20.0 }
-etapes = [{ extrants = [{ ressource = "viande", qte = 20.0 }] }]
+cout_creation = { travail_pop_jours = 5.0, equipe = 1, bois = 1.0 }
+etapes = [{ extrants = [{ ressource = "viande", qte = 0.42 }] }]
 [[batiments]]
 nom = "verger"
 asset = "bat_verger"
-pops = 3
+par_tile = true
+jours_par_tile_an = 150.0
+emprise_max = 16
 fertile = true
-cout_creation = { travail_pop_jours = 300.0, equipe = 2, bois = 0.0 }
-etapes = [{ extrants = [{ ressource = "fruit", qte = 30.0 }] }]
+cout_creation = { travail_pop_jours = 12.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "fruit", qte = 1.0 }] }]
 [[batiments]]
 nom = "foret_exploitee"
 asset = "bat_foret_exploitee"
-pops = 4
+par_tile = true
+jours_par_tile_an = 60.0
+emprise_max = 36
 fertile = true
-cout_creation = { travail_pop_jours = 120.0, equipe = 2, bois = 0.0 }
-etapes = [{ extrants = [{ ressource = "bois", qte = 50.0 }] }]
+cout_creation = { travail_pop_jours = 4.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "bois", qte = 0.35 }] }]
 [[batiments]]
 nom = "champ_lin"
 asset = "bat_champ_lin"
-pops = 4
+par_tile = true
+jours_par_tile_an = 625.0
+emprise_max = 12
 fertile = true
-cout_creation = { travail_pop_jours = 200.0, equipe = 2, bois = 0.0 }
-etapes = [{ extrants = [{ ressource = "lin", qte = 40.0 }] }]
+cout_creation = { travail_pop_jours = 10.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "lin", qte = 1.2 }] }]
 [[batiments]]
 nom = "elevage_laine"
 asset = "bat_elevage_laine"
-pops = 2
+par_tile = true
+jours_par_tile_an = 80.0
+emprise_max = 30
 fertile = true
-cout_creation = { travail_pop_jours = 100.0, equipe = 1, bois = 20.0 }
-etapes = [{ extrants = [{ ressource = "laine", qte = 20.0 }] }]
+cout_creation = { travail_pop_jours = 5.0, equipe = 1, bois = 1.0 }
+etapes = [{ extrants = [{ ressource = "laine", qte = 0.15 }] }]
 
 # Atelier domestique : textile fait à la maison (distance 0), sans poste. `pops` = travail requis à plein
 # régime, en pop-jours par jour : 1 pop-jour fait 4 vêtements (soit les besoins de 8 pops).
