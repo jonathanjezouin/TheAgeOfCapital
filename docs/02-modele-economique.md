@@ -87,19 +87,18 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, à p
 
 ### Main-d'œuvre
 
-**POC-A : postes stables, entraide du hameau, sans marché.** Une pop travaille à **un seul endroit** et n'en change que par nécessité. En 1750 aucune pop ne « choisit » sa production (pas de salaire, pas de marché du travail) : elle suit le métier hérité, et le hameau réoriente des bras vers ce qui manque.
+**POC-A : budget de jours, entraide du hameau, sans marché** *(implémenté, voir §8.3).* Une pop n'a plus de poste : chaque jour, le temps des pops de chaque hameau (1 pop = 1 pop-jour, hors équipes de chantier) est réparti entre les terres à portée (`distance_max`), au prorata du temps disponible dans chaque hameau, les terres dont la ressource est en **tension** (ration couverte à moins de 97 %) d'abord. Une terre demande `N tiles × jours par tile et par an ÷ 12 500` pop-jours par jour ; si son stock de sortie est presque plein, elle ne demande que de quoi le remplir. Ce qui reste est le **temps libre** du hameau, que l'atelier domestique utilise. L'« emploi » d'une pop n'est qu'un affichage : sa terre principale, ou « sans poste » si elle est presque inoccupée.
 
 | Événement | Règle |
 |---|---|
-| Départ | Le générateur de village affecte chaque pop à un poste ; les postes sont dimensionnés pour démarrer près de l'équilibre |
-| Duplication d'une pop | La nouvelle pop prend le **poste vacant le plus proche** de son hameau (coût de transport) ; à égalité, le lieu le moins rempli ; sinon elle est **sans poste** (elle consomme, ne produit pas) |
-| Disparition d'une pop | La pop dont la jauge a franchi −100 ; son poste devient vacant |
-| **Chaque mois** | 1. Les pops sans poste prennent les postes vacants les plus proches. 2. **Réorientation selon le besoin** : pour chaque ressource en tension (ration couverte à moins de 97 %, ou intrant qui manque à un producteur), une pop quitte un lieu dont le stock est plein (excédent) pour un lieu qui produit la ressource manquante et a un poste libre (la pop la plus proche de la destination). Au plus un déplacement par ressource et par mois |
-| **Travail sur place** | L'atelier d'un hameau textile est un poste ordinaire, à distance 0 : un résident y travaille sans trajet. Les autres pops du hameau vont aux terres alentour |
-| **Chantier** | Un chantier (défrichement, construction) emploie une équipe comme n'importe quel lieu de travail (voir §7) |
-| Accès au poste | Le trajet domicile-travail charge les segments. Si la pop n'atteint pas son poste un jour donné (congestion, en sommeil dans le POC), la production de ce jour est réduite ; la main-d'œuvre ne se reporte pas à J+1 |
+| Départ | Le générateur ne fixe aucun emploi ; le travail se répartit dès le premier jour |
+| Naissance | La nouvelle pop se loge dans son hameau, ou le plus proche qui a de la place (§6) ; son temps rejoint le budget du hameau |
+| Disparition d'une pop | Son temps quitte le budget du hameau |
+| **Chaque jour** | Équipes de chantier (poste fixe, trajet complet), puis répartition du temps entre les terres, puis temps libre |
+| **Chantier** | Une équipe de pops non engagées les plus proches, au plus la moitié d'un hameau (les terres ont besoin de bras) ; pour fonder un hameau, des pops viennent de plus loin et s'installent sur le site (§7) |
+| Accès | Le trajet domicile-travail charge les arêtes en proportion du temps donné. Si la congestion empêche d'arriver (en sommeil dans le POC), le temps correspondant est perdu |
 
-Boucle qui se corrige seule : des disparitions créent des postes vacants, la production baisse, les duplications reprennent les postes ; un manque de grain attire des bras vers les champs depuis les lieux en excédent. Le **travail saisonnier** (hiver : filage et couture) est hors POC (production continue).
+Boucle qui se corrige seule : la tension sur une ressource fait aller le temps vers les terres qui la produisent ; si le temps ne suffit pas ou si la terre manque, l'extension prend le relais (§7). Le **travail saisonnier** (profils mensuels) reste hors POC.
 
 **POC-B et suivants : modèle « journalier »** (mobilité, salaires)
 - Historiquement dominant jusqu'au tournant du XXᵉ siècle ; aucun contrat durable côté travailleur.
@@ -214,54 +213,50 @@ pops, capacité, vital_jour, confort_jour, couverture par ressource, vital_annue
 
 ## 7. Extension du village par ses habitants (POC-A)
 
-Aucune firme, aucune monnaie : la **communauté** étend le village, à rythme **saisonnier** (tous les 90 jours), **après** la réaffectation mensuelle. Les pops prennent d'abord tous les postes disponibles, et ne s'étendent que ce qui reste.
+Aucune firme, aucune monnaie : la **communauté** étend le village, à rythme **saisonnier** (tous les 90 jours). Les décisions se prennent là où il y a un manque.
 
 ### Quand
 | Situation | Réaction |
 |---|---|
-| **Des pops attendent un logement** (jauge pleine, plus de place à portée) | Bâtir un **hameau**. Textile si les ateliers manquent de capacité, sinon ordinaire |
-| **Une ressource est en tension** et des pops restent **sans poste** | **Défricher** une terre du type qui produit la ressource |
-| Les producteurs de la ressource sont **bloqués par un intrant manquant** (ex. ateliers sans lin) | On ne les multiplie pas : la tension est reportée sur l'intrant (champ de lin) |
+| **Des pops attendent un logement** (jauge pleine) | Une **maison** de plus dans leur hameau, tant qu'il n'a pas atteint 4 maisons ; sinon un **hameau** neuf (une seule fondation à la fois) |
+| **Une ressource est en tension** (ration < 97 % dans un hameau) et des bras restent sans poste | Défricher pour elle, près des hameaux qui en manquent d'abord : **agrandir** une terre du même type de 4 tiles (la plus fertile, la plus proche), sinon **fonder** une terre de 4 tiles |
+| Plus de terre libre à portée des hameaux | Un **hameau** se fonde en périphérie du réseau (à portée de tous les producteurs) et des pops sans poste s'y installent |
+| Les producteurs de la ressource sont **bloqués par un intrant manquant** | On ne les multiplie pas : la tension est reportée sur l'intrant |
 | Un chantier est déjà en cours pour cette ressource | On attend |
 
 Au plus `chantiers_max` chantiers en même temps.
 
 ### Où
-Un site doit être **libre**, **desservi par une arête** (existante, ou **arête de raccordement à créer** dont le coût de pose en pop-jours dépend de sa longueur et des maisons à reloger, voir §9.3), à **moins de `distance_max`** du hameau demandeur, et **desservi** : dans la limite de distance d'un producteur de chaque besoin du lieu (matériau de construction ; pour un hameau aussi chauffage et nourriture). Parmi les sites possibles :
-- **terre exploitée** : maximise `fertilité / (distance + 1)` ;
-- **hameau** : le plus proche, sur la terre la plus pauvre (on ne bâtit pas sur la meilleure terre).
+Un site de terre est **libre** (tile vide, sans arête), à **moins de `distance_max`** du hameau demandeur, et **desservi** : sa tile « nœud » est reliée au réseau par une **route neuve**, qui peut traverser des tiles occupées (l'infrastructure n'occupe pas la tile, §9) et dont le coût entre dans la limite de distance. Un agrandissement prend des tiles libres voisines (par un côté) de la terre, les plus fertiles d'abord, sans route. Un site de hameau doit trouver à portée de chaque ration (hors ce que son atelier produit lui-même), de la fibre pour cet atelier et du bois de construction ; il est le plus proche du hameau demandeur, sur la terre la plus pauvre, avec au plus 8 tiles de route neuve.
 
 ### Coût
-Un chantier est un lieu de travail temporaire : une **équipe** de pops (venues du hameau demandeur) y fournit un nombre de **pop-jours**, et le **matériau** (bois) arrive par le réseau comme n'importe quelle marchandise, consommé au prorata du travail. Sans bois, le chantier n'avance pas. À la fin, l'équipe devient la première main-d'œuvre du lieu.
+Un chantier est un lieu de travail temporaire : une **équipe** de pops y fournit un nombre de **pop-jours**, et le **matériau** (bois) arrive par le réseau, consommé au prorata du travail. Sans bois, le chantier n'avance pas.
 
 | Création | Travail (pop-jours) | Équipe | Bois | Durée minimale |
 |---|---|---|---|---|
-| Champ | 240 | 2 | 0 | 120 j |
-| Pâturage | 90 | 1 | 20 | 90 j |
-| Verger | 300 | 2 | 0 | 150 j |
-| Exploitation forestière | 120 | 2 | 0 | 60 j |
-| Champ de lin | 200 | 2 | 0 | 100 j |
-| Élevage laine | 100 | 1 | 20 | 100 j |
-| **Hameau** | 300 | 2 | 200 | 150 j |
-| **Hameau textile** | 400 | 2 | 260 | 200 j |
+| Défricher une tile de champ ou de lin | 10 | 2 | 0 | 5 j par tile |
+| … de pâturage ou d'élevage | 5 | 1 | 1 | 5 j par tile |
+| … de verger | 12 | 2 | 0 | 6 j par tile |
+| … de forêt | 4 | 2 | 0 | 2 j par tile |
+| **Une maison** (fonder un hameau en bâtit la première) | 150 | 1 | 100 | 150 j |
 
-(Valeurs de départ plausibles, à calibrer : un champ se défriche en quelques mois à deux pops ; un hameau demande une saison de travail et quelques jours de production de bois. Le verger tarde à produire dans la réalité, ce délai n'est pas modélisé.)
+(Coûts par tile, multipliés par le nombre de tiles du chantier, 4 en général ; valeurs de départ à calibrer.)
 
 ### Équipe
-1. Les pops **sans poste** les plus proches ; 2. à défaut, des bras pris dans les lieux dont le stock couvre au moins 5 jours (excédent) ; 3. un chantier resté **sans équipe** réquisitionne des bras (corvée) à chaque saison, même sans excédent. Un chantier incomplet recrute à nouveau à chaque saison.
+Les pops non engagées les plus proches, au plus la moitié des pops d'un hameau. Un chantier incomplet recrute à nouveau à chaque saison. Pour une fondation de hameau, les pops viennent de plus loin que `distance_max` et s'installent sur le site.
 
-### Le frein : la qualité de la terre
-Rien n'interdit de défricher une plaine entière, mais les terres lointaines sont plus pauvres : quand une pop de plus ne produit plus de quoi se nourrir (et se chauffer) sur la terre qu'elle défriche, la population plafonne. La taille d'équilibre **émerge** de la fertilité et de la distance ; elle oscille en « dents de scie » autour de ce plafond (déclin lent si le vital manque, reprise ensuite). Le confort (viande, vêtements) **ne freine pas** la croissance (une pop insatisfaite croît à +0,5 %/an) : c'est le premier luxe que l'on abandonne quand la terre est ingrate.
+### Le frein : la terre à portée
+Rien n'interdit de défricher, mais le terroir à portée (rayon de 10 tiles autour des hameaux) se remplit, et les terres lointaines sont plus pauvres : quand une pop de plus ne produit plus de quoi se nourrir (et se chauffer), la population plafonne ; seule la fondation d'un hameau plus loin repousse ce plafond. La taille d'équilibre **émerge** de la fertilité, de la distance et du temps de travail ; elle oscille en « dents de scie » autour de ce plafond. Le confort (viande, vêtements) **ne freine pas** la croissance (une pop insatisfaite croît à +0,5 %/an).
 
 ### Journal
-Chaque lancement et chaque fin de chantier est inscrit au journal d'événements, avec son **motif** (« grain manque, 2 pops sans poste » ; « 1 pops attendent un logement »).
+Chaque lancement et chaque fin de chantier est inscrit au journal d'événements, avec son **motif**.
 
 ### Limites connues
-Pas d'abandon : un hameau vidé par un déclin reste debout, une terre sans bras reste inactive. Pas de délai de production d'un verger. Pas de réaffectation de l'équipe en cas de besoin urgent ailleurs.
+Pas d'abandon : un hameau vidé par un déclin reste debout, une terre sans bras reste inactive. Pas de réaffectation de l'équipe en cas de besoin urgent ailleurs. Les coûts de défrichement du verger, de la forêt et de l'élevage ne viennent pas de la référence 1750.
 
-## 8. Évolutions de design décidées (2026-11-02, à implémenter)
+## 8. Évolutions de design décidées (2026-11-02, implémentées dans `sim/`)
 
-Décisions prises après l'étude des ratios de 1750 (référence chiffrée dans `04`). Le code `sim/` et `app/` reflète encore la version précédente (1 tile = 1 terre, hameau textile).
+Décisions prises après l'étude des ratios de 1750 (référence chiffrée dans `04`), implémentées dans `sim/` et `app/` : tile de 250 m, terres de N tiles, budget de jours, textile domestique.
 
 ### 8.1 Tile fixe de 250 m
 Voir §1. Conséquence : le POC actuel (60–90 pops dans ~7 tiles de rayon) suppose des tiles de ~0,7–1 km ; à 250 m, le même village s'étale sur ~25 tiles de rayon et la limite de `distance_max` (10 tiles) devient le moteur d'extension.

@@ -6,7 +6,7 @@
  "atlas": "atlas.png",
  "taille": [
   2048,
-  1152
+  1408
  ],
  "frames": {
   "terrain_plaine_00": {
@@ -171,57 +171,129 @@
    "w": 256,
    "h": 256
   },
-  "bat_maison_bois_0": {
+  "bat_champ_plein_0": {
+   "x": 768,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_lin_plein_0": {
+   "x": 1024,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_verger_plein_0": {
+   "x": 1280,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_foret_exploitee_plein_0": {
+   "x": 1536,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_paturage_plein_0": {
+   "x": 1792,
+   "y": 768,
+   "w": 256,
+   "h": 256
+  },
+  "bat_elevage_laine_plein_0": {
    "x": 0,
    "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_plein_1": {
+   "x": 256,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_champ_lin_plein_1": {
+   "x": 512,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_verger_plein_1": {
+   "x": 768,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_foret_exploitee_plein_1": {
+   "x": 1024,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_paturage_plein_1": {
+   "x": 1280,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_elevage_laine_plein_1": {
+   "x": 1536,
+   "y": 1024,
+   "w": 256,
+   "h": 256
+  },
+  "bat_maison_bois_0": {
+   "x": 0,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_maison_bois_1": {
    "x": 128,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_maison_bois_2": {
    "x": 256,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_maison_bois_3": {
    "x": 384,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_maison_bois_4": {
    "x": 512,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_maison_bois_5": {
    "x": 640,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_chantier_maison_0": {
    "x": 768,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_chantier_maison_1": {
    "x": 896,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   },
   "bat_chantier_maison_2": {
    "x": 1024,
-   "y": 1024,
+   "y": 1280,
    "w": 128,
    "h": 128
   }
@@ -271,6 +343,30 @@
   "bat_chantier_champ": [
    "bat_chantier_champ_0",
    "bat_chantier_champ_1"
+  ],
+  "bat_champ_plein": [
+   "bat_champ_plein_0",
+   "bat_champ_plein_1"
+  ],
+  "bat_champ_lin_plein": [
+   "bat_champ_lin_plein_0",
+   "bat_champ_lin_plein_1"
+  ],
+  "bat_verger_plein": [
+   "bat_verger_plein_0",
+   "bat_verger_plein_1"
+  ],
+  "bat_foret_exploitee_plein": [
+   "bat_foret_exploitee_plein_0",
+   "bat_foret_exploitee_plein_1"
+  ],
+  "bat_paturage_plein": [
+   "bat_paturage_plein_0",
+   "bat_paturage_plein_1"
+  ],
+  "bat_elevage_laine_plein": [
+   "bat_elevage_laine_plein_0",
+   "bat_elevage_laine_plein_1"
   ],
   "bat_maison_bois": [
    "bat_maison_bois_0",

@@ -3,7 +3,7 @@
 Conventions (voir docs/03) : préfixes `terrain_*`, `infra_*`, `bat_*` ; vue de dessus ; soleil au
 zénith. Deux tailles de frames : des **tiles** de 256 px (sol, terres, chantier de défrichement) et
 des **sprites** de 128 px (maisons en bois et leurs chantiers : une maison par pop, orientée par
-rotation). Le réseau routier n'est plus un jeu de tiles : le rendu le trace en courbes et le
+rotation). Les terres ont aussi des textures **pleines** raccordables (`*_plein`) pour les emprises de N tiles. Le réseau routier n'est plus un jeu de tiles : le rendu le trace en courbes et le
 remplit avec la texture `sol_chemin.png` (raccordable, hors atlas).
 """
 import json
@@ -13,7 +13,7 @@ from pathlib import Path
 import numpy as np
 from PIL import Image
 
-from . import chantiers, maisons, terres, terrain
+from . import chantiers, maisons, terres, terres_pleines, terrain
 from .dessin import TUILE
 from .maisons import PETIT
 
@@ -45,6 +45,14 @@ def _frames():
         ajouter(f"bat_elevage_laine_{i}", "bat_elevage_laine", terres.elevage_laine(9000 + i))
     for i in range(2):
         ajouter(f"bat_chantier_champ_{i}", "bat_chantier_champ", chantiers.chantier_champ(11000 + i))
+    # Textures raccordables des terres, pour couvrir une emprise de N tiles (les limites sont tracées par le rendu).
+    for i in range(2):
+        ajouter(f"bat_champ_plein_{i}", "bat_champ_plein", terres_pleines.champ_plein(14000 + i))
+        ajouter(f"bat_champ_lin_plein_{i}", "bat_champ_lin_plein", terres_pleines.champ_lin_plein(14100 + i))
+        ajouter(f"bat_verger_plein_{i}", "bat_verger_plein", terres_pleines.verger_plein(14200 + i))
+        ajouter(f"bat_foret_exploitee_plein_{i}", "bat_foret_exploitee_plein", terres_pleines.foret_pleine(14300 + i))
+        ajouter(f"bat_paturage_plein_{i}", "bat_paturage_plein", terres_pleines.paturage_plein(14400 + i))
+        ajouter(f"bat_elevage_laine_plein_{i}", "bat_elevage_laine_plein", terres_pleines.elevage_laine_plein(14500 + i))
     # Sprites de 128 px : une maison en bois par pop, et ses chantiers.
     for i in range(6):
         b, a, nm = maisons.maison_bois(12000 + i)

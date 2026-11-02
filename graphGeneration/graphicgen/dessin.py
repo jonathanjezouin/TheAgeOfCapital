@@ -62,18 +62,33 @@ def coord(n=TUILE):
 
 
 class Toile:
-    """Calque RGBA transparent sur lequel on dessine des formes en coordonnées de tile (pixels)."""
+    """Calque RGBA transparent sur lequel on dessine des formes en coordonnées de tile (pixels).
 
-    def __init__(self, n=TUILE):
+    Avec `rep=True` (raccordable), chaque forme est aussi dessinée décalée d'une tile dans les huit
+    directions : ce qui sort par un bord rentre par le bord opposé, la texture se répète sans couture.
+    """
+
+    def __init__(self, n=TUILE, rep=False):
         self.n = n
+        self.rep = rep
+        self._dx = self._dy = 0
         self.img = Image.new("RGBA", (n * SS, n * SS), (0, 0, 0, 0))
         self.d = ImageDraw.Draw(self.img)
 
+    def _decalages(self):
+        return [(i * self.n, j * self.n) for i in (-1, 0, 1) for j in (-1, 0, 1)] if self.rep else [(0, 0)]
+
     def _p(self, *pts):
-        return [v * SS for v in pts]
+        return [(v + (self._dx if i % 2 == 0 else self._dy)) * SS for i, v in enumerate(pts)]
+
+    def _multi(self, f, *args, **kw):
+        for dx, dy in self._decalages():
+            self._dx, self._dy = dx, dy
+            f(*args, **kw)
+        self._dx = self._dy = 0
 
     def disque(self, x, y, r, c):
-        self.d.ellipse(self._p(x - r, y - r, x + r, y + r), fill=_rgba(c))
+        self._multi(lambda: self.d.ellipse(self._p(x - r, y - r, x + r, y + r), fill=_rgba(c)))
 
     def ellipse(self, x, y, rx, ry, c, angle=0.0):
         """Ellipse orientée de `angle` radians."""
@@ -86,7 +101,7 @@ class Toile:
         self.polygone(pts, c)
 
     def rect(self, x0, y0, x1, y1, c):
-        self.d.rectangle(self._p(x0, y0, x1, y1), fill=_rgba(c))
+        self._multi(lambda: self.d.rectangle(self._p(x0, y0, x1, y1), fill=_rgba(c)))
 
     def rect_oriente(self, x, y, long, large, angle, c):
         """Rectangle centré en (x, y), `long` le long de `angle`."""
@@ -97,13 +112,14 @@ class Toile:
         self.polygone(pts, c)
 
     def ligne(self, x0, y0, x1, y1, c, largeur=1.0):
-        self.d.line(self._p(x0, y0, x1, y1), fill=_rgba(c), width=max(1, round(largeur * SS)))
+        self._multi(lambda: self.d.line(self._p(x0, y0, x1, y1), fill=_rgba(c), width=max(1, round(largeur * SS))))
 
     def polygone(self, pts, c):
-        self.d.polygon([v * SS for p in pts for v in p], fill=_rgba(c))
+        flat = [v for p in pts for v in p]
+        self._multi(lambda: self.d.polygon(self._p(*flat), fill=_rgba(c)))
 
     def contour_rect(self, x0, y0, x1, y1, c, largeur=2.0):
-        self.d.rectangle(self._p(x0, y0, x1, y1), outline=_rgba(c), width=max(1, round(largeur * SS)))
+        self._multi(lambda: self.d.rectangle(self._p(x0, y0, x1, y1), outline=_rgba(c), width=max(1, round(largeur * SS))))
 
     def flou(self, rayon):
         self.img = self.img.filter(ImageFilter.GaussianBlur(rayon * SS))

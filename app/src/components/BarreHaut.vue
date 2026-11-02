@@ -45,7 +45,7 @@ const MODES = [
       <label for="graine">Graine</label>
       <input id="graine" v-model.number="store.graine" type="number" min="0" step="1" />
       <label for="hameaux">Hameaux</label>
-      <input id="hameaux" v-model.number="store.hameaux" type="number" min="4" max="24" step="1" />
+      <input id="hameaux" v-model.number="store.hameaux" type="number" min="2" max="6" step="1" />
       <button title="Génère un nouveau village avec cette graine" @click="emit('nouveau')">Nouveau</button>
     </span>
   </header>

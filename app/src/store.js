@@ -18,7 +18,7 @@ export const store = reactive({
   heure: 12,
   fraction: 0,
   graine: 1,
-  hameaux: 10,
+  hameaux: 4,
 })
 
 export const VITESSES = [

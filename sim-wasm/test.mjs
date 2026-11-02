@@ -8,7 +8,7 @@ const w = instance.exports;
 const lire = (n) => new TextDecoder().decode(new Uint8Array(w.memory.buffer, w.sim_sortie_ptr(), n));
 const json = (n) => JSON.parse(lire(n));
 
-assert.equal(w.sim_creer(1, 10, 3, 7, 80), 0, "création du village");
+assert.equal(w.sim_creer(1, 4, 12, 28, 80), 0, "création du village");
 const meta = json(w.sim_meta_json());
 assert.equal(meta.largeur, 200);
 assert.equal(meta.ressources.length, 8);
@@ -20,7 +20,7 @@ assert.ok(carte.tuiles.some((t) => t.c === "chemin" && t.m > 0));
 
 let etat = json(w.sim_etat_json(0));
 assert.equal(etat.jour, 0);
-assert.equal(etat.hameaux.length, 10);
+assert.equal(etat.hameaux.length, 4);
 const pops0 = etat.nb_pops;
 
 w.sim_avancer(365 * 120);
@@ -33,7 +33,7 @@ assert.ok(json(w.sim_carte_json()).version !== carte.version, "la carte a chang�
 assert.equal(w.sim_fertilite_len(), 200 * 200);
 
 // Déterminisme : même graine, même état.
-w.sim_creer(1, 10, 3, 7, 80); w.sim_avancer(365 * 120);
+w.sim_creer(1, 4, 12, 28, 80); w.sim_avancer(365 * 120);
 const etat2 = json(w.sim_etat_json(0));
 assert.equal(JSON.stringify(etat2.pops), JSON.stringify(etat.pops));
 console.log(`OK : ${meta.batiments.length} types, ${carte.tuiles.length} tiles, ${etat.nb_pops} pops à 120 ans, ${etat.nb_evenements} événements`);

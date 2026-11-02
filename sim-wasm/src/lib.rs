@@ -127,7 +127,12 @@ struct LieuVue {
     y: usize,
     quartier: Option<usize>,
     occ: u32,
-    postes: u32,
+    /// Travail requis à plein régime, en pops (équipe pour un chantier, jours par tile pour une terre).
+    postes: f64,
+    /// Travail reçu aujourd'hui, en pops (terre, atelier domestique).
+    recu: f64,
+    /// Tiles occupées (terre exploitée sur N tiles) ; la première est la tile nœud.
+    emprise: Vec<(usize, usize)>,
     prod: f64,
     limitant: String,
     fertilite: f64,
@@ -352,6 +357,7 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                         Cible::Terre(t) => ("terre", c.batiments[t].nom.clone()),
                         Cible::Hameau(q) => ("hameau", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
                         Cible::Maison(q) => ("maison", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
+                        Cible::Extension(terre) => ("extension", c.batiments[s.monde.batiments[terre].type_id].nom.clone()),
                     };
                     ChantierVue {
                         cible,
@@ -368,10 +374,23 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     y,
                     quartier: bat.quartier,
                     occ: occ[b],
-                    postes: s.postes_de(b),
+                    postes: if bat.chantier.is_some() {
+                        bat.equipe as f64
+                    } else {
+                        c.besoin_mo_milli(bat.type_id, bat.emprise.len()) as f64 / 1000.0
+                    },
+                    recu: match bat.quartier {
+                        Some(q) if t.domestique => s.libre_milli.get(q).map_or(0.0, |&m| m as f64 / 1000.0),
+                        _ => bat.mo_milli as f64 / 1000.0,
+                    },
+                    emprise: bat.emprise.iter().map(|&i| s.monde.xy(i)).collect(),
                     prod: f(bat.prod_ppm),
                     limitant: limitant_texte(s, bat.limitant),
-                    fertilite: f(s.monde.tuiles[bat.tuile].fertilite_ppm),
+                    fertilite: if bat.emprise.is_empty() {
+                        f(s.monde.tuiles[bat.tuile].fertilite_ppm)
+                    } else {
+                        f(bat.emprise.iter().map(|&i| s.monde.tuiles[i].fertilite_ppm).sum::<i64>() / bat.emprise.len() as i64)
+                    },
                     entree: bat.stock_entree.iter().map(|&m| unites(m)).collect(),
                     sortie: bat.stock_sortie.iter().map(|&m| unites(m)).collect(),
                     chantier,

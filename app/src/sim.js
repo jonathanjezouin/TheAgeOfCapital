@@ -12,7 +12,7 @@ export async function chargerSim(urlWasm) {
 
   return {
     /** Crée un village. Lève une erreur si aucune disposition valide n'est trouvée. */
-    creer({ graine = 1, hameaux = 10, rayonFertile = 3, rayonSterile = 7, occupation = 80 } = {}) {
+    creer({ graine = 1, hameaux = 4, rayonFertile = 12, rayonSterile = 28, occupation = 80 } = {}) {
       if (w.sim_creer(graine >>> 0, hameaux, rayonFertile, rayonSterile, occupation) !== 0) {
         throw new Error(lire(w.sim_sortie_len()))
       }

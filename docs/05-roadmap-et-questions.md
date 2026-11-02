@@ -84,13 +84,15 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 7. **Calibration démographique et des besoins** : seuils vitaux, capacité du hameau (1 ou 2 pops), `mortalite_famine`, taille de village de départ (voir `02` §6 et `04`).
 8. **Monnaie** (POC-B) : salaires, budget des pops, formation des prix ; articulation avec la consommation directe du POC-A.
 6. **Monde extérieur** : abstraction type marché mondial vs simulation multi-niveaux.
-9. **Jours de travail par pop** : le budget de jours (`02` §8.3) introduit `jours_par_pop_an` (~12 500 = 50 travailleurs × 250 jours), ce qui contredit la règle de `00` §3 (« le 50 % de travailleurs n'apparaît pas dans les formules »). À acter.
-10. **Moteur de travail** : budget annuel lissé (étape 1) puis profils mensuels (étape 2) ; règles de priorité (vital > confort > travail domestique) ; coût en jours des recettes textiles ; jours/ha du verger, de la forêt et de l'élevage (à calibrer).
+9. **Jours de travail par pop** : `[travail] jours_personne_par_pop_an = 12 500` (50 travailleurs × 250 jours) est dans `poc.toml` et dans le moteur, ce qui **déroge à la règle de `00` §3** (« le 50 % de travailleurs n'apparaît pas dans les formules »). Dérogation assumée, à acter dans `00`.
+10. **Moteur de travail** : étape 1 faite (budget lissé, priorité aux terres en tension, temps libre au textile) ; reste les profils mensuels (étape 2), le coût en jours des recettes textiles, les jours par tile du verger, de la forêt et de l'élevage (à calibrer), et des priorités plus fines (vital > confort).
 11. **Spécialisation régionale** (anneaux de Von Thünen, vigne, lin, herbages) : émergence en POC-B avec prix et transport ; premier bien importé (sel, fer, outils) à choisir pour faire naître le bourg.
 12. **Dispersion de l'habitat** : fermes isolées (bocage) vs villages groupés à champs ouverts ; paramètre du générateur.
 13. **Maillage** : critère de succès ~1:4:15:45 (ville : bourgs : villages : hameaux) et espacements (`04`), à mesurer sur plusieurs graines, jamais codé.
 14. **Une seule simulation ou multi-échelle ?** `03` §5 prévoit un modèle agrégé pour les zones non observées ; la volonté actuelle est de **ne pas** avoir deux simulations (locale et régionale). Piste : mêmes règles partout, nœuds dormants à cadence réduite ; à trancher avec le banc d'essai.
-15. **Calibration du POC actuel** : ses tiles impliquent ~0,7–1 km ; migrer calibration (rayons de fertilité, `distance_max` = 100 unités, coûts de chantier par tile) vers la tile de 250 m et les arêtes.
+15. ~~Calibration du POC à la tile de 250 m~~ : **faite** (rayons de fertilité ×4, `distance_max` = 100, terres par tile, coûts de chantier par tile).
+23. **Taille du village** : la croix de départ (bras de 8 tiles) porte ~4 hameaux ; le terroir à portée plafonne à 8–15 pops. Plusieurs groupes de hameaux (une zone de marché de ~21 000 hab., `04`) demandent un générateur multi-croix et des liens entre groupes.
+24. **Fondation de hameau** : les pops sans poste s'installent sur le site ; comment les familles se répartissent (migration, héritage) est à préciser.
 16. **Tile d'habitat desservie par une (demi-)route** : façade, impasse, capacité = f(longueur de façade, densification) ; à quel seuil de pops un hameau passe de la demi-arête à la traversante (`02` §9.4).
 17. **Densification et plafond** : 10 pops pour le bâti bas ; ~25 pops pour des immeubles ; le plafond devient une propriété du type de bâtiment.
 18. **Pops à reloger** quand une route est posée sur une tile pleine : défaut proposé = mécanisme des pops en attente de logement, sans disparition ; à confirmer (`02` §9.3).

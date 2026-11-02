@@ -126,15 +126,16 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
         <div class="ligne"><span>Production</span><span :style="{ color: couleurRatio(entite.l.prod) }">{{ pct(entite.l.prod) }}</span></div>
         <div class="barre"><i :style="{ width: entite.l.prod * 100 + '%', background: couleurRatio(entite.l.prod) }"></i></div>
         <div class="ligne"><span>Limité par</span><span>{{ limitantTexte(entite.l.limitant) }}</span></div>
-        <div class="ligne"><span>Fertilité de la tile</span><span>{{ pct(entite.l.fertilite) }}</span></div>
-        <div class="ligne"><span>Effectif</span><span>{{ entite.l.occ }} / {{ entite.l.postes }} pops</span></div>
-        <div class="note" v-if="entite.l.limitant === 'main_oeuvre'">Postes vacants : les naissances et la réorientation mensuelle des bras les rempliront.</div>
-        <div class="note" v-else-if="entite.l.limitant === 'stock_plein'">Rien à écouler : des pops pourront être réorientées vers ce qui manque ailleurs.</div>
+        <div class="ligne"><span>Surface</span><span>{{ entite.l.emprise.length }} tiles ({{ un(entite.l.emprise.length * 6.25, 0) }} ha)</span></div>
+        <div class="ligne"><span>Fertilité moyenne</span><span>{{ pct(entite.l.fertilite) }}</span></div>
+        <div class="ligne"><span>Travail reçu / requis</span><span>{{ un(entite.l.recu, 2) }} / {{ un(entite.l.postes, 2) }} pops</span></div>
+        <div class="note" v-if="entite.l.limitant === 'main_oeuvre'">Pas assez de temps de travail à portée : les pops des hameaux voisins se partagent leur temps entre les terres, celles qui manquent d'abord.</div>
+        <div class="note" v-else-if="entite.l.limitant === 'stock_plein'">Rien à écouler : le temps de travail va aux terres qui manquent.</div>
         <h3>Stock de sortie</h3>
         <div class="doux">
           <template v-for="(q, r) in entite.l.sortie" :key="r"><span v-if="q > 0.05" style="margin-right: 10px">{{ RESSOURCES[nomRes(r)] }} {{ un(q, 0) }}</span></template>
         </div>
-        <h3>Pops affectées</h3>
+        <h3>Pops dont c'est la terre principale</h3>
         <div v-for="p in pops" :key="p[0]" class="pop">
           <b>Pop {{ p[0] }}</b> <small>du hameau ({{ hameauDe(p[1]).x }}, {{ hameauDe(p[1]).y }})</small>
         </div>

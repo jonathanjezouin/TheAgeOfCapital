@@ -15,8 +15,10 @@ const GROUPE = {
 }
 // Les 8 directions d'arêtes, dans l'ordre du moteur : E, SE, S, SO, O, NO, N, NE (bit i du champ `a`).
 const DIRS8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
-const ECHELLE_MAISON = 0.85 // sprite de 128 px -> toit d'environ 1/4 de tile : une maison = une pop, taille exagérée (docs/03 §6)
+const ECHELLE_MAISON = 1.1 // sprite de 128 px -> toit d'environ 1/3 de tile : une maison = une pop, taille exagérée (docs/03 §6)
 const DECALAGE_ROUTE = 0.2 // décalage organique des routes, en fraction de tile
+// Limite des terres le long du bord de leur emprise.
+const BORDURES = { champ: 'haie', champ_lin: 'haie', paturage: 'cloture', elevage_laine: 'cloture' }
 const LARGEUR_ROUTE = 0.12 // largeur du trait, exagérée (une piste de 5 m ferait moins d'un pixel)
 const hashf = (x, y, s) => (hash(x * 7 + s, y * 13 + s * 3) % 10000) / 10000
 
@@ -63,6 +65,7 @@ export class Carte {
 
     this.monde = new Container()
     this.sol = new Container()
+    this.terres = new Container() // terres exploitées sur N tiles, sous les routes (une route peut les traverser)
     this.infra = new Container()
     this.bat = new Container()
     this.couleurs = new Graphics() // mode « besoins »
@@ -72,7 +75,7 @@ export class Carte {
     this.nuit = new Graphics()
     this.monde.addChild(this.sol)
     this.fertiliteSprite = this.construireFertilite(fertilite)
-    this.monde.addChild(this.fertiliteSprite, this.infra, this.bat, this.couleurs, this.barres, this.pops, this.selectionG)
+    this.monde.addChild(this.fertiliteSprite, this.terres, this.infra, this.bat, this.couleurs, this.barres, this.pops, this.selectionG)
     this.app.stage.addChild(this.monde, this.nuit)
 
     this.construireSol()
@@ -153,6 +156,7 @@ export class Carte {
   /** (Re)construit routes, maisons et terres quand la carte change (chantier lancé ou terminé, route créée). */
   appliquerCarte(carte, etat) {
     this.carteVersion = carte.version
+    this.terres.removeChildren().forEach((c) => c.destroy())
     this.infra.removeChildren().forEach((c) => c.destroy())
     this.bat.removeChildren().forEach((c) => c.destroy())
     this.chantiersMaison = []
@@ -160,15 +164,43 @@ export class Carte {
     const grille = new Map()
     for (const t of carte.tuiles) grille.set(t.y * W + t.x, t)
     this.grille = grille
+    const bordures = new Graphics()
     this.tracerRoutes(carte, W)
     for (const t of carte.tuiles) {
       if (t.c === 'chemin') continue
       if (t.c === 'hameau') {
         this.poserMaisons(t, etat)
       } else {
+        // Terre exploitée : une texture raccordable par tile de l'emprise, limites le long du bord.
         const lieu = etat.lieux[t.m]
-        const groupe = lieu.chantier ? 'bat_chantier_champ' : GROUPE[lieu.type_nom]
-        if (groupe) this.poser(this.bat, this.variante(groupe, hash(t.x, t.y)), t.x, t.y)
+        const base = lieu.chantier ? 'bat_chantier_champ' : GROUPE[lieu.type_nom]
+        if (!base) continue
+        const plein = !lieu.chantier && this.manifeste.groupes[base + '_plein']
+        this.poser(this.terres, this.variante(plein ? base + '_plein' : base, hash(t.x, t.y)), t.x, t.y)
+        if (!lieu.chantier) this.bordureTerre(bordures, t, lieu.type_nom, grille, W)
+      }
+    }
+    this.terres.addChild(bordures)
+  }
+
+  /** Haie ou clôture le long des côtés de la tile qui ne touchent pas la même terre. */
+  bordureTerre(g, t, type, grille, W) {
+    const style = BORDURES[type]
+    if (!style) return
+    for (const [dx, dy] of [[0, -1], [1, 0], [0, 1], [-1, 0]]) {
+      const v = grille.get((t.y + dy) * W + (t.x + dx))
+      if (v && v.c === 'bat' && v.m === t.m) continue
+      const x0 = (t.x + (dx === 1 ? 1 : 0)) * T, y0 = (t.y + (dy === 1 ? 1 : 0)) * T
+      const [x1, y1] = dx === 0 ? [x0 + T, y0] : [x0, y0 + T]
+      if (style === 'haie') {
+        g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 12, color: 0x3f5a2f, alpha: 0.92 })
+        g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 5, color: 0x6f8f45, alpha: 0.9 })
+      } else {
+        g.moveTo(x0, y0).lineTo(x1, y1).stroke({ width: 5, color: 0x7a5a3a })
+        for (let k = 0; k <= 4; k++) {
+          const px = x0 + (x1 - x0) * k / 4, py = y0 + (y1 - y0) * k / 4
+          g.rect(px - 5, py - 5, 10, 10).fill(0x5e442b)
+        }
       }
     }
   }
@@ -253,7 +285,7 @@ export class Carte {
       }
       return slots
     }
-    for (const rang of [0.24, 0.45]) {
+    for (const rang of [0.26, 0.47]) {
       for (const d of dirs) {
         const l = Math.hypot(DIRS8[d][0], DIRS8[d][1])
         const ux = DIRS8[d][0] / l, uy = DIRS8[d][1] / l
@@ -262,8 +294,8 @@ export class Carte {
           const vx = -nx, vy = -ny // vers la route
           const j = (hashf(t.x * 5 + d, t.y * 3 + cote, 3) - 0.5) * 0.04
           slots.push({
-            x: cx + ux * rang * T + nx * (0.21 + j) * T,
-            y: cy + uy * rang * T + ny * (0.21 + j) * T,
+            x: cx + ux * rang * T + nx * (0.24 + j) * T,
+            y: cy + uy * rang * T + ny * (0.24 + j) * T,
             angle: Math.atan2(-vx, vy),
           })
         }
@@ -375,6 +407,11 @@ export class Carte {
     g.clear()
     const s = store.selection
     if (!s) return
+    const tuile = this.grille?.get(s.y * this.meta.largeur + s.x)
+    const lieu = tuile && tuile.c === 'bat' ? this.etat?.lieux[tuile.m] : null
+    if (lieu && lieu.emprise.length > 1) {
+      for (const [x, y] of lieu.emprise) g.rect(x * T, y * T, T, T).fill({ color: 0xffffff, alpha: 0.1 })
+    }
     g.rect(s.x * T + 4, s.y * T + 4, T - 8, T - 8).fill({ color: 0xffffff, alpha: 0.08 }).stroke({ width: 8, color: 0xfff4c2 })
   }
 

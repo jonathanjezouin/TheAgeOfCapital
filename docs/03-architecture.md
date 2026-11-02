@@ -213,9 +213,12 @@ Le risque à cette échelle est **algorithmique** (un tick qui touche tout, une 
 - **Rendu** : une courbe lissée par chemin dans la couche 1, passant par les centres de tiles avec un décalage déterministe (décroissant avec l'urbanisation), tracée par chunk et mise en cache. **L'atlas de chemins par masque (`infra_chemin_terre_*`, 15 variantes) est abandonné pour le réseau** ; le hameau et le chantier gardent leur placette. La lumière (jour/nuit) est une teinte appliquée en rendu, pas précalculée.
 - Référence visuelle : `docs/maquettes/routes-250m.html`.
 
+### Terres sur N tiles
+Une terre exploitée occupe N tiles contiguës d'un même bâtiment : le rendu pose sur chaque tile une **texture raccordable** (`*_plein`, `04`) et trace une **haie** (champs, lin) ou une **clôture** (pâturage, laine) seulement le long des côtés qui ne touchent pas la même terre. Les terres sont sous les routes, qui peuvent les traverser. La sélection d'une tile met en évidence toute l'emprise.
+
 ### Habitations : une maison par pop (décision du 2026-11-02)
 - **Une maison = une pop** (100 hab.) : la tile d'habitat affiche autant de sprites que de pops (1 à 10 pour le bâti bas ; au-delà, le type de bâtiment change, `02` §9.4).
-- **Taille exagérée** : environ 1/6 de la largeur d'une tile (une maison réelle fait 9 m sur 250 m), comme la largeur des routes. À fixer à la validation visuelle.
+- **Taille exagérée** : environ 1/3 de la largeur d'une tile (une maison réelle fait 9 m sur 250 m), comme la largeur des routes (12 % d'une tile). Valeurs retenues à la validation visuelle.
 - **Placement** : le long de l'arête qui dessert la tile, avec un décalage déterministe (hash de la position et de la graine). **Orientation** : face à l'arête, par rotation continue du sprite.
 - Un sprite orienté librement impose des sprites **éclairés au zénith, sans ombre portée** (déjà le cas) ; le ré-éclairage par shader reste reporté (`05`).
 - **Chantier** : un sprite de maison en construction par maison en cours (un seul chantier de maison à la fois par pop à loger).

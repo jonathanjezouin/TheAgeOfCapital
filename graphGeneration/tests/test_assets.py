@@ -12,7 +12,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from graphicgen import atlas, maisons, terrain  # noqa: E402
+from graphicgen import atlas, maisons, terrain, terres_pleines  # noqa: E402
 from graphicgen.cultures import CULTURES  # noqa: E402
 from graphicgen.house import ZENITH, generate_house  # noqa: E402
 
@@ -28,6 +28,16 @@ class Raccords(unittest.TestCase):
         self.assertLess(np.abs(t[:, -1] - t[:, 0]).mean(), voisins * 1.6 + 2)
         self.assertLess(np.abs(t[-1, :] - t[0, :]).mean(), voisins * 1.6 + 2)
         self.assertTrue((t[..., 3] == 255).all(), "texture opaque")
+
+    def test_terres_pleines_raccordables(self):
+        # Une emprise de N tiles répète la texture : aucune couture visible entre deux tiles voisines.
+        for f in (terres_pleines.champ_plein, terres_pleines.champ_lin_plein, terres_pleines.verger_plein,
+                  terres_pleines.foret_pleine, terres_pleines.paturage_plein, terres_pleines.elevage_laine_plein):
+            t = rgba(f(2))
+            self.assertTrue((t[..., 3] == 255).all(), f.__name__ + " opaque")
+            interne = max(np.abs(t[:, 100] - t[:, 101]).mean(), np.abs(t[100, :] - t[101, :]).mean())
+            for couture in (np.abs(t[:, -1] - t[:, 0]).mean(), np.abs(t[-1, :] - t[0, :]).mean()):
+                self.assertLess(couture, interne * 1.7 + 3, f"{f.__name__} : couture {couture:.1f} vs {interne:.1f}")
 
     def test_herbe_raccordable(self):
         g = rgba(terrain.herbe(3))
@@ -81,7 +91,8 @@ class Manifeste(unittest.TestCase):
     def test_groupes_attendus(self):
         for g in ["terrain_plaine", "bat_champ", "bat_paturage", "bat_verger", "bat_foret_exploitee",
                   "bat_champ_lin", "bat_elevage_laine", "bat_chantier_champ", "bat_maison_bois",
-                  "bat_chantier_maison"]:
+                  "bat_chantier_maison", "bat_champ_plein", "bat_champ_lin_plein", "bat_verger_plein",
+                  "bat_foret_exploitee_plein", "bat_paturage_plein", "bat_elevage_laine_plein"]:
             self.assertIn(g, self.m["groupes"], g)
         self.assertGreaterEqual(len(self.m["groupes"]["terrain_plaine"]), 8)
         self.assertEqual(len(self.m["groupes"]["bat_maison_bois"]), 6)
