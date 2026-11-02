@@ -12,36 +12,22 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from graphicgen import atlas, terrain  # noqa: E402
+from graphicgen import atlas, maisons, terrain  # noqa: E402
 from graphicgen.cultures import CULTURES  # noqa: E402
 from graphicgen.house import ZENITH, generate_house  # noqa: E402
-
-N, E, S, O = terrain.N, terrain.E, terrain.S, terrain.O
-
 
 def rgba(img):
     return np.asarray(img.convert("RGBA"), np.float32)
 
 
 class Raccords(unittest.TestCase):
-    def test_chemins_horizontaux_se_raccordent(self):
-        a, b = rgba(terrain.chemin(E)), rgba(terrain.chemin(O))
-        # Bord droit de la tile à demi-direction Est, bord gauche de la tile voisine à demi-direction Ouest.
-        ecart = np.abs(a[:, -1] - b[:, 0]).mean()
-        self.assertLess(ecart, 14, f"couture visible entre deux chemins horizontaux : {ecart:.1f}")
-        # Et le chemin touche bien le bord : au moins 30 px de terre opaque sur la colonne.
-        self.assertGreater((a[:, -1, 3] > 200).sum(), 30)
-
-    def test_chemins_verticaux_se_raccordent(self):
-        a, b = rgba(terrain.chemin(S)), rgba(terrain.chemin(N))
-        ecart = np.abs(a[-1, :] - b[0, :]).mean()
-        self.assertLess(ecart, 14, f"couture visible entre deux chemins verticaux : {ecart:.1f}")
-
-    def test_un_chemin_n_atteint_que_ses_bords(self):
-        t = rgba(terrain.chemin(E))  # du centre vers l'Est : touche le bord Est, aucun autre
-        self.assertGreater((t[:, -1, 3] > 200).sum(), 30)
-        for bord, nom in ((t[:, 0, 3], "Ouest"), (t[0, :, 3], "Nord"), (t[-1, :, 3], "Sud")):
-            self.assertEqual((bord > 10).sum(), 0, f"le chemin déborde sur le bord {nom}")
+    def test_sol_de_chemin_raccordable(self):
+        # La texture de route est répétée par le rendu : bords gauche/droite et haut/bas se raccordent.
+        t = rgba(terrain.sol_chemin())
+        voisins = np.abs(t[:, 100] - t[:, 101]).mean()
+        self.assertLess(np.abs(t[:, -1] - t[:, 0]).mean(), voisins * 1.6 + 2)
+        self.assertLess(np.abs(t[-1, :] - t[0, :]).mean(), voisins * 1.6 + 2)
+        self.assertTrue((t[..., 3] == 255).all(), "texture opaque")
 
     def test_herbe_raccordable(self):
         g = rgba(terrain.herbe(3))
@@ -88,14 +74,27 @@ class Manifeste(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmp.cleanup()
 
-    def test_quinze_chemins_indexes_par_masque(self):
-        self.assertEqual(sorted(int(k) for k in self.m["groupes"]["infra_chemin_terre"]), list(range(1, 16)))
+    def test_plus_de_tiles_de_chemin_ni_de_hameau(self):
+        for g in ["infra_chemin_terre", "bat_hameau", "bat_hameau_textile", "bat_chantier_hameau"]:
+            self.assertNotIn(g, self.m["groupes"], g)
 
     def test_groupes_attendus(self):
-        for g in ["terrain_plaine", "bat_hameau", "bat_hameau_textile", "bat_champ", "bat_paturage", "bat_verger",
-                  "bat_foret_exploitee", "bat_champ_lin", "bat_elevage_laine", "bat_chantier_hameau", "bat_chantier_champ"]:
+        for g in ["terrain_plaine", "bat_champ", "bat_paturage", "bat_verger", "bat_foret_exploitee",
+                  "bat_champ_lin", "bat_elevage_laine", "bat_chantier_champ", "bat_maison_bois",
+                  "bat_chantier_maison"]:
             self.assertIn(g, self.m["groupes"], g)
         self.assertGreaterEqual(len(self.m["groupes"]["terrain_plaine"]), 8)
+        self.assertEqual(len(self.m["groupes"]["bat_maison_bois"]), 6)
+        self.assertEqual(len(self.m["groupes"]["bat_chantier_maison"]), 3, "trois états de chantier")
+
+    def test_deux_tailles_de_frames(self):
+        for nom in self.m["groupes"]["bat_maison_bois"]:
+            self.assertEqual((self.m["frames"][nom]["w"], self.m["frames"][nom]["h"]), (maisons.PETIT, maisons.PETIT))
+        for nom in self.m["groupes"]["terrain_plaine"]:
+            self.assertEqual(self.m["frames"][nom]["w"], self.m["tuile"])
+
+    def test_texture_de_route_hors_atlas(self):
+        self.assertTrue((self.dossier / self.m["textures"]["sol_chemin"]).exists())
 
     def test_frames_dans_l_atlas(self):
         w, h = self.m["taille"]
@@ -103,11 +102,26 @@ class Manifeste(unittest.TestCase):
             self.assertLessEqual(r["x"] + r["w"], w, nom)
             self.assertLessEqual(r["y"] + r["h"], h, nom)
 
-    def test_relief_des_hameaux(self):
+    def test_relief_des_maisons(self):
         for nom, r in self.m["relief"].items():
             self.assertTrue((self.dossier / r["albedo"]).exists(), nom)
             self.assertTrue((self.dossier / r["normal"]).exists(), nom)
-        self.assertEqual(len(self.m["relief"]), 5)  # 3 hameaux + 2 hameaux textiles
+        self.assertEqual(len(self.m["relief"]), 6)  # une par variante de maison
+
+
+class Maisons(unittest.TestCase):
+    def test_maison_au_zenith_sans_ombre_portee(self):
+        base, albedo, normales = maisons.maison_bois(3)
+        self.assertEqual(base.size, (maisons.PETIT, maisons.PETIT))
+        # Assise de contact seulement : aucune ombre franche hors du toit et de la cour.
+        self.assertFalse(np.isnan(rgba(base)).any())
+        self.assertEqual(albedo.size, base.size)
+        self.assertEqual(normales.size, base.size)
+
+    def test_chantiers_de_maison_distincts(self):
+        etats = [rgba(maisons.chantier_maison(e, 5)) for e in range(3)]
+        self.assertGreater(np.abs(etats[0] - etats[1]).mean(), 0.5)
+        self.assertGreater(np.abs(etats[1] - etats[2]).mean(), 0.5)
 
 
 if __name__ == "__main__":

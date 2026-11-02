@@ -5,17 +5,20 @@ Usine à assets procédurale (Python pur : numpy + Pillow) : vue de dessus, styl
 
     pip install -r requirements.txt
     python generate_assets.py --apercu      # -> ../app/public/assets/ (atlas, manifeste, relief)
-    python -m unittest discover -s tests    # raccords des chemins, zénith, manifeste
+    python -m unittest discover -s tests    # raccords, zénith, manifeste, maisons
 
 | Module | Rôle |
 |---|---|
-| `graphicgen/terrain.py` | herbe raccordable ; 15 chemins de terre (masque N=1, E=2, S=4, O=8) qui se raccordent d'une tile à l'autre |
-| `graphicgen/terres.py` | champ, champ de lin, verger, forêt exploitée, pâturage, élevage de laine |
-| `graphicgen/hameau.py` | hameau et hameau textile : maisons (générateur de toits), potagers, puits, atelier, séchoirs ; sortie cuite + albedo + normales |
-| `graphicgen/chantiers.py` | chantier de hameau, chantier de champ |
-| `graphicgen/atlas.py` | assemblage de l'atlas 256 px, manifeste JSON, aperçu en contexte |
+| `graphicgen/terrain.py` | herbe raccordable ; `sol_chemin` : terre battue raccordable (texture du trait des routes) |
+| `graphicgen/terres.py` | champ, champ de lin, verger, forêt exploitée, pâturage, élevage de laine (tiles de 256 px) |
+| `graphicgen/maisons.py` | **maison en bois** (sprite de 128 px, une par pop, toit de bardeaux, cour et tas de bois) et **chantier de maison** (3 états) ; sortie cuite + albedo + normales |
+| `graphicgen/chantiers.py` | chantier de défrichement d'une terre |
+| `graphicgen/atlas.py` | atlas à deux tailles (tiles de 256 px, sprites de 128 px), manifeste JSON, texture `sol_chemin.png`, aperçu en contexte |
 | `graphicgen/house.py` | toits par carte de hauteurs et éclairage ; sort aussi l'albedo et les normales (`ZENITH`) |
 | `graphicgen/dessin.py` | outils communs : bruit périodique, toile sur-échantillonnée, assise de contact |
+
+Le réseau routier n'est plus un jeu de tiles : le rendu le trace en courbes (docs/02 §9, docs/03 §6) et le
+remplit avec `sol_chemin.png`. Les maisons sont dessinées « face au Sud » et pivotées par le rendu.
 
 Les cultures de toits restent des **données** (`cultures.py`). `generate.py` (ancienne planche de maisons seules) est conservé.
 
