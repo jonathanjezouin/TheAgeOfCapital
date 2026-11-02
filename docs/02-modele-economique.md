@@ -2,8 +2,8 @@
 
 ## 1. La tile
 
-- **Usage unique** par tile : terrain naturel, infrastructure, bâtiment de production, quartier d'habitation.
-- Exception : la **tile d'habitat embarque nativement une infrastructure de circulation** (rues). Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard). *(Le code POC-A embarque encore un atelier textile dans le « hameau textile » ; la cible le supprime au profit du travail domestique, voir §8.)*
+- **Usage unique** par tile : terrain naturel, bâtiment de production, quartier d'habitation. L'**infrastructure n'occupe pas de tile** : c'est une couche d'arêtes posée par-dessus (§9).
+- La **tile d'habitat contient ses rues locales**, comprises dans sa densité (15 à 25 % de voirie, voir §9.3). Les voies majeures (route royale, rail, autoroute) sont des arêtes qui la traversent. *(Le code POC-A embarque encore un atelier textile dans le « hameau textile » et des tiles de chemin orthogonales ; la cible supprime l'un et l'autre, voir §8 et §9.)*
 - **Surface réelle fixe : 1 tile = 250 m × 250 m = 6,25 ha** (16 tiles/km²). Décision du 2026-11-02, qui remplace l'ancienne « unité comptable à surface variable ». Ce qui varie selon le type, c'est l'**emprise** (nombre de tiles) et la **densité** (pops par tile), pas la surface de la tile.
   - **Distances réelles** : `distance_max` = 10 tiles = 2,5 km ≈ 30–50 min à pied, le rayon de travail réaliste d'un habitat en 1750. Un village de ~2,5 km de rayon (~20 km² à ~50 hab/km²) plafonne naturellement vers 600–1 000 hab. : au-delà, un nouveau hameau se justifie (voir §8.5).
   - **Densités** : hameau ~30 hab/ha (200 hab = 1 tile) ; bourg ~60 hab/ha ; ville 100–200 hab/ha ; **plafond de 10 pops par tile = 160 hab/ha**, réaliste pour les villes de 1750 à 1950.
@@ -17,7 +17,7 @@
 | Terrain non exploité (landes, friches, bois, eaux) | tile passive | — |
 
 - **Une tile d'habitat est une capacité de logement**, occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops ≈ 50–80 tiles. Il n'y a plus de « bassin de peuplement » agrégé en une tile : un village est composé de plusieurs tiles.
-- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants. **Plafond de densité : 10 pops par tile**.
+- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants. **Plafond de densité : 10 pops par tile pour le bâti bas** (~160 hab/ha). Des immeubles pourront le relever (§9.4).
 - **Fertilité** : le terrain reste unique (plaine), mais chaque tile porte une `fertilite` (ppm de 1,0) qui multiplie la production des terres exploitées. Elle est tirée par le générateur (bruit lissé, appauvri avec la distance au centre). C'est ce qui fait de la terre, même « toute exploitable », un facteur limitant : on défriche d'abord la meilleure terre accessible, puis de moins en moins productive.
 - `valeur_fonciere` existe dès le départ mais n'est pas utilisée dans le POC (futur moteur de la ségrégation spatiale).
 
@@ -60,7 +60,7 @@ Tout circule dans le même modèle : marchandises **et main-d'œuvre**.
 
 - Un quartier **produit** de la main-d'œuvre et **consomme** des biens.
 - Un bâtiment de production **consomme** main-d'œuvre + intrants, **produit** des extrants.
-- **Distance** entre deux lieux = **nombre de tiles « chemin » à emprunter** (0 sur une même tile ; 1 pour deux lieux accolés à la même tile de chemin). Un bâtiment doit être **accolé à un chemin** (ou à un hameau, dont les rues sont natives) pour être accessible. **Aucune pénalité selon la distance** : on s'approvisionne simplement au plus proche, et l'on ne va ni travailler ni s'approvisionner **au-delà de la limite** (`distance_max`, 10 tiles dans le POC, à calibrer).
+- **Distance** entre deux lieux = **longueur du plus court chemin le long des arêtes**, en unités de coût : 10 par côté, 14 par diagonale, 0 sur une même tile (cible, voir §9 ; le code POC-A compte encore des tiles de chemin). Un lieu est **desservi** si une arête passe par sa tile. **Aucune pénalité selon la distance** : on s'approvisionne simplement au plus proche, et l'on ne va ni travailler ni s'approvisionner **au-delà de la limite** (`distance_max` = 100 unités, soit 10 tiles-équivalents ou 2,5 km, à calibrer).
 - Un quartier met sa population à disposition dans son périmètre ; une usine met ses ressources à disposition dans son périmètre.
 - Les **pops** sont l'unité de ce flux : chaque pop est affectée à un seul lieu de travail (résolution par le marché journalier ci-dessous).
 
@@ -227,7 +227,7 @@ Aucune firme, aucune monnaie : la **communauté** étend le village, à rythme *
 Au plus `chantiers_max` chantiers en même temps.
 
 ### Où
-Un site doit être **libre**, **accolé à une tile traversable** (chemin ou hameau), éventuellement **au bout d'une nouvelle tile de chemin**, à **moins de `distance_max`** du hameau demandeur, et **desservi** : dans la limite de distance d'un producteur de chaque besoin du lieu (matériau de construction ; pour un hameau aussi chauffage et nourriture). Un hameau est lui-même traversable : sa propre tile compte une tile de plus dans le trajet. Parmi les sites possibles :
+Un site doit être **libre**, **desservi par une arête** (existante, ou **arête de raccordement à créer** dont le coût de pose en pop-jours dépend de sa longueur et des maisons à reloger, voir §9.3), à **moins de `distance_max`** du hameau demandeur, et **desservi** : dans la limite de distance d'un producteur de chaque besoin du lieu (matériau de construction ; pour un hameau aussi chauffage et nourriture). Parmi les sites possibles :
 - **terre exploitée** : maximise `fertilité / (distance + 1)` ;
 - **hameau** : le plus proche, sur la terre la plus pauvre (on ne bâtit pas sur la meilleure terre).
 
@@ -286,3 +286,41 @@ Voir §1. Conséquence : le POC actuel (60–90 pops dans ~7 tiles de rayon) sup
 - **Hameau** : on s'installe au plus près de la terre travaillée. Au-delà de ~2,5 km de marche (`distance_max`), la terre est trop loin : on bâtit un nouvel habitat (règle de §7, aucune règle supplémentaire).
 - **Polyculture** : en 1750, le hameau est polyculteur (assolement triennal, élevage, jardin, chanvre) ; chaque parcelle est mono-culture et le hameau est le client direct de ses parcelles. La **spécialisation régionale** (vigne, lin, herbages, céréales) apparaît avec le marché et le coût du transport (anneaux de Von Thünen) : elle **émerge en POC-B**, elle n'est pas codée.
 - **Centres (bourg, ville)** : ils naissent des besoins que le hameau ne produit pas (sel, fer et outils, meule, four, tuiles…) et du marché. Premier candidat POC-B : 1 ou 2 biens importés produits seulement au bourg.
+
+## 9. Infrastructure en arêtes (décision du 2026-11-02, à implémenter)
+
+Maquette de référence : `docs/maquettes/routes-250m.html` (à ouvrir dans un navigateur : avant/après du réseau, puis emprise d'une voie sur une tile).
+
+### 9.1 Le réseau
+- L'infrastructure est une **couche d'arêtes** reliant les centres de deux tiles voisines, dans **8 directions**. La tile garde son usage (champ, hameau…) : un chemin ne coupe plus un champ de N tiles, et une piste de 5 m ne consomme plus 6,25 ha.
+- **Coûts entiers** (déterministes) : **10** pour un côté, **14** pour une diagonale. L'erreur reste ≤ 8 % ; sans diagonales, un trajet à 45° est surévalué de 41 % (maquette : +16 à +41 % sur les liaisons). `distance_max` = 100 unités.
+- **Dijkstra à coûts entiers**, toujours borné, remplace la recherche en largeur à coût 1 de `sim/src/reseau.rs`. Le terrain module le coût (forêt ×3 dans la maquette ; à calibrer avec le relief).
+- Un lieu est **desservi** si une arête passe par sa tile. Plus de règle « accolé à un chemin » ni de « bout d'antenne d'une tile ».
+- Une tile porte au plus 4 demi-arêtes actives (`03` §6). Deux diagonales qui se croisent dans un carré 2×2 sans nœud commun : interdites ou jonction (à trancher à l'implémentation).
+
+### 9.2 Emprise d'une voie dans une tile
+`emprise = largeur × longueur de l'arête dans la tile` ; la tile fait 62 500 m². Longueur : 250 m (traversante droite), 354 m (diagonale), 125 m (demi-arête, cul-de-sac).
+
+| Voie | Largeur | Traversante | Diagonale | Cul-de-sac |
+|---|---|---|---|---|
+| Chemin de terre | 5 m | 1 250 m² (2,0 %) | 1 768 m² (2,8 %) | 625 m² (1,0 %) |
+| Route royale | 12 m | 3 000 m² (4,8 %) | 4 243 m² (6,8 %) | 1 500 m² (2,4 %) |
+| Voie ferrée | 15 m | 3 750 m² (6,0 %) | 5 303 m² (8,5 %) | 1 875 m² (3,0 %) |
+| Autoroute (1950) | 40 m | 10 000 m² (16 %) | 14 142 m² (22,6 %) | 5 000 m² (8 %) |
+
+Largeurs d'ordre de grandeur, à vérifier.
+
+### 9.3 Effet sur le bâti
+- **Les rues locales sont déjà dans la densité** : un chemin de terre ne retire rien. Seules les voies majeures retirent de la place.
+- **Le plafond ne dépend pas du type de voie par une règle** : il ressort du nombre de maisons qui tiennent dans la surface restante (maison de 9 m, parcelle ~300 m², écart minimal 14 m ; un ménage = 5 hab., une pop = 20 ménages). Maquette, route d'abord, traversante, quartier dense de 10 pops : chemin et route royale 0 %, rail −1 %, autoroute −11 %. Un hameau ne perd rien.
+- **L'ordre d'arrivée décide qui s'adapte**, avec la même règle. *Route d'abord* : les maisons se placent autour et le plafond de la tile baisse. *Maisons d'abord* : poser la route a un prix, les maisons sur le tracé sont à reloger (autoroute en diagonale sur un quartier dense : 54 maisons, soit ~2,7 pops).
+- **Le coût de pose inclut les pops à reloger** : les routes neuves **contournent** donc les tiles bâties (contournements de bourgs), sans règle dédiée.
+- **Pops à reloger** *(défaut proposé, à confirmer)* : même mécanisme que les pops en attente de logement (§6 et §7) : elles se logent à portée dans une tile qui a de la place, sinon la jauge attend et fait bâtir un hameau. Elles ne disparaissent pas.
+- **Traversée d'un village** *(défaut proposé)* : un simple coût, pas de veto. Un veto des habitants relève de la politique (reporté).
+- **Reporté** : coupure (une autoroute sépare un village en deux), bruit, échangeurs. L'emprise suffit pour le POC.
+
+### 9.4 Pistes à approfondir (non tranchées)
+- **Tile d'habitat desservie par une route ou une demi-route** : toute tile d'habitat est traversée par une arête ou porte une demi-arête, et les maisons se placent le long (façade), au fur et à mesure. Une demi-arête jamais prolongée reste une **impasse**. Capacité = f(longueur de façade, niveau de densification). Un hameau de 1 pop se contente d'une demi-route ; au-delà, la tile devient traversante. Une ferme isolée au bord du chemin ne pose pas de difficulté jusqu'à une certaine quantité de pops, puis il faut prolonger l'arête.
+- **Densification** : le bâti s'améliore (maison isolée, mitoyenne, petit immeuble, immeuble). Le plafond de 10 pops est celui du bâti bas ; des immeubles le relèvent (ordre de grandeur : ~400 hab/ha, soit ~25 pops par tile). Le plafond deviendrait une propriété du type de bâtiment, pas une constante.
+- **Rues rectilignes en ville** : en ville les rues sont planifiées (lotissement) : droites, avec des immeubles d'angle. À la campagne, les chemins sont sinueux et contournent le bâti existant (parfois autour de petits bâtiments). Le **décalage organique du rendu décroît avec le niveau d'urbanisation** (0 pour une trame planifiée). Une trame urbaine est un ensemble de rues parallèles dans la tile (voirie native), pas des arêtes distinctes tant qu'elles sont locales.
+- **Rendu des routes** : courbe lissée (Catmull-Rom vers Bézier) passant par les centres de tiles, avec décalage déterministe (hash de la position et de la graine, ±0,34 tile au plus) ; largeur exagérée à l'écran. L'atlas de 15 tiles de chemin est abandonné pour le réseau (`03` §6).

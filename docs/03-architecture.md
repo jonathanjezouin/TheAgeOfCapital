@@ -206,16 +206,15 @@ Le risque à cette échelle est **algorithmique** (un tick qui touche tout, une 
 - **Texture atlas** (spritesheet PNG + JSON) pour les performances.
 - Vue strictement **top-down**.
 
-### Modèle des demi-directions (infrastructure)
-- Une tile d'infrastructure porte des **demi-connexions** du centre vers le bord, dans jusqu'à **8 directions** (orthogonales + diagonales), **4 actives max** par tile.
-- Deux tiles sont connectées quand leurs demi-directions **en vis-à-vis** sont présentes des deux côtés.
-- Supporte culs-de-sac, routes orthogonales et diagonales, tiles mixtes infra/habitat.
-- **POC : orthogonal seulement** (4 directions, 15 combinaisons non vides au lieu de 162) ; les diagonales viendront après.
-- Coût d'ajout d'une demi-direction dominé par le **déplacement d'habitations existantes** → capture la dynamique haussmannienne sans règle dédiée.
-- Assets : une variante par combinaison de demi-directions (`infra_chemin_terre_*`). La lumière (jour/nuit) est une teinte appliquée en rendu, pas précalculée.
+### Infrastructure : arêtes et rendu en courbes (décision du 2026-11-02)
+- L'infrastructure est une **couche d'arêtes** entre centres de tiles voisines : **8 directions, 4 demi-arêtes actives max par tile**. Elle n'occupe pas la tile, qui garde son terrain et son bâtiment (modèle : `02` §9).
+- Supporte culs-de-sac (demi-arête = impasse), routes orthogonales et diagonales, tiles mixtes route/habitat.
+- Coût d'ajout dominé par le **déplacement d'habitations existantes** → capture la dynamique haussmannienne sans règle dédiée (`02` §9.3).
+- **Rendu** : une courbe lissée par chemin dans la couche 1, passant par les centres de tiles avec un décalage déterministe (décroissant avec l'urbanisation), tracée par chunk et mise en cache. **L'atlas de chemins par masque (`infra_chemin_terre_*`, 15 variantes) est abandonné pour le réseau** ; le hameau et le chantier gardent leur placette. La lumière (jour/nuit) est une teinte appliquée en rendu, pas précalculée.
+- Référence visuelle : `docs/maquettes/routes-250m.html`.
 
 ### Sprites d'ambiance
-Sprites stochastiques (piétons, charrettes, plus tard locomotives) sur les tiles d'infrastructure, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
+Sprites stochastiques (piétons, charrettes, plus tard locomotives) le long des arêtes, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
 
 ## 7. Outillage d'assets
 Le générateur `graphGeneration/` (Python/Pillow/numpy) **fait référence** pour les assets. Conventions : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifeste JSON.

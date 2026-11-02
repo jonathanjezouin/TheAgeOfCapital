@@ -40,6 +40,9 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Poisson, coton, transformation du bois, nourriture industrielle
 - Autres terrains, infrastructures (route pavée, canal, rail, port), quartiers (artisan, bourgeois, urbain)
 - Niveaux technologiques > 0
+- **Densification du bâti** (maison, mitoyenne, petit immeuble, immeuble) et plafond de pops par type de bâtiment (`02` §9.4)
+- **Trame urbaine planifiée** (rues rectilignes, immeubles d'angle) et rendu des routes selon le niveau d'urbanisation
+- Coupure, bruit et échangeurs des voies majeures ; veto des habitants sur une traversée
 - Niveaux de zoom méso et macro
 
 ## Fonctionnalités écartées du POC-A (à reprendre)
@@ -62,6 +65,7 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 | Hôte Steam | **Electron + napi-rs** (Tauri écarté) ; wasm conservé pour démonstrations et tests visuels (`03` §1) |
 | Échelle visée | ~4 M tiles, 300–500 k bâtiments, 100–300 k pops, 10–50 k personnages (`03` §5), à valider par banc d'essai ; **réviser** avec la tile fixe de 250 m (question 0) |
 | Pont | Tableaux typés par viewport + drapeaux « sale » par chunk, pas de JSON du monde (`03` §5b) |
+| Réseau | Arêtes à 8 directions, coûts entiers 10/14, Dijkstra borné ; rendu en courbes, atlas de chemins abandonné (`02` §9, `03` §6) |
 | Persistance | SQLite hors tick ; sauvegarde = instantané binaire compressé |
 
 ## Questions ouvertes
@@ -84,7 +88,13 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 12. **Dispersion de l'habitat** : fermes isolées (bocage) vs villages groupés à champs ouverts ; paramètre du générateur.
 13. **Maillage** : critère de succès ~1:4:15:45 (ville : bourgs : villages : hameaux) et espacements (`04`), à mesurer sur plusieurs graines, jamais codé.
 14. **Une seule simulation ou multi-échelle ?** `03` §5 prévoit un modèle agrégé pour les zones non observées ; la volonté actuelle est de **ne pas** avoir deux simulations (locale et régionale). Piste : mêmes règles partout, nœuds dormants à cadence réduite ; à trancher avec le banc d'essai.
-15. **Calibration du POC actuel** : ses tiles impliquent ~0,7–1 km ; migrer calibration (rayons de fertilité, `distance_max`, coûts de chantier par tile) vers la tile de 250 m.
+15. **Calibration du POC actuel** : ses tiles impliquent ~0,7–1 km ; migrer calibration (rayons de fertilité, `distance_max` = 100 unités, coûts de chantier par tile) vers la tile de 250 m et les arêtes.
+16. **Tile d'habitat desservie par une (demi-)route** : façade, impasse, capacité = f(longueur de façade, densification) ; à quel seuil de pops un hameau passe de la demi-arête à la traversante (`02` §9.4).
+17. **Densification et plafond** : 10 pops pour le bâti bas ; ~25 pops pour des immeubles ; le plafond devient une propriété du type de bâtiment.
+18. **Pops à reloger** quand une route est posée sur une tile pleine : défaut proposé = mécanisme des pops en attente de logement, sans disparition ; à confirmer (`02` §9.3).
+19. **Traversée d'un village** : coût seul par défaut ; veto des habitants plus tard (politique).
+20. **Croisement de diagonales** dans un carré 2×2 : interdit ou jonction.
+21. **Rues rectilignes en ville** : décalage organique du rendu décroissant avec l'urbanisation, trame planifiée et immeubles d'angle (`02` §9.4).
 
 ## Incohérences relevées dans les échanges de design (à trancher)
 
@@ -96,4 +106,5 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 | Ressources | bois transformé, charbon, minerai… | nourriture / textile / bois | Périmètre de `04` |
 | Décision économique | Firmes autonomes | Personnages qui dirigent les firmes | POC : firmes à règles simples (POC-B) + maire inactif ; personnages plus tard |
 | Emprise des bâtiments | Usage unique par tile | « Bâtiments sur plusieurs tiles » (vision) ; hameau textile = habitat + atelier | **Tranché le 2026-11-02** : une terre exploitée = un bâtiment de N tiles contiguës ; hameau = 1 tile ; hameau textile supprimé (`02` §8) |
+| Infrastructure | Tiles de chemin (usage unique par tile), orthogonal seulement | Arêtes sur les tiles, 8 directions | **Tranché le 2026-11-02** : couche d'arêtes, coûts 10/14, emprise = largeur × longueur (`02` §9) |
 | Taille de tile | 50–200 m², puis ~1 km², puis unité comptable à surface variable | Surface réelle fixe | **Tranché le 2026-11-02** : 250 m × 250 m = 6,25 ha (`02` §1) |

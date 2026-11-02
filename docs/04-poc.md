@@ -1,6 +1,6 @@
 # 04 — Périmètre du POC
 
-> **Statut (2026-11-02).** Le design cible a évolué : tile fixe de 250 m, terres multi-tiles, travail en jours, suppression du hameau textile (voir `02` §1 et §8, et « Référence 1750 » ci-dessous). Le code `sim/` et `app/` et les tableaux de calibration plus bas décrivent encore la **version précédente** (1 tile = 1 terre, hameau textile de 3 pops) jusqu'à migration. Sur la carte 200×200, une tile de 250 m donne 50 × 50 km, soit ~5 cellules de marché.
+> **Statut (2026-11-02).** Le design cible a évolué : tile fixe de 250 m, terres multi-tiles, travail en jours, suppression du hameau textile (voir `02` §1 et §8, et « Référence 1750 » ci-dessous). Le code `sim/` et `app/` et les tableaux de calibration plus bas décrivent encore la **version précédente** (1 tile = 1 terre, hameau textile de 3 pops) jusqu'à migration. Sur la carte 200×200, une tile de 250 m donne 50 × 50 km, soit ~5 cellules de marché. L'infrastructure devient une couche d'arêtes à 8 directions (coûts 10/14, `02` §9) au lieu de tiles de chemin orthogonales ; `infra_chemin_terre` est remplacé par un rendu en courbes (`03` §6).
 
 ## Objectif
 
