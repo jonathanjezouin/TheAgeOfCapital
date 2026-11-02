@@ -75,9 +75,32 @@ struct TuileCarte {
     y: usize,
     /// "chemin" | "hameau" | "bat"
     c: &'static str,
-    /// Masque de demi-directions (chemin) ; indice du hameau ou du bâtiment sinon.
+    /// Masque de demi-directions orthogonales N=1, E=2, S=4, O=8 (chemin, ancien format du rendu) ;
+    /// indice du hameau ou du bâtiment sinon.
     m: u32,
+    /// Demi-arêtes dans les 8 directions (bits E, SE, S, SO, O, NO, N, NE) : le réseau est une
+    /// couche d'arêtes posée sur les tiles (docs/02 §9). Présent sur toute tile desservie.
+    a: u32,
     v: u8,
+}
+
+/// Demi-arêtes (8 bits : E, SE, S, SO, O, NO, N, NE) vers l'ancien masque orthogonal N, E, S, O,
+/// tant que le rendu ne dessine pas encore les diagonales.
+fn masque_orthogonal(aretes: u8) -> u32 {
+    let mut m = 0;
+    if aretes & (1 << 6) != 0 {
+        m |= 1; // N
+    }
+    if aretes & (1 << 0) != 0 {
+        m |= 2; // E
+    }
+    if aretes & (1 << 2) != 0 {
+        m |= 4; // S
+    }
+    if aretes & (1 << 4) != 0 {
+        m |= 8; // O
+    }
+    m
 }
 
 #[derive(Serialize)]
@@ -154,8 +177,8 @@ fn version_carte(s: &Simulation) -> u64 {
         v = v.wrapping_mul(31).wrapping_add(b.type_id as u64 + b.chantier.is_some() as u64 * 977);
     }
     for t in &s.monde.tuiles {
-        if let Contenu::Chemin { masque } = t.contenu {
-            v = v.wrapping_mul(131).wrapping_add(masque as u64 + 1);
+        if t.aretes != 0 {
+            v = v.wrapping_mul(131).wrapping_add(t.aretes as u64 + 1);
         }
     }
     for q in &s.monde.quartiers {
@@ -275,12 +298,12 @@ pub extern "C" fn sim_carte_json() -> u32 {
         for (i, t) in s.monde.tuiles.iter().enumerate() {
             let (x, y) = s.monde.xy(i);
             let (c, m) = match t.contenu {
-                Contenu::Vide => continue,
-                Contenu::Chemin { masque } => ("chemin", masque as u32),
+                Contenu::Vide if t.aretes == 0 => continue,
+                Contenu::Vide => ("chemin", masque_orthogonal(t.aretes)),
                 Contenu::Quartier(q) => ("hameau", q as u32),
                 Contenu::Batiment(b) => ("bat", b as u32),
             };
-            tuiles.push(TuileCarte { x, y, c, m, v: t.variante });
+            tuiles.push(TuileCarte { x, y, c, m, a: t.aretes as u32, v: t.variante });
         }
         ecrire(&Carte { version: version_carte(s), tuiles })
     })

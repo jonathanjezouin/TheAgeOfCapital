@@ -12,12 +12,12 @@ stock_initial_quartier_jours = 5.0
 stock_initial_entree_jours = 3.0
 stock_initial_sortie_jours = 2.0
 
-# Distance : nombre de tiles « chemin » à emprunter entre deux lieux (0 sur une même tile, 1 pour
-# deux lieux accolés à la même tile). Aucune pénalité selon la distance, mais l'on s'approvisionne
-# au plus proche, et l'on ne va ni travailler ni s'approvisionner au-delà de la limite.
+# Distance : coût du plus court chemin le long des arêtes (10 par côté, 14 par diagonale, 0 sur une même
+# tile), voir docs/02 §9. Aucune pénalité selon la distance, mais l'on s'approvisionne au plus proche, et
+# l'on ne va ni travailler ni s'approvisionner au-delà de la limite.
 # Congestion : en sommeil dans le POC (capacités très au-dessus des flux).
 [infrastructure]
-distance_max = 10
+distance_max = 110                 # 11 pas d'arête (ancien « 10 tiles de chemin » + le pas d'accès) ; 100 à la calibration à 250 m
 capacite_nominale = 4000.0
 capacite_max = 8000.0
 poids_trajet_pop = 10.0

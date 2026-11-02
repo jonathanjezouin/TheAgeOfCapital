@@ -3,25 +3,41 @@
 use crate::donnees::Qte;
 use serde::Serialize;
 
-/// Demi-connexions d'une tile d'infrastructure (POC : orthogonales).
-pub const N: u8 = 1;
-pub const E: u8 = 2;
-pub const S: u8 = 4;
-pub const O: u8 = 8;
-pub const TOUTES: u8 = N | E | S | O;
+/// Les 8 directions d'arêtes, dans l'ordre E, SE, S, SO, O, NO, N, NE :
+/// (bit, dx, dy, bit opposé). Les index pairs sont orthogonaux, les impairs diagonaux.
+pub const DIRS: [(u8, i32, i32, u8); 8] = [
+    (1 << 0, 1, 0, 1 << 4),
+    (1 << 1, 1, 1, 1 << 5),
+    (1 << 2, 0, 1, 1 << 6),
+    (1 << 3, -1, 1, 1 << 7),
+    (1 << 4, -1, 0, 1 << 0),
+    (1 << 5, -1, -1, 1 << 1),
+    (1 << 6, 0, -1, 1 << 2),
+    (1 << 7, 1, -1, 1 << 3),
+];
 
-/// (bit, dx, dy, bit opposé)
-pub const DIRS: [(u8, i32, i32, u8); 4] =
-    [(N, 0, -1, S), (E, 1, 0, O), (S, 0, 1, N), (O, -1, 0, E)];
+/// Coût d'une arête orthogonale / diagonale (entiers : 14 ≈ 10 × √2, erreur ≤ 8 %).
+pub const COUT_ORTHO: i64 = 10;
+pub const COUT_DIAG: i64 = 14;
+
+/// Coût de l'arête dans la direction `d` (index de `DIRS`).
+pub fn cout_dir(d: usize) -> i64 {
+    if d % 2 == 1 {
+        COUT_DIAG
+    } else {
+        COUT_ORTHO
+    }
+}
+
+/// Index de la direction opposée.
+pub fn oppose(d: usize) -> usize {
+    (d + 4) % 8
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Contenu {
     Vide,
-    /// Chemin de terre avec ses demi-directions actives.
-    Chemin {
-        masque: u8,
-    },
-    /// Index dans `Monde::quartiers`. Embarque nativement des rues (toutes directions).
+    /// Index dans `Monde::quartiers`.
     Quartier(usize),
     /// Index dans `Monde::batiments`.
     Batiment(usize),
@@ -30,6 +46,10 @@ pub enum Contenu {
 #[derive(Clone, Copy, Debug, Serialize)]
 pub struct Tuile {
     pub contenu: Contenu,
+    /// Demi-arêtes actives du centre de la tile vers ses voisines (bits de `DIRS`).
+    /// L'infrastructure est une couche d'arêtes posée sur les tiles : elle n'en change pas l'usage
+    /// (docs/02 §9). Deux tiles sont reliées quand les deux demi-arêtes en vis-à-vis sont présentes.
+    pub aretes: u8,
     /// Variante visuelle (herbe, sprite de bâtiment) : pur rendu, aucune incidence économique.
     pub variante: u8,
     /// Fertilité de la tile (ppm de 1,0) : proportionnelle à la production des terres exploitées.
@@ -127,7 +147,7 @@ impl Monde {
         (idx % self.largeur, idx / self.largeur)
     }
 
-    /// Voisin orthogonal dans la direction `d` (index de `DIRS`), s'il est dans la carte.
+    /// Voisin dans la direction `d` (index de `DIRS`, 8 directions), s'il est dans la carte.
     pub fn voisin(&self, idx: usize, d: usize) -> Option<usize> {
         let (x, y) = self.xy(idx);
         let nx = x as i32 + DIRS[d].1;
@@ -139,12 +159,45 @@ impl Monde {
         }
     }
 
-    /// Demi-connexions d'une tile traversable (chemin ou quartier).
-    pub fn masque(&self, idx: usize) -> Option<u8> {
-        match self.tuiles[idx].contenu {
-            Contenu::Chemin { masque } => Some(masque),
-            Contenu::Quartier(_) => Some(TOUTES),
-            _ => None,
+    /// Demi-arêtes d'une tile (0 : elle ne fait pas partie du réseau).
+    pub fn masque(&self, idx: usize) -> u8 {
+        self.tuiles[idx].aretes
+    }
+
+    /// Direction (index de `DIRS`) de `a` vers `b`, si les tiles sont voisines.
+    pub fn direction(&self, a: usize, b: usize) -> Option<usize> {
+        let (ax, ay) = self.xy(a);
+        let (bx, by) = self.xy(b);
+        let (dx, dy) = (bx as i32 - ax as i32, by as i32 - ay as i32);
+        DIRS.iter()
+            .position(|&(_, ddx, ddy, _)| ddx == dx && ddy == dy)
+    }
+
+    /// Peut-on poser l'arête `a → b` ? Deux tiles voisines ; une diagonale ne croise pas
+    /// l'autre diagonale du même carré 2×2 (sans nœud commun, voir docs/02 §9.1).
+    pub fn peut_relier(&self, a: usize, b: usize) -> bool {
+        let Some(d) = self.direction(a, b) else {
+            return false;
+        };
+        if d % 2 == 0 {
+            return true;
+        }
+        // L'autre diagonale relie les deux autres coins du carré.
+        let (ax, ay) = self.xy(a);
+        let (dx, dy) = (DIRS[d].1, DIRS[d].2);
+        let c1 = self.idx((ax as i32 + dx) as usize, ay);
+        let c2 = self.idx(ax, (ay as i32 + dy) as usize);
+        match self.direction(c1, c2) {
+            Some(d2) => self.tuiles[c1].aretes & DIRS[d2].0 == 0,
+            None => true,
+        }
+    }
+
+    /// Pose l'arête `a ↔ b` (les deux demi-arêtes). Sans effet si les tiles ne sont pas voisines.
+    pub fn relier(&mut self, a: usize, b: usize) {
+        if let Some(d) = self.direction(a, b) {
+            self.tuiles[a].aretes |= DIRS[d].0;
+            self.tuiles[b].aretes |= DIRS[d].3;
         }
     }
 }

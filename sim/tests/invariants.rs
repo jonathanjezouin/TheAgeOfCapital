@@ -1,7 +1,8 @@
 //! Invariants du POC-A (économie de subsistance) : déterminisme, conservation, cohérence du
 //! village, distances, fertilité, et chacun des mécanismes expliqués dans docs/02.
 
-use sim::monde::Contenu;
+use sim::monde::{Contenu, Monde, Tuile};
+use sim::reseau::Reseau;
 use sim::{generer, Catalogue, ParamsVillage, Simulation, PPM};
 
 fn village(graine: u64) -> Simulation {
@@ -84,7 +85,7 @@ fn donnees_incoherentes_refusees() {
         &t.replace("atelier = \"atelier_textile\"", "atelier = \"inconnu\"")
     )
     .is_err());
-    assert!(Catalogue::depuis_toml(&t.replace("distance_max = 10", "distance_max = 0")).is_err());
+    assert!(Catalogue::depuis_toml(&t.replace("distance_max = 110", "distance_max = 0")).is_err());
 }
 
 #[test]
@@ -125,7 +126,7 @@ fn village_deterministe_et_varie_selon_la_graine() {
         s.monde
             .tuiles
             .iter()
-            .map(|t| format!("{:?}{}{}", t.contenu, t.variante, t.fertilite_ppm))
+            .map(|t| format!("{:?}{}{}{}", t.contenu, t.aretes, t.variante, t.fertilite_ppm))
             .collect::<Vec<_>>()
     };
     assert_eq!(contenus(&a), contenus(&b));
@@ -177,7 +178,7 @@ fn villages_toujours_connexes_et_pourvus() {
 // ---------- Distances ----------
 
 #[test]
-fn la_distance_est_le_nombre_de_tiles_chemin_empruntees() {
+fn la_distance_est_le_cout_des_aretes_empruntees() {
     let s = village(1);
     let nq = s.monde.quartiers.len();
     let dmax = s.cat.infra.distance_max;
@@ -203,16 +204,67 @@ fn la_distance_est_le_nombre_de_tiles_chemin_empruntees() {
             if tuile(de) == tuile(vers) {
                 assert_eq!(ch.cout, 0);
             } else {
-                // Deux lieux distincts : au moins une tile empruntée ; autant de segments + 1.
-                assert_eq!(ch.cout, ch.segments.len() as i64 + 1);
+                // Deux lieux distincts : la distance est la somme des coûts des arêtes empruntées.
+                let somme: i64 = ch.segments.iter().map(|&sg| s.reseau.segments[sg].cout).sum();
+                assert_eq!(ch.cout, somme);
+                assert!(ch.cout >= 10);
             }
         }
     }
 }
 
+/// Monde vide de 3×3 tiles, sans lieu : sert à tester le graphe d'arêtes seul.
+fn monde_3x3() -> Monde {
+    Monde {
+        largeur: 3,
+        hauteur: 3,
+        tuiles: (0..9)
+            .map(|_| Tuile {
+                contenu: Contenu::Vide,
+                aretes: 0,
+                variante: 0,
+                fertilite_ppm: 1_000_000,
+            })
+            .collect(),
+        quartiers: Vec::new(),
+        batiments: Vec::new(),
+    }
+}
+
+#[test]
+fn une_diagonale_coute_14_et_raccourcit_le_trajet() {
+    let cat = Catalogue::depuis_toml(sim::donnees::DONNEES_POC).unwrap();
+    let mut m = monde_3x3();
+    // Chemin en L : (0,0) → (1,0) → (2,0) → (2,1) → (2,2) : 4 côtés.
+    for (a, b) in [(0, 1), (1, 2), (2, 5), (5, 8)] {
+        m.relier(a, b);
+    }
+    let r = Reseau::construire(&m, &cat);
+    assert_eq!(r.distances_depuis(0)[8], 40);
+    // Ajout de la diagonale (0,0) → (1,1) → (2,2) : 2 × 14.
+    m.relier(0, 4);
+    m.relier(4, 8);
+    let r = Reseau::construire(&m, &cat);
+    assert_eq!(r.distances_depuis(0)[8], 28);
+    assert_eq!(r.distances_depuis(0)[4], 14);
+}
+
+#[test]
+fn deux_diagonales_ne_se_croisent_pas() {
+    let mut m = monde_3x3();
+    m.relier(0, 4); // (0,0) → (1,1)
+    // L'autre diagonale du carré (0,0)-(1,0)-(0,1)-(1,1) : (1,0) ↔ (0,1).
+    assert!(!m.peut_relier(1, 3));
+    // Une diagonale d'un autre carré, ou un côté, reste possible.
+    assert!(m.peut_relier(4, 8));
+    assert!(m.peut_relier(1, 4));
+    // Tiles non voisines : refusé.
+    assert!(!m.peut_relier(0, 2));
+}
+
 #[test]
 fn au_dela_de_la_limite_on_ne_va_ni_travailler_ni_s_approvisionner() {
-    let court = sim::donnees::DONNEES_POC.replace("distance_max = 10", "distance_max = 3");
+    let court = sim::donnees::DONNEES_POC.replace("distance_max = 110", "distance_max = 30");
     let s = generer(
         Catalogue::depuis_toml(&court).unwrap(),
         &ParamsVillage {
@@ -220,13 +272,13 @@ fn au_dela_de_la_limite_on_ne_va_ni_travailler_ni_s_approvisionner() {
             ..Default::default()
         },
     );
-    // Avec une limite de 3 tiles, le village de 4 hameaux ne peut pas se ravitailler partout :
-    // soit la génération refuse (lieux hors de portée), soit aucun chemin ne dépasse 3.
+    // Avec une limite de 30 (3 côtés), le village de 4 hameaux ne peut pas se ravitailler partout :
+    // soit la génération refuse (lieux hors de portée), soit aucun chemin ne dépasse 30.
     if let Ok(s) = s {
         for de in 0..s.reseau.nb_lieux {
             for vers in 0..s.reseau.nb_lieux {
                 if let Some(ch) = s.reseau.chemin(de, vers) {
-                    assert!(ch.cout <= 3);
+                    assert!(ch.cout <= 30);
                 }
             }
         }

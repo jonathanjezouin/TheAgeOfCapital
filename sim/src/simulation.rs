@@ -2,7 +2,7 @@
 //! et réorientation de la main-d'œuvre selon le besoin (docs/02 §3).
 
 use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, PPM};
-use crate::monde::{Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier, DIRS};
+use crate::monde::{cout_dir, oppose, Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier};
 use crate::reseau::Reseau;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -1107,15 +1107,16 @@ impl Simulation {
     }
 
     /// Meilleur emplacement pour un nouveau lieu, à portée du hameau `centre` :
-    /// soit accolé à une tile traversable, soit au bout d'une nouvelle tile de chemin.
-    /// Terre fertile : fertilité / distance maximale ; sinon : le plus proche, sur la terre la plus pauvre.
+    /// soit relié par une arête à une tile du réseau, soit au bout d'une nouvelle tile intermédiaire
+    /// (deux arêtes), dans 8 directions. Les coûts sont ceux des arêtes (10 / 14).
+    /// Terre fertile : fertilité / distance ; sinon : le plus proche, sur la terre la plus pauvre.
     /// `requis` : groupes de ressources dont l'une au moins doit avoir un producteur à portée du site.
     fn meilleur_site(&self, centre: usize, fertile: bool, requis: &[Vec<usize>]) -> Option<Site> {
         let nq = self.nq();
         let d = self
             .reseau
             .distances_depuis(self.monde.quartiers[centre].tuile);
-        // Distance (en segments) de chaque tile aux producteurs de chaque groupe requis.
+        // Coût de chaque tile du réseau aux producteurs de chaque groupe requis.
         let portees: Vec<Vec<i64>> = requis
             .iter()
             .map(|groupe| {
@@ -1129,14 +1130,15 @@ impl Simulation {
             })
             .collect();
         let dmax = self.cat.infra.distance_max;
-        let vide = |t: usize| self.monde.tuiles[t].contenu == Contenu::Vide;
-        // Le lieu posé au bout de `attache` (+ une tile de route éventuelle) est-il desservi ?
-        // Un hameau est lui-même traversable : sa propre tile compte une tile de plus dans le trajet.
-        let extra = if fertile { 0 } else { 1 };
-        let desservi = |attache: usize, route: bool| {
+        // Une tile traversée par une arête n'est pas encore constructible (docs/02 §9, à lever plus tard).
+        let vide = |t: usize| {
+            self.monde.tuiles[t].contenu == Contenu::Vide && self.monde.tuiles[t].aretes == 0
+        };
+        // Le lieu posé à `supplement` d'arêtes de `attache` est-il desservi ?
+        let desservi = |attache: usize, supplement: i64| {
             portees
                 .iter()
-                .all(|dp| dp[attache] != i64::MAX && dp[attache] + route as i64 + 1 + extra <= dmax)
+                .all(|dp| dp[attache] != i64::MAX && dp[attache] + supplement <= dmax)
         };
         let mut best: Option<((i64, i64, i64, usize), Site)> = None;
         let essayer = |tuile: usize,
@@ -1147,7 +1149,7 @@ impl Simulation {
             let fert = self.monde.tuiles[tuile].fertilite_ppm;
             let cle = if fertile {
                 (
-                    -(fert * 1000 / (dist + 1)),
+                    -(fert * 10_000 / (dist + 10)),
                     dist,
                     route.is_some() as i64,
                     tuile,
@@ -1170,27 +1172,31 @@ impl Simulation {
             if d[p] == i64::MAX {
                 continue;
             }
-            for dir in 0..4 {
+            for dir in 0..8 {
                 let Some(t1) = self.monde.voisin(p, dir) else {
                     continue;
                 };
-                if !vide(t1) {
+                if !vide(t1) || !self.monde.peut_relier(p, t1) {
                     continue;
                 }
-                if d[p] + 1 + extra <= dmax && desservi(p, false) {
-                    essayer(t1, p, None, d[p] + 1, &mut best);
+                let c1 = cout_dir(dir);
+                if d[p] + c1 <= dmax && desservi(p, c1) {
+                    essayer(t1, p, None, d[p] + c1, &mut best);
                 }
-                if d[p] + 2 + extra <= dmax && desservi(p, true) {
-                    for dir2 in 0..4 {
-                        if DIRS[dir2].3 == DIRS[dir].0 {
-                            continue; // pas de demi-tour
-                        }
-                        let Some(t2) = self.monde.voisin(t1, dir2) else {
-                            continue;
-                        };
-                        if vide(t2) {
-                            essayer(t2, p, Some(t1), d[p] + 2, &mut best);
-                        }
+                for dir2 in 0..8 {
+                    if dir2 == oppose(dir) {
+                        continue; // pas de demi-tour
+                    }
+                    let Some(t2) = self.monde.voisin(t1, dir2) else {
+                        continue;
+                    };
+                    let c2 = c1 + cout_dir(dir2);
+                    if vide(t2)
+                        && d[p] + c2 <= dmax
+                        && self.monde.peut_relier(t1, t2)
+                        && desservi(p, c2)
+                    {
+                        essayer(t2, p, Some(t1), d[p] + c2, &mut best);
                     }
                 }
             }
@@ -1198,31 +1204,13 @@ impl Simulation {
         best.map(|(_, s)| s)
     }
 
-    /// Relie deux tiles voisines en posant les demi-directions des tiles de chemin.
-    fn relier(&mut self, a: usize, b: usize) {
-        let (ax, ay) = self.monde.xy(a);
-        let (bx, by) = self.monde.xy(b);
-        let (dx, dy) = (bx as i32 - ax as i32, by as i32 - ay as i32);
-        let d = DIRS
-            .iter()
-            .position(|&(_, ddx, ddy, _)| ddx == dx && ddy == dy)
-            .expect("tiles non voisines");
-        if let Contenu::Chemin { masque } = &mut self.monde.tuiles[a].contenu {
-            *masque |= DIRS[d].0;
-        }
-        if let Contenu::Chemin { masque } = &mut self.monde.tuiles[b].contenu {
-            *masque |= DIRS[d].3;
-        }
-    }
-
     fn poser_site(&mut self, site: Site) {
         match site.route {
             Some(r) => {
-                self.monde.tuiles[r].contenu = Contenu::Chemin { masque: 0 };
-                self.relier(site.attache, r);
-                self.relier(r, site.tuile);
+                self.monde.relier(site.attache, r);
+                self.monde.relier(r, site.tuile);
             }
-            None => self.relier(site.attache, site.tuile),
+            None => self.monde.relier(site.attache, site.tuile),
         }
     }
 
@@ -1412,8 +1400,8 @@ impl Simulation {
         };
         let glyphe = |i: usize| -> char {
             match m.tuiles[i].contenu {
+                Contenu::Vide if m.tuiles[i].aretes != 0 => '+',
                 Contenu::Vide => ' ',
-                Contenu::Chemin { .. } => '+',
                 Contenu::Quartier(q) => {
                     if m.quartiers[q].capacite_pops == 0 {
                         '#'
@@ -1434,7 +1422,7 @@ impl Simulation {
             }
         };
         let occupees: Vec<(usize, usize)> = (0..m.tuiles.len())
-            .filter(|&i| m.tuiles[i].contenu != Contenu::Vide)
+            .filter(|&i| m.tuiles[i].contenu != Contenu::Vide || m.tuiles[i].aretes != 0)
             .map(|i| m.xy(i))
             .collect();
         if occupees.is_empty() {

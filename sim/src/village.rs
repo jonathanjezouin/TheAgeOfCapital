@@ -2,14 +2,14 @@
 //!
 //! Économie de subsistance de 1750 : des hameaux (2 pops, ou 3 pops dont une travaille à
 //! l'atelier textile du hameau) et des terres exploitées (champs, pâturages, vergers, forêt,
-//! lin, laine) disposés le long d'une croix de chemins de terre, directement ou au bout d'une
-//! antenne d'une tile. Le nombre de terres de chaque type découle des besoins des hameaux
+//! lin, laine) disposés le long d'une croix de chemins de terre (arêtes, voir docs/02 §9), directement
+//! ou au bout d'une antenne d'une tile. Le nombre de terres de chaque type découle des besoins des hameaux
 //! (jamais d'un ratio codé en dur) pour démarrer proche de l'équilibre.
-//! La croix est compacte : tout reste à moins de `distance_max` tiles de chemin.
+//! La croix est compacte : tout reste à moins de `distance_max` (coût des arêtes).
 //! Version volontairement simple : elle gagnera en finesse avec les villages suivants.
 
 use crate::donnees::Catalogue;
-use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile, DIRS};
+use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile};
 use crate::reseau::Reseau;
 use crate::rng::Rng;
 use crate::simulation::{Pop, Simulation};
@@ -310,6 +310,7 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
     monde.tuiles = (0..w * h)
         .map(|i| Tuile {
             contenu: Contenu::Vide,
+            aretes: 0,
             variante: rng.dans(12) as u8,
             fertilite_ppm: fertilite[i],
         })
@@ -327,9 +328,9 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
             *l += 1;
         }
     }
-    let mut aretes: Vec<(usize, usize)> = Vec::new();
     let centre = monde.idx(cx, cy);
-    monde.tuiles[centre].contenu = Contenu::Chemin { masque: 0 };
+    // Une tile est libre si elle est vide et traversée par aucune arête (pas encore constructible sinon).
+    let libre = |m: &Monde, t: usize| m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0;
     // Emplacements : (tile libre, tile du bras où s'accrocher, direction vers l'extérieur du bras).
     let mut slots: Vec<(usize, usize, (i32, i32))> = Vec::new();
     for (d, &(dx, dy)) in dirs.iter().enumerate() {
@@ -337,8 +338,7 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
         for k in 1..=longueurs[d] as i32 {
             let (x, y) = ((cx as i32 + dx * k) as usize, (cy as i32 + dy * k) as usize);
             let t = monde.idx(x, y);
-            monde.tuiles[t].contenu = Contenu::Chemin { masque: 0 };
-            aretes.push((prec, t));
+            monde.relier(prec, t);
             prec = t;
         }
     }
@@ -349,7 +349,7 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
             for (px, py) in [(-dy, dx), (dy, -dx)] {
                 let (sx, sy) = (x as i32 + px, y as i32 + py);
                 let s = monde.idx(sx as usize, sy as usize);
-                if monde.tuiles[s].contenu == Contenu::Vide && !slots.iter().any(|e| e.0 == s) {
+                if libre(&monde, s) && !slots.iter().any(|e| e.0 == s) {
                     slots.push((s, arm, (px, py)));
                 }
             }
@@ -365,13 +365,10 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
             let (ox, oy) = (sx as i32 + px, sy as i32 + py);
             if ox >= 0 && oy >= 0 && (ox as usize) < w && (oy as usize) < h {
                 let o = monde.idx(ox as usize, oy as usize);
-                if monde.tuiles[o].contenu == Contenu::Vide
-                    && monde.tuiles[s].contenu == Contenu::Vide
-                {
-                    monde.tuiles[s].contenu = Contenu::Chemin { masque: 0 };
-                    aretes.push((arm, s));
+                if libre(&monde, o) && libre(&monde, s) {
+                    monde.relier(arm, s);
                     poser(&mut monde, cat, item, o, rng);
-                    aretes.push((s, o));
+                    monde.relier(s, o);
                     slots.remove(i);
                     place = true;
                 }
@@ -379,7 +376,7 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
         }
         if !place {
             let libres: Vec<usize> = (0..slots.len())
-                .filter(|&i| monde.tuiles[slots[i].0].contenu == Contenu::Vide)
+                .filter(|&i| libre(&monde, slots[i].0))
                 .collect();
             if libres.is_empty() {
                 return Err("plus d'emplacement le long de la croix".into());
@@ -387,25 +384,8 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
             let i = libres[rng.dans(libres.len())];
             let (s, arm, _) = slots[i];
             poser(&mut monde, cat, item, s, rng);
-            aretes.push((arm, s));
+            monde.relier(arm, s);
             slots.remove(i);
-        }
-    }
-
-    // --- Demi-directions des chemins ---
-    for (a, b) in aretes {
-        let (ax, ay) = monde.xy(a);
-        let (bx, by) = monde.xy(b);
-        let (dx, dy) = (bx as i32 - ax as i32, by as i32 - ay as i32);
-        let d = DIRS
-            .iter()
-            .position(|&(_, ddx, ddy, _)| ddx == dx && ddy == dy)
-            .expect("arête non orthogonale");
-        if let Contenu::Chemin { masque } = &mut monde.tuiles[a].contenu {
-            *masque |= DIRS[d].0;
-        }
-        if let Contenu::Chemin { masque } = &mut monde.tuiles[b].contenu {
-            *masque |= DIRS[d].3;
         }
     }
 

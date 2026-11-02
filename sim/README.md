@@ -26,11 +26,11 @@ cargo test --release
 |---|---|
 | `donnees/poc.toml` | ressources, besoins vitaux et de confort, terres exploitées, travail domestique, habitat, démographie, mobilité (aucune valeur de gameplay en dur) |
 | `src/donnees.rs` | chargement et validation ; quantités en milli-unités, proportions en ppm (entiers) |
-| `src/monde.rs` | tiles passives, quartiers, bâtiments, demi-directions (orthogonales) |
-| `src/reseau.rs` | segments, recherche en largeur bornée par la distance limite, chemins précalculés entre lieux |
+| `src/monde.rs` | tiles passives, quartiers, bâtiments, **arêtes** (demi-arêtes dans 8 directions par tile, coûts 10 / 14, pas de croisement de diagonales) |
+| `src/reseau.rs` | segments (arêtes), Dijkstra à coûts entiers borné par `distance_max`, chemins précalculés entre lieux |
 | `src/village.rs` | génération déterministe (croix de chemins, champ de fertilité), dimensionnée près de l'équilibre |
 | `src/simulation.rs` | jour : différés → contrats (pro rata) → main-d'œuvre → production → consommation → jauges de croissance → péremption ; mois : réorientation des bras ; saison : extension (chantiers) |
-| `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, réorientation des bras, producteur servi d'abord, distance en tiles chemin, fertilité, chantiers (travail, bois, corvée, jamais bloqués), extension, congestion en sommeil |
+| `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, réorientation des bras, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, corvée, jamais bloqués), extension, congestion en sommeil |
 
 ## Règles de conception
 - **Déterminisme** : entiers uniquement dans la simulation, itérations ordonnées (`BTreeMap`, `Vec`), RNG maison.
