@@ -73,6 +73,8 @@ await page.evaluate(() => window.__rafraichir())
 await page.evaluate(() => window.__carte.centrer(window.__store.carte))
 await attendre(500)
 await photo('4_apres_120_ans.png')
+const gros = await trouver('e.hameaux.filter(h => h.capacite > 2).sort((a, b) => b.capacite - a.capacite)[0]')
+if (gros) { await zoomSur(gros.x, gros.y, 0.8); await photo('4b_maisons_de_pres.png'); await page.evaluate(() => window.__carte.centrer(window.__store.carte)); await attendre(300) }
 await mode('fertilite'); await photo('5_mode_fertilite.png')
 await mode('besoins'); await photo('6_mode_besoins.png')
 await mode('normal')
@@ -80,7 +82,7 @@ await mode('normal')
 // Un chantier en cours (on avance jusqu'à en trouver un).
 for (let i = 0; i < 200 && !(await trouver('e.lieux.some(l => l.chantier)')); i++) { await avancer(30); await page.evaluate(() => window.__rafraichir()) }
 const chantier = await trouver('e.lieux.find(l => l.chantier)')
-if (chantier) { await zoomSur(chantier.x, chantier.y, 0.45); await cliquer(chantier.x, chantier.y); await photo('7_chantier.png') }
+if (chantier) { await zoomSur(chantier.x, chantier.y, 0.9); await cliquer(chantier.x, chantier.y); await photo('7_chantier.png') }
 
 // Nuit, de près : les pops rentrent chez elles.
 const h0 = await trouver('e.hameaux.find(h => h.capacite > 0)')

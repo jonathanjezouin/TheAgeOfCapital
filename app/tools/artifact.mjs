@@ -21,5 +21,5 @@ const fragment = `<title>${titre}</title>
 mkdirSync('dist/artifact/assets', { recursive: true })
 writeFileSync('dist/artifact/index.html', fragment)
 copyFileSync('public/sim_wasm.wasm', 'dist/artifact/sim_wasm.wasm')
-for (const f of ['atlas.png', 'atlas.json']) copyFileSync(`public/assets/${f}`, `dist/artifact/assets/${f}`)
+for (const f of ['atlas.png', 'atlas.json', 'sol_chemin.png']) copyFileSync(`public/assets/${f}`, `dist/artifact/assets/${f}`)
 console.log(`dist/artifact/index.html : ${(fragment.length / 1024).toFixed(0)} Ko`)

@@ -19,7 +19,7 @@ Prérequis : Node 20+, Rust avec la cible `wasm32-unknown-unknown` (`rustup targ
 
 | Élément | Détail |
 |---|---|
-| Carte | Sol, chemins (selon les voisins raccordés), hameaux, terres, chantiers avec barre d'avancement, **une pop = un point** (vert satisfaite, orange insatisfaite, rouge en manque, gris sans poste) |
+| Carte | Sol, **routes en courbes** (arêtes du moteur, 8 directions, lissées par Catmull-Rom avec décalage organique et texture de terre battue), **une maison en bois par pop** le long des routes et tournée vers elles, terres, chantiers (maison en 3 états, barre d'avancement), **une pop = un point** (vert satisfaite, orange insatisfaite, rouge en manque, gris sans poste) |
 | Vitesse | Pause, +1 jour, **Jour/nuit** (un jour dure 24 s : la nuit tombe et les pops rentrent chez elles), ×1, ×10, ×100, ×1000 jours par seconde |
 | Sélection | Clic sur une tile : hameau (pops, rations, stock, croissance), terre (production, **facteur limitant**, fertilité, pops affectées), chantier (avancement, équipe, **motif**), chemin, terre libre |
 | Modes de carte | Normal, **Fertilité** (carte de chaleur), **Besoins** (hameaux et terres colorés par couverture) |

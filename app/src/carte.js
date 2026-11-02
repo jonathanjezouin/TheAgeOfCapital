@@ -13,8 +13,12 @@ const GROUPE = {
   champ: 'bat_champ', paturage: 'bat_paturage', verger: 'bat_verger', foret_exploitee: 'bat_foret_exploitee',
   champ_lin: 'bat_champ_lin', elevage_laine: 'bat_elevage_laine',
 }
-const N = 1, E = 2, S = 4, O = 8
-const DIRS = [[N, 0, -1, S], [E, 1, 0, O], [S, 0, 1, N], [O, -1, 0, E]]
+// Les 8 directions d'arêtes, dans l'ordre du moteur : E, SE, S, SO, O, NO, N, NE (bit i du champ `a`).
+const DIRS8 = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]
+const ECHELLE_MAISON = 0.85 // sprite de 128 px -> toit d'environ 1/4 de tile : une maison = une pop, taille exagérée (docs/03 §6)
+const DECALAGE_ROUTE = 0.2 // décalage organique des routes, en fraction de tile
+const LARGEUR_ROUTE = 0.12 // largeur du trait, exagérée (une piste de 5 m ferait moins d'un pixel)
+const hashf = (x, y, s) => (hash(x * 7 + s, y * 13 + s * 3) % 10000) / 10000
 
 const hash = (x, y) => (Math.imul(x + 1, 73856093) ^ Math.imul(y + 1, 19349663)) >>> 0
 const hex = (r, g, b) => (r << 16) | (g << 8) | b
@@ -46,6 +50,16 @@ export class Carte {
     this.manifeste = await (await fetch(urls.atlasJson)).json()
     this.atlas = atlas
     this.textures = {}
+    // Texture de terre battue du trait des routes (hors atlas, répétée).
+    this.solChemin = null
+    const nomSol = this.manifeste.textures?.sol_chemin
+    if (nomSol) {
+      try {
+        this.solChemin = await Assets.load(urls.atlasJson.replace(/[^/]*$/, '') + nomSol)
+        this.solChemin.source.style.addressMode = 'repeat'
+      } catch { this.solChemin = null }
+    }
+    this.chantiersMaison = []
 
     this.monde = new Container()
     this.sol = new Container()
@@ -136,44 +150,163 @@ export class Carte {
     this.monde.addChildAt(this.fertiliteSprite, 1)
   }
 
-  /** (Re)construit chemins et bâtiments quand la carte change (chantier lancé ou terminé, route créée). */
+  /** (Re)construit routes, maisons et terres quand la carte change (chantier lancé ou terminé, route créée). */
   appliquerCarte(carte, etat) {
     this.carteVersion = carte.version
     this.infra.removeChildren().forEach((c) => c.destroy())
     this.bat.removeChildren().forEach((c) => c.destroy())
+    this.chantiersMaison = []
     const W = this.meta.largeur
     const grille = new Map()
     for (const t of carte.tuiles) grille.set(t.y * W + t.x, t)
     this.grille = grille
-    const chemins = this.manifeste.groupes.infra_chemin_terre
-
-    // Masque de raccordement d'une tile traversable : voisins réellement joints.
-    const masqueVoisins = (t) => {
-      let m = 0
-      for (const [bit, dx, dy, opp] of DIRS) {
-        const v = grille.get((t.y + dy) * W + (t.x + dx))
-        if (!v) continue
-        if ((v.c === 'chemin' && (v.m & opp)) || v.c === 'hameau') m |= bit
-      }
-      return m
-    }
-
+    this.tracerRoutes(carte, W)
     for (const t of carte.tuiles) {
-      const h = hash(t.x, t.y)
-      if (t.c === 'chemin') {
-        if (t.m) this.poser(this.infra, this.texture(chemins[String(t.m)]), t.x, t.y)
-      } else if (t.c === 'hameau') {
-        const m = masqueVoisins(t)
-        if (m) this.poser(this.infra, this.texture(chemins[String(m)]), t.x, t.y)
-        const hameau = etat.hameaux[t.m]
-        const groupe = hameau.capacite === 0 ? 'bat_chantier_hameau'
-          : hameau.habitat === 'hameau_textile' ? 'bat_hameau_textile' : 'bat_hameau'
-        this.poser(this.bat, this.variante(groupe, h), t.x, t.y)
+      if (t.c === 'chemin') continue
+      if (t.c === 'hameau') {
+        this.poserMaisons(t, etat)
       } else {
         const lieu = etat.lieux[t.m]
         const groupe = lieu.chantier ? 'bat_chantier_champ' : GROUPE[lieu.type_nom]
-        if (groupe) this.poser(this.bat, this.variante(groupe, h), t.x, t.y)
+        if (groupe) this.poser(this.bat, this.variante(groupe, hash(t.x, t.y)), t.x, t.y)
       }
+    }
+  }
+
+  // ---------- Routes : arêtes lissées en courbes ----------
+
+  /** Le réseau est une couche d'arêtes (champ `a` de chaque tile). On le découpe en chaînes entre
+   *  carrefours, bouts de route et lieux, puis chaque chaîne est tracée en courbe lissée (Catmull-Rom)
+   *  passant par des centres de tiles légèrement décalés (décalage déterministe). */
+  tracerRoutes(carte, W) {
+    const noeuds = new Map()
+    for (const t of carte.tuiles) {
+      if (!t.a) continue
+      const voisins = []
+      for (let d = 0; d < 8; d++) if (t.a & (1 << d)) voisins.push((t.y + DIRS8[d][1]) * W + (t.x + DIRS8[d][0]))
+      noeuds.set(t.y * W + t.x, { x: t.x, y: t.y, voisins, fixe: t.c !== 'chemin' })
+    }
+    const vu = new Set()
+    const cle = (a, b) => (a < b ? a + ':' + b : b + ':' + a)
+    const chaines = []
+    const suivre = (depart, premier) => {
+      const chaine = [depart]
+      let prec = depart, cur = premier
+      vu.add(cle(depart, premier))
+      for (;;) {
+        chaine.push(cur)
+        const n = noeuds.get(cur)
+        if (!n || n.fixe || n.voisins.length !== 2) break
+        const suiv = n.voisins[0] === prec ? n.voisins[1] : n.voisins[0]
+        if (vu.has(cle(cur, suiv))) break
+        vu.add(cle(cur, suiv))
+        prec = cur
+        cur = suiv
+      }
+      chaines.push(chaine)
+    }
+    for (const [k, n] of noeuds) {
+      if (n.fixe || n.voisins.length !== 2) for (const v of n.voisins) if (noeuds.has(v) && !vu.has(cle(k, v))) suivre(k, v)
+    }
+    for (const [k, n] of noeuds) for (const v of n.voisins) if (noeuds.has(v) && !vu.has(cle(k, v))) suivre(k, v) // boucles
+    const g = new Graphics()
+    const pts = (chaine) => chaine.map((k, i) => {
+      const n = noeuds.get(k)
+      let x = (n.x + 0.5) * T, y = (n.y + 0.5) * T
+      if (!n.fixe && i > 0 && i < chaine.length - 1) {
+        x += (hashf(n.x, n.y, 1) - 0.5) * 2 * DECALAGE_ROUTE * T
+        y += (hashf(n.x, n.y, 2) - 0.5) * 2 * DECALAGE_ROUTE * T
+      }
+      return [x, y]
+    })
+    const courbe = (p) => {
+      g.moveTo(p[0][0], p[0][1])
+      for (let i = 0; i < p.length - 1; i++) {
+        const p0 = p[i - 1] || p[i], p1 = p[i], p2 = p[i + 1], p3 = p[i + 2] || p2
+        g.bezierCurveTo(p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6, p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6, p2[0], p2[1])
+      }
+    }
+    const traces = chaines.map(pts)
+    const larg = LARGEUR_ROUTE * T
+    for (const p of traces) { courbe(p); g.stroke({ width: larg * 1.22, color: 0x8f7650, cap: 'round', join: 'round' }) }
+    for (const p of traces) {
+      courbe(p)
+      if (this.solChemin) g.stroke({ width: larg, texture: this.solChemin, textureSpace: 'global', cap: 'round', join: 'round' })
+      else g.stroke({ width: larg, color: 0xc9b184, cap: 'round', join: 'round' })
+    }
+    this.infra.addChild(g)
+  }
+
+  // ---------- Maisons : une par pop, le long des routes, face à la route ----------
+
+  /** Emplacements d'une tile d'habitat : le long de chaque arête incidente, de part et d'autre,
+   *  du centre vers le bord ; l'angle fait face à la route. Sans arête : couronne autour du centre. */
+  emplacementsMaisons(t) {
+    const cx = (t.x + 0.5) * T, cy = (t.y + 0.5) * T
+    const dirs = []
+    for (let d = 0; d < 8; d++) if (t.a & (1 << d)) dirs.push(d)
+    const slots = []
+    if (!dirs.length) {
+      for (let i = 0; i < 10; i++) {
+        const a = (i / 10) * 2 * Math.PI
+        slots.push({ x: cx + Math.cos(a) * 0.3 * T, y: cy + Math.sin(a) * 0.3 * T, angle: Math.atan2(-Math.cos(a) * -1, -Math.sin(a)) })
+      }
+      return slots
+    }
+    for (const rang of [0.24, 0.45]) {
+      for (const d of dirs) {
+        const l = Math.hypot(DIRS8[d][0], DIRS8[d][1])
+        const ux = DIRS8[d][0] / l, uy = DIRS8[d][1] / l
+        for (const cote of [1, -1]) {
+          const nx = -uy * cote, ny = ux * cote
+          const vx = -nx, vy = -ny // vers la route
+          const j = (hashf(t.x * 5 + d, t.y * 3 + cote, 3) - 0.5) * 0.04
+          slots.push({
+            x: cx + ux * rang * T + nx * (0.21 + j) * T,
+            y: cy + uy * rang * T + ny * (0.21 + j) * T,
+            angle: Math.atan2(-vx, vy),
+          })
+        }
+      }
+    }
+    return slots
+  }
+
+  poserMaisons(t, etat) {
+    const h = etat.hameaux[t.m]
+    const slots = this.emplacementsMaisons(t)
+    const n = h.capacite
+    for (let i = 0; i < n; i++) {
+      const s = slots[i % slots.length]
+      const sp = new Sprite(this.variante('bat_maison_bois', hash(t.x * 31 + i, t.y * 17 + i)))
+      sp.anchor.set(0.5)
+      sp.scale.set(ECHELLE_MAISON)
+      sp.position.set(s.x, s.y)
+      sp.rotation = s.angle
+      this.bat.addChild(sp)
+    }
+    // Chantier en cours (fondation du hameau, ou une maison de plus) : un sprite par chantier.
+    const lieu = etat.lieux.find((l) => l.chantier && l.x === t.x && l.y === t.y)
+    if (lieu) {
+      const s = slots[n % slots.length]
+      const sp = new Sprite(this.texture(this.manifeste.groupes.bat_chantier_maison[0]))
+      sp.anchor.set(0.5)
+      sp.scale.set(ECHELLE_MAISON)
+      sp.position.set(s.x, s.y)
+      sp.rotation = s.angle
+      this.bat.addChild(sp)
+      this.chantiersMaison.push({ sprite: sp, x: t.x, y: t.y })
+    }
+  }
+
+  /** État visuel du chantier de maison selon l'avancement (sol dégagé, ossature, charpente). */
+  majChantiersMaison(etat) {
+    const noms = this.manifeste.groupes.bat_chantier_maison
+    for (const c of this.chantiersMaison) {
+      const lieu = etat.lieux.find((l) => l.chantier && l.x === c.x && l.y === c.y)
+      if (!lieu) continue
+      const a = lieu.chantier.avancement
+      c.sprite.texture = this.texture(noms[Math.min(noms.length - 1, Math.floor(a * noms.length))])
     }
   }
 
@@ -181,6 +314,7 @@ export class Carte {
 
   rafraichir(etat) {
     this.etat = etat
+    this.majChantiersMaison(etat)
     this.dessinerChantiers(etat)
     this.dessinerPops(etat)
     this.dessinerModes(etat)
@@ -197,14 +331,6 @@ export class Carte {
       const x = l.x * T + 36, y = l.y * T + T - 34, w = T - 72
       g.rect(x, y, w, 16).fill({ color: 0x1c1a14, alpha: 0.85 })
       g.rect(x + 2, y + 2, Math.max(0, (w - 4) * l.chantier.avancement), 12).fill(0xe8b84a)
-    })
-    etat.hameaux.forEach((h) => {
-      if (h.capacite !== 0) return
-      const lieu = etat.lieux.find((l) => l.chantier && l.x === h.x && l.y === h.y)
-      if (!lieu) return
-      const x = h.x * T + 36, y = h.y * T + T - 34, w = T - 72
-      g.rect(x, y, w, 16).fill({ color: 0x1c1a14, alpha: 0.85 })
-      g.rect(x + 2, y + 2, Math.max(0, (w - 4) * lieu.chantier.avancement), 12).fill(0xe8b84a)
     })
   }
 
