@@ -114,8 +114,10 @@ pub struct Batiment {
 pub enum Cible {
     /// Défrichement : la tile devient une terre exploitée de ce type de bâtiment.
     Terre(usize),
-    /// Construction : le hameau d'index donné ouvre ses logements.
+    /// Fondation : le hameau d'index donné ouvre sa première maison.
     Hameau(usize),
+    /// Une maison de plus (une pop) dans le hameau d'index donné.
+    Maison(usize),
 }
 
 #[derive(Clone, Debug, Serialize)]

@@ -77,6 +77,8 @@ struct BrutTypeHabitat {
     nom: String,
     asset: String,
     capacite_pops: u32,
+    capacite_fondation: u32,
+    capacite_max_pops: u32,
     atelier: Option<String>,
     cout_creation: BrutCout,
 }
@@ -213,9 +215,15 @@ impl CoutCreation {
 pub struct TypeHabitat {
     pub nom: String,
     pub asset: String,
+    /// Capacité (en maisons, une par pop) d'un hameau de départ posé par le générateur.
     pub capacite_pops: u32,
+    /// Capacité d'un hameau neuf : la première maison.
+    pub capacite_fondation: u32,
+    /// Plafond du hameau : on y ajoute des maisons une à une jusque-là (docs/02 §9.4).
+    pub capacite_max_pops: u32,
     /// Type de bâtiment embarqué sur la même tile : travail sur place (atelier domestique, ou 1 poste).
     pub atelier: Option<usize>,
+    /// Coût d'**une maison** (une pop) : fonder un hameau en bâtit la première.
     pub cout_creation: CoutCreation,
 }
 
@@ -455,6 +463,8 @@ impl Catalogue {
                 nom: h.nom.clone(),
                 asset: h.asset.clone(),
                 capacite_pops: h.capacite_pops,
+                capacite_fondation: h.capacite_fondation,
+                capacite_max_pops: h.capacite_max_pops,
                 atelier,
                 cout_creation: cout_de(&h.cout_creation),
             });
@@ -527,6 +537,16 @@ impl Catalogue {
             if h.capacite_pops == 0 || h.capacite_pops > self.habitat.densite_max_pops {
                 return Err(format!(
                     "{} : capacité hors de 1..={}",
+                    h.nom, self.habitat.densite_max_pops
+                ));
+            }
+            if h.capacite_fondation == 0
+                || h.capacite_fondation > h.capacite_max_pops
+                || h.capacite_pops > h.capacite_max_pops
+                || h.capacite_max_pops > self.habitat.densite_max_pops
+            {
+                return Err(format!(
+                    "{} : il faut 1 <= fondation <= max <= {} et capacité de départ <= max",
                     h.nom, self.habitat.densite_max_pops
                 ));
             }

@@ -750,7 +750,7 @@ impl Simulation {
                 }
                 Cible::Hameau(q) => {
                     let h = &self.cat.habitats[self.monde.quartiers[q].habitat_id];
-                    let (cap, atelier, nom) = (h.capacite_pops, h.atelier, h.nom.clone());
+                    let (cap, atelier, nom) = (h.capacite_fondation, h.atelier, h.nom.clone());
                     self.monde.quartiers[q].capacite_pops = cap;
                     self.monde.batiments[b].equipe = 0;
                     // Le matériau resté sur le chantier revient au hameau.
@@ -763,6 +763,18 @@ impl Simulation {
                         self.monde.quartiers[q].atelier = Some(b);
                     }
                     self.journal(format!("Nouveau hameau construit : {nom} en ({x}, {y})"));
+                }
+                Cible::Maison(q) => {
+                    self.monde.quartiers[q].capacite_pops += 1;
+                    self.monde.batiments[b].equipe = 0;
+                    // Le matériau resté sur le chantier revient au hameau.
+                    let mat = self.cat.extension.materiau;
+                    let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
+                    self.monde.quartiers[q].stock[mat] += reste;
+                    let cap = self.monde.quartiers[q].capacite_pops;
+                    self.journal(format!(
+                        "Nouvelle maison dans le hameau en ({x}, {y}) : {cap} maisons"
+                    ));
                 }
             }
             // Les bras de l'équipe en surnombre redeviennent sans poste.
@@ -1049,6 +1061,10 @@ impl Simulation {
                             .any(|(x, _)| *x == r)
                 })
             }
+            Some(Chantier {
+                cible: Cible::Maison(_),
+                ..
+            }) => false,
             None => false,
         })
     }
@@ -1080,16 +1096,28 @@ impl Simulation {
         let attente: Vec<usize> = (0..self.pops.len())
             .filter(|&i| self.pops[i].croissance >= seuil)
             .collect();
-        if !attente.is_empty() && !hameau_en_cours {
-            let habitat = tensions
-                .iter()
-                .filter(|&&r| !self.producteurs_bloques_par_intrant(r))
-                .find_map(|&r| self.habitat_producteur(r))
-                .unwrap_or(0);
+        if !attente.is_empty() {
             let motif = format!("{} pops attendent un logement", attente.len());
-            for centre in self.centres(attente.iter().map(|&i| self.pops[i].residence)) {
-                if self.lancer_hameau(centre, habitat, &motif) {
+            let centres = self.centres(attente.iter().map(|&i| self.pops[i].residence));
+            // 1a. Une maison de plus dans le hameau d'une pop qui attend, tant qu'il a de la place.
+            for &centre in &centres {
+                if self.lancer_maison(centre, &motif) {
                     return;
+                }
+            }
+            // 1b. Sinon, un nouveau hameau (une seule fondation à la fois), sauf si une maison déjà
+            // en chantier va loger ces pops.
+            let maison_en_cours = centres.iter().any(|&c| self.maison_en_cours(c));
+            if !hameau_en_cours && !maison_en_cours {
+                let habitat = tensions
+                    .iter()
+                    .filter(|&&r| !self.producteurs_bloques_par_intrant(r))
+                    .find_map(|&r| self.habitat_producteur(r))
+                    .unwrap_or(0);
+                for &centre in &centres {
+                    if self.lancer_hameau(centre, habitat, &motif) {
+                        return;
+                    }
                 }
             }
         }
@@ -1300,6 +1328,80 @@ impl Simulation {
         let nom = self.cat.batiments[type_id].nom.clone();
         self.journal(format!(
             "Chantier lancé : défricher {nom} en ({x}, {y}) — {motif}"
+        ));
+        self.reconstruire_reseau();
+        self.recruter(b, cout.equipe, false);
+        true
+    }
+
+    /// Une maison est-elle en chantier dans le hameau `q` ?
+    fn maison_en_cours(&self, q: usize) -> bool {
+        self.monde.batiments.iter().any(|b| {
+            matches!(
+                b.chantier,
+                Some(Chantier {
+                    cible: Cible::Maison(h),
+                    ..
+                }) if h == q
+            )
+        })
+    }
+
+    /// Une maison de plus (une pop) dans le hameau `q`, au plafond de son type près. Une seule à la
+    /// fois par hameau ; le matériau doit pouvoir lui être livré.
+    fn lancer_maison(&mut self, q: usize, motif: &str) -> bool {
+        let nq = self.nq();
+        let habitat_id = self.monde.quartiers[q].habitat_id;
+        let cap = self.monde.quartiers[q].capacite_pops;
+        if cap == 0 || cap >= self.cat.habitats[habitat_id].capacite_max_pops {
+            return false;
+        }
+        let tuile = self.monde.quartiers[q].tuile;
+        if self
+            .monde
+            .batiments
+            .iter()
+            .any(|b| b.tuile == tuile && b.chantier.is_some())
+        {
+            return false;
+        }
+        let cout = self.cat.habitats[habitat_id].cout_creation.clone();
+        if cout.materiau > 0 {
+            let mat = self.cat.extension.materiau;
+            let livrable = (0..self.monde.batiments.len())
+                .any(|b| self.livre(b, mat) && self.reseau.chemin(q, nq + b).is_some());
+            if !livrable {
+                return false;
+            }
+        }
+        // On réutilise le site de chantier inerte de la tile, s'il y en a un.
+        let type_chantier = self.cat.type_chantier();
+        let inerte = (0..self.monde.batiments.len()).find(|&b| {
+            let bat = &self.monde.batiments[b];
+            bat.tuile == tuile && bat.type_id == type_chantier && bat.chantier.is_none()
+        });
+        let b = match inerte {
+            Some(b) => {
+                let bat = &mut self.monde.batiments[b];
+                bat.equipe = cout.equipe;
+                bat.chantier = Some(Chantier {
+                    cible: Cible::Maison(q),
+                    travail_restant: cout.travail,
+                    travail_total: cout.travail,
+                    materiau_total: cout.materiau,
+                });
+                b
+            }
+            None => {
+                let b = self.monde.batiments.len();
+                let chantier = self.nouveau_chantier(tuile, Cible::Maison(q), &cout);
+                self.monde.batiments.push(chantier);
+                b
+            }
+        };
+        let (x, y) = self.monde.xy(tuile);
+        self.journal(format!(
+            "Chantier lancé : une maison de plus dans le hameau en ({x}, {y}) — {motif}"
         ));
         self.reconstruire_reseau();
         self.recruter(b, cout.equipe, false);

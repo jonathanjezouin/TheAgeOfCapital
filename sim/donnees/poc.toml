@@ -26,15 +26,20 @@ poids_trajet_pop = 10.0
 [habitat]
 densite_max_pops = 10
 
-# Hameau : 2 pops, qui travaillent toutes dans les terres alentour. Le textile (tissage, couture) est
-# un travail domestique d'hiver, fait à la maison avec le temps libre des pops (docs/02 §8.4) : tout
-# hameau embarque donc un atelier domestique, sans poste.
+# Hameau : des maisons, une par pop (docs/02 §9.4). Le générateur pose des hameaux de `capacite_pops`
+# maisons ; un hameau neuf n'a que sa première maison (`capacite_fondation`) et en gagne une à une,
+# jusqu'à `capacite_max_pops`, puis les pops qui attendent un logement fondent un autre hameau.
+# `cout_creation` est le coût d'UNE maison (≈ la moitié de l'ancien hameau de 2 pops).
+# Le textile (tissage, couture) est un travail domestique d'hiver, fait à la maison avec le temps libre
+# des pops (docs/02 §8.4) : tout hameau embarque donc un atelier domestique, sans poste.
 [[habitats]]
 nom = "hameau"
 asset = "bat_hameau"
 capacite_pops = 2
+capacite_fondation = 1
+capacite_max_pops = 4
 atelier = "atelier_domestique"
-cout_creation = { travail_pop_jours = 300.0, equipe = 2, bois = 200.0 }
+cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
 
 # Temps libre (docs/02 §8.3, étape 1 : budget lissé, sans saisons). Le travail des champs n'occupe
 # qu'environ un tiers de l'année d'un actif en 1750 ; le reste va à l'élevage, au bois et au textile.

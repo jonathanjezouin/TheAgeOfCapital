@@ -351,6 +351,7 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     let (cible, type_nom) = match ch.cible {
                         Cible::Terre(t) => ("terre", c.batiments[t].nom.clone()),
                         Cible::Hameau(q) => ("hameau", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
+                        Cible::Maison(q) => ("maison", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
                     };
                     ChantierVue {
                         cible,

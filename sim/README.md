@@ -32,6 +32,12 @@ cargo test --release
 | `src/simulation.rs` | jour : différés → contrats (pro rata) → main-d'œuvre → production → consommation → jauges de croissance → péremption ; mois : réorientation des bras ; saison : extension (chantiers) |
 | `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, réorientation des bras, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, corvée, jamais bloqués), extension, congestion en sommeil |
 
+## Une maison par pop (docs/02 §9.4)
+La capacité d'un hameau se crée **maison par maison** : un chantier de maison (150 pop-jours, équipe de 1,
+100 bois, valeurs de départ) ajoute une pop de capacité, jusqu'à `capacite_max_pops` (4 pour le hameau).
+Fonder un hameau en bâtit la première maison (`capacite_fondation`). Les pops qui attendent un logement
+font d'abord bâtir une maison dans leur hameau, puis, hameau plein, fonder un autre hameau.
+
 ## Textile domestique (docs/02 §8.4)
 Il n'y a plus de hameau textile : tout hameau embarque un **atelier domestique** (type `domestique = true`),
 sans poste. Sa main-d'œuvre est le **temps libre** des pops du hameau : une pop sans poste y consacre tout

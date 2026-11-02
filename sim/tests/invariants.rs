@@ -562,17 +562,52 @@ fn village_sature() -> Simulation {
     s
 }
 
+fn capacite_totale(s: &Simulation) -> u32 {
+    s.monde.quartiers.iter().map(|q| q.capacite_pops).sum()
+}
+
 #[test]
-fn des_pops_qui_attendent_font_batir_un_hameau_qui_finit_par_ouvrir() {
+fn des_pops_qui_attendent_font_batir_une_maison() {
     let mut s = village_sature();
-    let (nq, cap_avant) = (
+    let (nq, cap_avant) = (s.monde.quartiers.len(), capacite_totale(&s));
+    s.etendre();
+    assert_eq!(s.chantiers_en_cours(), 1);
+    assert_eq!(
         s.monde.quartiers.len(),
-        s.monde
-            .quartiers
-            .iter()
-            .map(|q| q.capacite_pops)
-            .sum::<u32>(),
+        nq,
+        "une maison de plus dans le hameau, pas un nouveau hameau"
     );
+    assert_eq!(
+        capacite_totale(&s),
+        cap_avant,
+        "pas de logement avant la fin du chantier"
+    );
+    // 150 pop-jours pour une pop : au moins 150 jours, plus l'acheminement du bois.
+    s.avancer(365 * 2);
+    assert!(capacite_totale(&s) > cap_avant, "la maison ouvre un logement");
+    assert_eq!(s.monde.quartiers.len(), nq, "aucun hameau fondé tant qu'il reste de la place");
+    assert!(s
+        .evenements
+        .iter()
+        .any(|e| e.texte.starts_with("Nouvelle maison")));
+    assert!(s.ecart_conservation().iter().all(|&e| e == 0));
+}
+
+#[test]
+fn un_hameau_au_plafond_fait_fonder_un_autre_hameau() {
+    // Plafond du hameau ramené à sa capacité de départ : il n'y a plus de place pour une maison de plus.
+    let donnees = sim::donnees::DONNEES_POC.replace("capacite_max_pops = 4", "capacite_max_pops = 2");
+    let mut s = generer(
+        Catalogue::depuis_toml(&donnees).unwrap(),
+        &ParamsVillage {
+            occupation_initiale_pct: 100,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+    let seuil = s.seuil_croissance();
+    s.pops[0].croissance = seuil;
+    let (nq, cap_avant) = (s.monde.quartiers.len(), capacite_totale(&s));
     s.etendre();
     assert_eq!(s.chantiers_en_cours(), 1);
     assert_eq!(s.monde.quartiers.len(), nq + 1);
@@ -580,23 +615,29 @@ fn des_pops_qui_attendent_font_batir_un_hameau_qui_finit_par_ouvrir() {
         s.monde.quartiers[nq].capacite_pops, 0,
         "pas de logement avant la fin du chantier"
     );
-    // 300 pop-jours à 2 pops : au moins 150 jours, plus l'acheminement du bois ; la corvée comble l'équipe.
     s.avancer(365 * 2);
-    assert_eq!(s.chantiers_en_cours(), 0, "chantier terminé");
-    assert!(s.monde.quartiers[nq].capacite_pops > 0);
-    assert!(
-        s.monde
-            .quartiers
-            .iter()
-            .map(|q| q.capacite_pops)
-            .sum::<u32>()
-            > cap_avant
+    assert_eq!(
+        s.monde.quartiers[nq].capacite_pops, 1,
+        "un hameau neuf n'a que sa première maison"
     );
+    assert!(capacite_totale(&s) > cap_avant);
     assert!(s
         .evenements
         .iter()
         .any(|e| e.texte.starts_with("Nouveau hameau construit")));
     assert!(s.ecart_conservation().iter().all(|&e| e == 0));
+}
+
+#[test]
+fn un_hameau_ne_depasse_jamais_son_plafond() {
+    let mut s = village(2);
+    s.avancer(365 * 200);
+    let max = s.cat.habitats[0].capacite_max_pops;
+    assert!(s.monde.quartiers.iter().all(|q| q.capacite_pops <= max));
+    assert!(s
+        .evenements
+        .iter()
+        .any(|e| e.texte.starts_with("Nouvelle maison")));
 }
 
 #[test]
@@ -613,10 +654,10 @@ fn un_chantier_consomme_du_travail_et_du_bois() {
         jours += 1;
         assert!(jours < 365 * 3, "le chantier ne finit pas");
     }
-    // 200 de bois pour un hameau, et au moins 300 pop-jours / 2 pops = 150 jours de travail.
+    // 100 de bois pour une maison, et 150 pop-jours pour 1 pop = 150 jours de travail.
     let consomme = s.bilan.consomme_prod[bois] - consomme_avant;
     assert!(
-        (consomme - 200 * 1000).abs() <= 1000,
+        (consomme - 100 * 1000).abs() <= 1000,
         "bois consommé : {consomme}"
     );
     assert!(jours >= 150, "terminé en {jours} jours seulement");
