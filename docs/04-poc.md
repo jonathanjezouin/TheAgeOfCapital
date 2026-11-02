@@ -1,5 +1,7 @@
 # 04 — Périmètre du POC
 
+> **Statut (2026-11-02).** Le design cible a évolué : tile fixe de 250 m, terres multi-tiles, travail en jours, suppression du hameau textile (voir `02` §1 et §8, et « Référence 1750 » ci-dessous). Le code `sim/` et `app/` et les tableaux de calibration plus bas décrivent encore la **version précédente** (1 tile = 1 terre, hameau textile de 3 pops) jusqu'à migration. Sur la carte 200×200, une tile de 250 m donne 50 × 50 km, soit ~5 cellules de marché.
+
 ## Objectif
 
 Une **économie de subsistance** : un village isolé de **1750**, simulé de façon autonome (sans intervention du joueur). Des pops vivent dans des hameaux, travaillent des terres exploitées alentour, et certains hameaux fabriquent sur place de quoi vêtir tout le monde. La couverture de leurs besoins pilote la croissance ou le déclin de chaque pop, et **les habitants étendent eux-mêmes le village** (défrichement, nouveaux hameaux) quand il le faut. Pas de monnaie, pas de manufacture, pas de firme : le maire est inactif.
@@ -52,7 +54,51 @@ Une **économie de subsistance** : un village isolé de **1750**, simulé de fa�
 
 49 tiles, générées par `graphGeneration/` (voir `03` §7) ; aperçu : `docs/img/atlas-assets.png` et `docs/img/apercu-village-assets.png`. Un état d'avancement du chantier (fondations, charpente…) reste à prévoir.
 
-Reportés : `bat_filature`, `bat_atelier_couture` (manufacture), `bat_quartier_rural` (bassin de peuplement de 1 000 hab).
+Reportés : `bat_filature`, `bat_atelier_couture` (manufacture), `bat_quartier_rural` (village de 2–4 tiles, à redéfinir avec la tile de 250 m). `bat_hameau_textile` disparaît dans la cible (`02` §8.4).
+
+## Référence 1750 (décision de design, à implémenter)
+
+Ordres de grandeur reconstitués de mémoire (Toutain, Braudel…), **à vérifier avant de figer** ; précision attendue ±20 %. Densité moyenne ~47 hab./km², ~75 % d'actifs agricoles.
+
+### Usage du sol pour 100 hab. (1 pop), tile de 6,25 ha
+
+| Usage | % du territoire | ha | Tiles |
+|---|---|---|---|
+| Labours (jachère incluse) | 40 % | 85 | 13,6 |
+| Prés | 7 % | 15 | 2,4 |
+| Vignes, vergers, jardins | 3 % | 6 | 1 |
+| Bois | 17 % | 36 | 5,8 |
+| Landes, friches, communaux | 28 % | 60 | 9,5 |
+| Bâti, routes, eaux | 5 % | 11 | 1,7 |
+| **Terroir total** | 100 % | ~212 | **~34** |
+
+- 1 pop ≈ 1 km² de labours (85–125 ha). Un champ de 5 km² correspond à ~4 pops **rattachées** (le « 4 pops » du POC), pas à 4 pops à plein temps.
+- Un hameau de 2 pops a un terroir de ~64 tiles (4 km², environ 8×8 tiles), dont ~27 de labours.
+
+### Travail agricole (jours-personne par ha et par an)
+
+| Culture | Jours/ha/an | Par tile (6,25 ha) | Pic |
+|---|---|---|---|
+| Céréales | ~40 | ~250 | moisson juillet-août (~⅓ du travail en 4–6 semaines), battage nov-fév |
+| Prairie | ~12 | ~75 | fenaison juin |
+| Lin, chanvre | ~100 | ~625 | arrachage, rouissage |
+| Vigne | 100–150 | 625–940 | toute l'année |
+| Verger, forêt, élevage | *à calibrer* | | |
+
+Le travail des champs n'occupe qu'**environ un tiers** de l'année d'un actif (~2,8 ha de labours par actif, ~7 ha par actif à plein temps) : le reste va à l'élevage, au bois, à la construction et surtout au **textile domestique d'hiver** (`02` §8.3 et §8.4). Dans le POC actuel, 83 % des pops travaillent la terre à plein temps.
+
+### Cellule de marché 1750 (rayon ~12 km, ~450 km², ~21 000 hab., ~7 200 tiles)
+
+| Niveau | Nb | Hab. unit. | Pops | Tiles bâties |
+|---|---|---|---|---|
+| Ville | 1 | 5 000 | 50 | 8–10 |
+| Bourgs | 4 | 800 | 32 | 2 chacun |
+| Villages | 15 | 400 | 60 | 2 chacun |
+| Hameaux et fermes | ~45 | 150 | 67 | 1 chacun |
+
+- Espacements : hameaux ~2 km, villages 3–4 km, bourgs 8–10 km, villes 25–30 km.
+- Proportions ~1:4:15:45 (logique des lieux centraux de Christaller). C'est un **critère de succès mesurable** pour le maillage, jamais un ratio codé (principe n°6).
+- Fermes isolées : surtout à l'Ouest (bocage). Les plaines du Nord ont des villages groupés avec champs ouverts. Un paramètre de dispersion du générateur permettra de choisir.
 
 ## Calibration (effectifs en pops, unités rondes)
 

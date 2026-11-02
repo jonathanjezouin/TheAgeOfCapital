@@ -29,8 +29,8 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Logique propre des groupes (stratégies : expansion, prédation…)
 - Valeur foncière et ségrégation spatiale
 - Couche narrative SLM
-- **Manufacture textile** (filature, atelier de couture) : le textile se fait à l'atelier d'un hameau en 1750 ; c'est la première filière où le capitalisme émergera (marchand-fabricant)
-- Saisons (travail d'hiver : filage, couture), stocks annuels (greniers), **aléa de récolte** (outil de debug en attendant)
+- **Manufacture textile** (filature, atelier de couture) : en 1750 le textile se fait à la maison (travail domestique d'hiver, voir `02` §8.4) ; c'est la première filière où le capitalisme émergera (marchand-fabricant)
+- Saisons (profils mensuels du travail ; l'étape 1 est un budget annuel de jours, voir `02` §8.3), stocks annuels (greniers), **aléa de récolte** (outil de debug en attendant)
 - Rendements décroissants des terres, fertilité variable par tile, droits d'usage communaux du bois, prélèvements (dîme, rente, impôts) : le surplus qui quitte le village
 - Promotion de classe par la satisfaction du confort
 - Abandon des lieux en déclin (hameaux vides, terres sans bras), délai de production d'un verger
@@ -60,13 +60,13 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 | Sujet | Décision |
 |---|---|
 | Hôte Steam | **Electron + napi-rs** (Tauri écarté) ; wasm conservé pour démonstrations et tests visuels (`03` §1) |
-| Échelle visée | ~4 M tiles, 300–500 k bâtiments, 100–300 k pops, 10–50 k personnages (`03` §5), à valider par banc d'essai |
+| Échelle visée | ~4 M tiles, 300–500 k bâtiments, 100–300 k pops, 10–50 k personnages (`03` §5), à valider par banc d'essai ; **réviser** avec la tile fixe de 250 m (question 0) |
 | Pont | Tableaux typés par viewport + drapeaux « sale » par chunk, pas de JSON du monde (`03` §5b) |
 | Persistance | SQLite hors tick ; sauvegarde = instantané binaire compressé |
 
 ## Questions ouvertes
 
-0. **Échelle exacte** : 2 000×2 000 et 500 k bâtiments sont des ordres de grandeur provisoires ; à confirmer avec le banc d'essai avant de figer les structures de données.
+0. **Échelle exacte** : 2 000×2 000 et 500 k bâtiments sont des ordres de grandeur provisoires ; à confirmer avec le banc d'essai avant de figer les structures de données. **Avec la tile fixe de 250 m (16 tiles/km²)**, 2 000×2 000 = 500 × 500 km (~½ France) et le monde habité de 1750 (~20 M km²) = quelques centaines de millions de tiles. Cela ne tient que si : une terre = 1 nœud pour N tiles (~1 nœud pour 5–6 tiles), le terrain inactif est un raster passif, et les nœuds stables sont « dormants » (mêmes règles, cadence variable). Relancer le banc d'essai avec ces hypothèses.
 
 1. **Déclin et abandon** — *écarté pour l'instant, à reprendre plus tard*. L'extension communautaire est faite (`02` §7) ; reste à traiter ce qui se passe quand la population baisse durablement : hameaux vides, terres sans bras, équipes de chantier orphelines, mémoire des lieux abandonnés (et leur réutilisation).
 1b. **Placement automatique des bâtiments par les firmes** (POC-B) : généralisation de l'extension communautaire, avec des critères de rentabilité à la place des besoins de subsistance.
@@ -78,6 +78,13 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 7. **Calibration démographique et des besoins** : seuils vitaux, capacité du hameau (1 ou 2 pops), `mortalite_famine`, taille de village de départ (voir `02` §6 et `04`).
 8. **Monnaie** (POC-B) : salaires, budget des pops, formation des prix ; articulation avec la consommation directe du POC-A.
 6. **Monde extérieur** : abstraction type marché mondial vs simulation multi-niveaux.
+9. **Jours de travail par pop** : le budget de jours (`02` §8.3) introduit `jours_par_pop_an` (~12 500 = 50 travailleurs × 250 jours), ce qui contredit la règle de `00` §3 (« le 50 % de travailleurs n'apparaît pas dans les formules »). À acter.
+10. **Moteur de travail** : budget annuel lissé (étape 1) puis profils mensuels (étape 2) ; règles de priorité (vital > confort > travail domestique) ; coût en jours des recettes textiles ; jours/ha du verger, de la forêt et de l'élevage (à calibrer).
+11. **Spécialisation régionale** (anneaux de Von Thünen, vigne, lin, herbages) : émergence en POC-B avec prix et transport ; premier bien importé (sel, fer, outils) à choisir pour faire naître le bourg.
+12. **Dispersion de l'habitat** : fermes isolées (bocage) vs villages groupés à champs ouverts ; paramètre du générateur.
+13. **Maillage** : critère de succès ~1:4:15:45 (ville : bourgs : villages : hameaux) et espacements (`04`), à mesurer sur plusieurs graines, jamais codé.
+14. **Une seule simulation ou multi-échelle ?** `03` §5 prévoit un modèle agrégé pour les zones non observées ; la volonté actuelle est de **ne pas** avoir deux simulations (locale et régionale). Piste : mêmes règles partout, nœuds dormants à cadence réduite ; à trancher avec le banc d'essai.
+15. **Calibration du POC actuel** : ses tiles impliquent ~0,7–1 km ; migrer calibration (rayons de fertilité, `distance_max`, coûts de chantier par tile) vers la tile de 250 m.
 
 ## Incohérences relevées dans les échanges de design (à trancher)
 
@@ -88,5 +95,5 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 | Taille de carte POC | 150×150 | 200×200 | 200×200 |
 | Ressources | bois transformé, charbon, minerai… | nourriture / textile / bois | Périmètre de `04` |
 | Décision économique | Firmes autonomes | Personnages qui dirigent les firmes | POC : firmes à règles simples (POC-B) + maire inactif ; personnages plus tard |
-| Emprise des bâtiments | Usage unique par tile | « Bâtiments sur plusieurs tiles » (vision) ; hameau textile = habitat + atelier | Une tile = un bâtiment dans le POC, sauf le hameau (exception documentée, `02` §1) |
-| Taille de tile | 50–200 m², puis ~1 km² | Unité comptable à surface implicite variable | Unité comptable (voir `02`) |
+| Emprise des bâtiments | Usage unique par tile | « Bâtiments sur plusieurs tiles » (vision) ; hameau textile = habitat + atelier | **Tranché le 2026-11-02** : une terre exploitée = un bâtiment de N tiles contiguës ; hameau = 1 tile ; hameau textile supprimé (`02` §8) |
+| Taille de tile | 50–200 m², puis ~1 km², puis unité comptable à surface variable | Surface réelle fixe | **Tranché le 2026-11-02** : 250 m × 250 m = 6,25 ha (`02` §1) |

@@ -42,7 +42,7 @@ La difficulté centrale : pour l'**économie**, gérer de vraies populations pos
 
 - **Unité fixe : 100 habitants.**
 - Une pop est **homogène** sur ses attributs discrets : une seule tile de résidence, un seul lieu de travail, une seule strate (paysan, ouvrier, bourgeois, domestique, noble…), une seule culture, une seule religion, une seule orientation.
-- Plusieurs pops cohabitent sur une même tile : la tile quartier est une **capacité de logement** (1 000 hab pour le quartier rural du POC), qui varie avec le type de bâtiment et la densité.
+- Plusieurs pops cohabitent sur une même tile : la tile d'habitat (250 m × 250 m) est une **capacité de logement** (2 pops pour un hameau du POC ; plafond de 10 pops = 1 000 hab, soit ~160 hab/ha, pour un quartier dense), qui varie avec le type de bâtiment et la densité.
 - Un quartier riche mélange des pops de strates différentes sur la même tile (ex. : bourgeois + domestiques) ; les domestiques y habitent et y travaillent (lieu de vie pour les uns, lieu de travail pour les autres), sans mécanique supplémentaire grâce au flux unifié.
 - Chaque pop porte une **richesse** et des **droits politiques**.
 

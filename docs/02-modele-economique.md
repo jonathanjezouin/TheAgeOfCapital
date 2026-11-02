@@ -3,34 +3,29 @@
 ## 1. La tile
 
 - **Usage unique** par tile : terrain naturel, infrastructure, bâtiment de production, quartier d'habitation.
-- Exception : la **tile quartier embarque nativement une infrastructure de circulation** (rues). Le **hameau textile** (POC) embarque en plus un **atelier** (1 poste, tissage et couture) sur la même tile : habitat et travail y sont mêlés, comme dans une économie de subsistance. Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard).
-- **Unité comptable, pas géographique** : la surface implicite dépend du type.
+- Exception : la **tile d'habitat embarque nativement une infrastructure de circulation** (rues). Les marchandises peuvent y circuler, mais cette capacité sera insuffisante pour des stades de production avancés (rail, port… plus tard). *(Le code POC-A embarque encore un atelier textile dans le « hameau textile » ; la cible le supprime au profit du travail domestique, voir §8.)*
+- **Surface réelle fixe : 1 tile = 250 m × 250 m = 6,25 ha** (16 tiles/km²). Décision du 2026-11-02, qui remplace l'ancienne « unité comptable à surface variable ». Ce qui varie selon le type, c'est l'**emprise** (nombre de tiles) et la **densité** (pops par tile), pas la surface de la tile.
+  - **Distances réelles** : `distance_max` = 10 tiles = 2,5 km ≈ 30–50 min à pied, le rayon de travail réaliste d'un habitat en 1750. Un village de ~2,5 km de rayon (~20 km² à ~50 hab/km²) plafonne naturellement vers 600–1 000 hab. : au-delà, un nouveau hameau se justifie (voir §8.5).
+  - **Densités** : hameau ~30 hab/ha (200 hab = 1 tile) ; bourg ~60 hab/ha ; ville 100–200 hab/ha ; **plafond de 10 pops par tile = 160 hab/ha**, réaliste pour les villes de 1750 à 1950.
 
-| Type de tile | Surface implicite | Population |
+| Type | Emprise | Population |
 |---|---|---|
-| Champ | ~5 km² | — |
-| Pâturage | ~10 km² | — |
-| Exploitation forestière | ~20 km² | — |
-| Hameau (POC) | ~0,5 km² | capacité 2 pops = 200 hab, toutes travaillent aux terres alentour |
-| Hameau textile (POC) | ~0,5 km² | capacité 3 pops = 300 hab, dont 1 travaille sur place (atelier) |
-| Quartier rural | ~0,5 km² | capacité 1 000 hab |
-| Quartier urbain (futur) | ~0,1 km² | capacité ~5 000 hab |
+| Terre exploitée (champ, pré, verger, forêt, lin, élevage…) | **N tiles contiguës**, **un seul bâtiment actif** (un seul nœud) ; extensible tile par tile | — |
+| Hameau (POC) | 1 tile | capacité 2 pops = 200 hab |
+| Village, bourg (futur) | 2–4 tiles | 4–15 pops |
+| Quartier urbain (futur) | 1 tile par quartier | jusqu'à 10 pops par tile |
+| Terrain non exploité (landes, friches, bois, eaux) | tile passive | — |
 
-- **Une tile d'habitat est une capacité de logement** (2 pops = 200 hab pour le hameau du POC, 1 000 hab pour un quartier rural), occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops. Une tile quartier rurale représente un **bassin de peuplement** (villages et hameaux agrégés), pas un hameau isolé.
-- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants. **Plafond de densité : 10 pops par tile** (quartiers ouvriers à terme).
+- **Une tile d'habitat est une capacité de logement**, occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops ≈ 50–80 tiles. Il n'y a plus de « bassin de peuplement » agrégé en une tile : un village est composé de plusieurs tiles.
+- La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants. **Plafond de densité : 10 pops par tile**.
 - **Fertilité** : le terrain reste unique (plaine), mais chaque tile porte une `fertilite` (ppm de 1,0) qui multiplie la production des terres exploitées. Elle est tirée par le générateur (bruit lissé, appauvri avec la distance au centre). C'est ce qui fait de la terre, même « toute exploitable », un facteur limitant : on défriche d'abord la meilleure terre accessible, puis de moins en moins productive.
 - `valeur_fonciere` existe dès le départ mais n'est pas utilisée dans le POC (futur moteur de la ségrégation spatiale).
 
 ### Le ratio habitat / production : indicateur émergent
 
-| Contexte | Ratio tiles habitat : production |
-|---|---|
-| Campagne 1750 | 1 : 5–7 |
-| Bourg proto-industriel 1800 | ~1 : 1 |
-| Ville industrielle 1850 | 3–5 : 1 |
-| Métropole 1900 | 8–10 : 1 |
+Avec la tile fixe de 250 m, la campagne de 1750 compte **~1 tile d'habitat pour ~60 tiles de terroir** (un hameau isolé : 1 tile bâtie pour ~64 tiles de terroir, dont ~27 de labours, landes et bois inclus). Les ratios des stades suivants (bourg proto-industriel, ville industrielle, métropole) sont **à recalculer** avec cette tile : le ratio s'inverse avec l'urbanisation.
 
-**Ne jamais le coder.** Il doit émerger de la calibration (production extensive à la campagne, productivité par tile qui explose avec `niveau_tech`). En économie de subsistance, le hameau embarque son textile : le ratio se mesure entre hameaux et terres exploitées, et c'est l'apparition d'ateliers puis de villes qui le fera basculer.
+**Ne jamais le coder.** Il doit émerger de la calibration (production extensive à la campagne, productivité par tile qui explose avec `niveau_tech`). En économie de subsistance, le hameau fait aussi son textile (travail domestique) : le ratio se mesure entre hameaux et terres exploitées, et c'est l'apparition d'ateliers puis de villes qui le fera basculer. Les proportions 1750 de référence sont dans `04`.
 
 ## 2. Les acteurs économiques
 
@@ -263,3 +258,31 @@ Chaque lancement et chaque fin de chantier est inscrit au journal d'événements
 
 ### Limites connues
 Pas d'abandon : un hameau vidé par un déclin reste debout, une terre sans bras reste inactive. Pas de délai de production d'un verger. Pas de réaffectation de l'équipe en cas de besoin urgent ailleurs.
+
+## 8. Évolutions de design décidées (2026-11-02, à implémenter)
+
+Décisions prises après l'étude des ratios de 1750 (référence chiffrée dans `04`). Le code `sim/` et `app/` reflète encore la version précédente (1 tile = 1 terre, hameau textile).
+
+### 8.1 Tile fixe de 250 m
+Voir §1. Conséquence : le POC actuel (60–90 pops dans ~7 tiles de rayon) suppose des tiles de ~0,7–1 km ; à 250 m, le même village s'étale sur ~25 tiles de rayon et la limite de `distance_max` (10 tiles) devient le moteur d'extension.
+
+### 8.2 Une terre exploitée = un bâtiment de N tiles
+- Un champ, un pré, une forêt… est **un seul bâtiment actif** dont l'emprise est de N tiles contiguës. La production et le besoin en travail sont proportionnels à N (et à la fertilité de chaque tile).
+- Le défrichement **ajoute des tiles contiguës** à la terre (ou en crée une nouvelle).
+- Intérêt : réalisme spatial sans multiplier les nœuds (~1 nœud pour 5–6 tiles). Les parcelles contiguës ouvrent plus tard la voie aux enclosures et à la propriété (cadastre = ensemble de tiles).
+
+### 8.3 Le travail se compte en jours
+- Chaque terre a un **besoin en jours-travail par an** (jours/ha × 6,25 ha par tile). Ordre de grandeur 1750 : céréales ~250 jours-personne par tile et par an (voir `04`).
+- **Budget de jours par hameau** : capacité = pops × `jours_par_pop_an` (~12 500 = 50 travailleurs × 250 jours ; **exception à la règle de `00` §3**, à acter, voir `05`). Allocation par priorité : **vital** (nourriture, chauffage), puis confort, puis ce qui reste. Pas de « raisonnement » individuel des pops : un budget par hameau, déterministe.
+- **Étape 1 (POC-A)** : budget **annuel lissé**, sans saisons. Les jours non pris par les champs vont au **travail domestique** (§8.4).
+- **Étape 2 (plus tard)** : **profils mensuels** (moisson juillet-août ≈ ⅓ du travail des céréales en 4–6 semaines ; battage nov-fév ; labours et semis oct-nov et mars), c'est-à-dire les saisons (`05`).
+
+### 8.4 Suppression du hameau textile
+- En 1750, filage, tissage et couture sont des **travaux domestiques d'hiver** (proto-industrie). Le « hameau textile » et son poste d'atelier sont **supprimés** : il n'y a plus qu'un type de hameau (2 pops), qui transforme lin et laine avec ses jours libres.
+- Les recettes textiles (`04`) sont conservées ; leur coût passe en jours-pop (à recalibrer).
+- Intérêt historique : ces jours libres sont ce que le marchand-fabricant achètera en POC-B (putting-out), première filière où le capitalisme émerge.
+
+### 8.5 Pourquoi un hameau, pourquoi un centre
+- **Hameau** : on s'installe au plus près de la terre travaillée. Au-delà de ~2,5 km de marche (`distance_max`), la terre est trop loin : on bâtit un nouvel habitat (règle de §7, aucune règle supplémentaire).
+- **Polyculture** : en 1750, le hameau est polyculteur (assolement triennal, élevage, jardin, chanvre) ; chaque parcelle est mono-culture et le hameau est le client direct de ses parcelles. La **spécialisation régionale** (vigne, lin, herbages, céréales) apparaît avec le marché et le coût du transport (anneaux de Von Thünen) : elle **émerge en POC-B**, elle n'est pas codée.
+- **Centres (bourg, ville)** : ils naissent des besoins que le hameau ne produit pas (sel, fer et outils, meule, four, tuiles…) et du marché. Premier candidat POC-B : 1 ou 2 biens importés produits seulement au bourg.

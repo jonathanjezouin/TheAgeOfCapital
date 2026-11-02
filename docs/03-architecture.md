@@ -151,7 +151,7 @@ Ressources : `MAIN_OEUVRE` est une ressource ordinaire (stock dans le quartier, 
 
 | Objet | Cible | Mémoire estimée (SoA, ~64–128 o/objet) | Remarque |
 |---|---|---|---|
-| Tiles monde | ~4 M (2 000×2 000) | ~20–40 Mo | Passives, quelques octets chacune |
+| Tiles monde | ~4 M (2 000×2 000) | ~20–40 Mo | Passives, quelques octets chacune. **Attention** : avec la tile fixe de 250 m (`02` §1), 4 M de tiles = 500 × 500 km (~½ France) ; le monde habité en 1750 (~20 M km²) = quelques centaines de millions de tiles (voir `05`, question 0 : terre = 1 nœud pour N tiles, terrain inactif en raster passif) |
 | Bâtiments actifs | 300–500 k | ~50 Mo | En mémoire, tableaux denses |
 | Pops (1 pop = 100 hab) | 100–300 k (10–30 M d'habitants) | ~30 Mo | Flux agrégés par (résidence, emploi, strate) |
 | Personnages | 10–50 k | négligeable | Créés par des postes (voir `00`), règles légères, pas tous à chaque tick |
