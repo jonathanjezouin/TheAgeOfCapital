@@ -40,6 +40,7 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 - Poisson, coton, transformation du bois, nourriture industrielle
 - Autres terrains, infrastructures (route pavée, canal, rail, port), quartiers (artisan, bourgeois, urbain)
 - Niveaux technologiques > 0
+- **Matériaux de construction autres que le bois** (torchis, pierre, brique) : champ `materiau` nullable prévu (`02` §9.4)
 - **Densification du bâti** (maison, mitoyenne, petit immeuble, immeuble) et plafond de pops par type de bâtiment (`02` §9.4)
 - **Trame urbaine planifiée** (rues rectilignes, immeubles d'angle) et rendu des routes selon le niveau d'urbanisation
 - Coupure, bruit et échangeurs des voies majeures ; veto des habitants sur une traversée
@@ -65,6 +66,7 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 | Hôte Steam | **Electron + napi-rs** (Tauri écarté) ; wasm conservé pour démonstrations et tests visuels (`03` §1) |
 | Échelle visée | ~4 M tiles, 300–500 k bâtiments, 100–300 k pops, 10–50 k personnages (`03` §5), à valider par banc d'essai ; **réviser** avec la tile fixe de 250 m (question 0) |
 | Pont | Tableaux typés par viewport + drapeaux « sale » par chunk, pas de JSON du monde (`03` §5b) |
+| Représentation du bâti | Une maison par pop (100 hab.), sprite exagéré, orienté vers l'arête ; bois seul comme matériau (`02` §9.4, `03` §6) |
 | Réseau | Arêtes à 8 directions, coûts entiers 10/14, Dijkstra borné ; rendu en courbes, atlas de chemins abandonné (`02` §9, `03` §6) |
 | Persistance | SQLite hors tick ; sauvegarde = instantané binaire compressé |
 
@@ -95,6 +97,7 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 19. **Traversée d'un village** : coût seul par défaut ; veto des habitants plus tard (politique).
 20. **Croisement de diagonales** dans un carré 2×2 : interdit ou jonction.
 21. **Rues rectilignes en ville** : décalage organique du rendu décroissant avec l'urbanisation, trame planifiée et immeubles d'angle (`02` §9.4).
+22. **Chantier d'une maison** (1 pop) au lieu d'un chantier de hameau (2 pops) : valeur de départ dérivée de l'existant (300 pop-jours et 200 bois pour 2 pops, soit ~150 pop-jours et ~100 bois par maison) ; à calibrer à l'alignement du POC. Les pops en attente de logement font bâtir une maison, plus un hameau.
 
 ## Incohérences relevées dans les échanges de design (à trancher)
 

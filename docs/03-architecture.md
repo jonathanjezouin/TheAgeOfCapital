@@ -213,6 +213,13 @@ Le risque à cette échelle est **algorithmique** (un tick qui touche tout, une 
 - **Rendu** : une courbe lissée par chemin dans la couche 1, passant par les centres de tiles avec un décalage déterministe (décroissant avec l'urbanisation), tracée par chunk et mise en cache. **L'atlas de chemins par masque (`infra_chemin_terre_*`, 15 variantes) est abandonné pour le réseau** ; le hameau et le chantier gardent leur placette. La lumière (jour/nuit) est une teinte appliquée en rendu, pas précalculée.
 - Référence visuelle : `docs/maquettes/routes-250m.html`.
 
+### Habitations : une maison par pop (décision du 2026-11-02)
+- **Une maison = une pop** (100 hab.) : la tile d'habitat affiche autant de sprites que de pops (1 à 10 pour le bâti bas ; au-delà, le type de bâtiment change, `02` §9.4).
+- **Taille exagérée** : environ 1/6 de la largeur d'une tile (une maison réelle fait 9 m sur 250 m), comme la largeur des routes. À fixer à la validation visuelle.
+- **Placement** : le long de l'arête qui dessert la tile, avec un décalage déterministe (hash de la position et de la graine). **Orientation** : face à l'arête, par rotation continue du sprite.
+- Un sprite orienté librement impose des sprites **éclairés au zénith, sans ombre portée** (déjà le cas) ; le ré-éclairage par shader reste reporté (`05`).
+- **Chantier** : un sprite de maison en construction par maison en cours (un seul chantier de maison à la fois par pop à loger).
+
 ### Sprites d'ambiance
 Sprites stochastiques (piétons, charrettes, plus tard locomotives) le long des arêtes, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
 

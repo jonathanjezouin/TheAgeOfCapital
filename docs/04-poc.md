@@ -54,6 +54,15 @@ Une **économie de subsistance** : un village isolé de **1750**, simulé de fa�
 
 49 tiles, générées par `graphGeneration/` (voir `03` §7) ; aperçu : `docs/img/atlas-assets.png` et `docs/img/apercu-village-assets.png`. Un état d'avancement du chantier (fondations, charpente…) reste à prévoir.
 
+**À faire à l'alignement du POC** (le générateur `graphGeneration/` produit encore l'ancien atlas de 49 tiles) :
+
+| Action | Assets |
+|---|---|
+| **Retirer** | `infra_chemin_terre` (15 masques, remplacés par le rendu en courbes), `bat_hameau` (3), `bat_hameau_textile` (2), `bat_chantier_hameau` (2) |
+| **Ajouter** | `bat_maison_bois` (~6 variantes, vue de dessus, soleil au zénith, pans de bois et toit de chaume, orientables par rotation) ; `bat_chantier_maison` (2 à 3 états : ossature, charpente) ; une texture de chemin pour le rendu des routes |
+| **Adapter** | les terres (`bat_champ`, `bat_paturage`, `bat_verger`, `bat_foret_exploitee`, `bat_champ_lin`, `bat_elevage_laine`, `bat_chantier_champ`) en **textures raccordables** pour des emprises de N tiles contiguës (comme l'herbe), avec bords de parcelle seulement en limite d'emprise |
+| **Convention** | une maison par pop, sprite exagéré à ~1/6 de tile (`03` §6) ; matériau : bois seul |
+
 Reportés : `bat_filature`, `bat_atelier_couture` (manufacture), `bat_quartier_rural` (village de 2–4 tiles, à redéfinir avec la tile de 250 m). `bat_hameau_textile` disparaît dans la cible (`02` §8.4).
 
 ## Référence 1750 (décision de design, à implémenter)
