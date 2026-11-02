@@ -8,6 +8,7 @@ export const RESSOURCES = {
 export const TYPES = {
   champ: 'Champ de céréales', paturage: 'Pâturage', verger: 'Verger', foret_exploitee: 'Forêt exploitée',
   champ_lin: 'Champ de lin', elevage_laine: 'Élevage de moutons', atelier_textile: 'Atelier textile',
+  atelier_domestique: 'Atelier domestique',
   chantier: 'Chantier',
 }
 
@@ -26,14 +27,14 @@ export function dateJeu(jour) {
 }
 
 const MOTS = {
-  hameau_textile: 'hameau textile', elevage_laine: 'élevage de moutons', foret_exploitee: 'forêt exploitée',
+  hameau_textile: 'hameau textile', atelier_domestique: 'atelier domestique', elevage_laine: 'élevage de moutons', foret_exploitee: 'forêt exploitée',
   champ_lin: 'champ de lin', atelier_textile: 'atelier textile', paturage: 'pâturage', vetements: 'vêtements',
 }
 
 /** Rend lisible un texte du journal : identifiants techniques -> français, accords au singulier. */
 export function traduire(texte) {
   return texte
-    .replace(/\b(hameau_textile|elevage_laine|foret_exploitee|champ_lin|atelier_textile|paturage|vetements)\b/g, (m) => MOTS[m])
+    .replace(/\b(hameau_textile|atelier_domestique|elevage_laine|foret_exploitee|champ_lin|atelier_textile|paturage|vetements)\b/g, (m) => MOTS[m])
     .replace(/\b1 pops attendent\b/, '1 pop attend')
     .replace(/\b1 pops\b/g, '1 pop')
 }

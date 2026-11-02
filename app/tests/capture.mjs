@@ -60,7 +60,7 @@ await attendre(400)
 await photo('1_depart.png')
 
 // Un hameau, une terre : on les sélectionne.
-const hameau = await trouver('e.hameaux.find(h => h.habitat === "hameau_textile")')
+const hameau = await trouver('e.hameaux.find(h => h.habitat === "hameau")')
 await cliquer(hameau.x, hameau.y)
 await photo('2_selection_hameau.png')
 const champ = await trouver('e.lieux.find(l => l.type_nom === "champ")')

@@ -143,7 +143,7 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
 
       <!-- Chantier -->
       <div v-else-if="entite.genre === 'chantier'">
-        <h2>Chantier : {{ entite.chantier.cible === 'hameau' ? `bâtir un ${HABITATS[entite.chantier.type_nom].toLowerCase()}` : `défricher — ${(TYPES[entite.chantier.type_nom] ?? entite.chantier.type_nom).toLowerCase()}` }}</h2>
+        <h2>Chantier : {{ entite.chantier.cible === 'maison' ? `une maison de plus (${HABITATS[entite.chantier.type_nom].toLowerCase()})` : entite.chantier.cible === 'hameau' ? `bâtir un ${HABITATS[entite.chantier.type_nom].toLowerCase()}` : `défricher — ${(TYPES[entite.chantier.type_nom] ?? entite.chantier.type_nom).toLowerCase()}` }}</h2>
         <div class="ligne"><span>Avancement</span><span>{{ pct(entite.chantier.avancement) }}</span></div>
         <div class="barre"><i :style="{ width: entite.chantier.avancement * 100 + '%', background: 'var(--accent)' }"></i></div>
         <div class="ligne"><span>Équipe présente</span><span>{{ entite.chantier.presents }} / {{ entite.chantier.equipe }} pops</span></div>
