@@ -1028,3 +1028,42 @@ fn les_terres_restent_d_un_seul_tenant_en_s_agrandissant() {
         assert!(bat.emprise.len() <= s.cat.batiments[bat.type_id].emprise_max as usize);
     }
 }
+
+#[test]
+fn un_hameau_interroge_tous_les_fournisseurs_de_son_rayon() {
+    // Les fournisseurs les plus proches sont à sec : le grain vient d'un fournisseur plus lointain du rayon.
+    let mut s = village(4);
+    s.avancer(365 * 80);
+    let g = s.cat.res_id("grain").unwrap();
+    let nq = s.monde.quartiers.len();
+    let producteurs: Vec<usize> = (0..s.monde.batiments.len())
+        .filter(|&b| s.cat.batiments[s.monde.batiments[b].type_id].livre(g))
+        .collect();
+    // Un hameau avec au moins 4 producteurs de grain à portée.
+    let (q, tries) = (0..nq)
+        .find_map(|q| {
+            let mut v: Vec<(i64, usize)> = producteurs
+                .iter()
+                .filter_map(|&b| s.reseau.chemin(q, nq + b).map(|c| (c.cout, b)))
+                .collect();
+            v.sort();
+            (v.len() >= 4 && s.pops.iter().any(|p| p.residence == q)).then_some((q, v))
+        })
+        .expect("un hameau entouré d'au moins 4 champs");
+    let loin = tries.last().unwrap().1;
+    for &b in &producteurs {
+        s.monde.batiments[b].stock_sortie[g] = if b == loin { 5_000_000 } else { 0 };
+    }
+    for p in s.pops.iter_mut().filter(|p| p.residence == q) {
+        p.stock[g] = 0;
+    }
+    s.jour_suivant();
+    let recu: i64 = s
+        .stats
+        .flux
+        .iter()
+        .filter(|f| f.ressource == g && f.vers == q && f.de == nq + loin)
+        .map(|f| f.qte)
+        .sum();
+    assert!(recu > 0, "le fournisseur le plus lointain du rayon n'a rien livré au hameau {q}");
+}

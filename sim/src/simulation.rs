@@ -717,7 +717,9 @@ impl Simulation {
             .map(|b| b.stock_sortie.clone())
             .collect();
         let mut transferts: Vec<(usize, usize, usize, Qte)> = Vec::new(); // (fournisseur, client, res, qte)
-        for k in 0..self.cat.sim.nb_rondes {
+        // 0 = tous les fournisseurs du rayon d'approvisionnement (`distance_max`), du plus proche au plus loin.
+        let rondes = if self.cat.sim.nb_rondes == 0 { usize::MAX } else { self.cat.sim.nb_rondes };
+        for k in 0..rondes {
             let mut groupes: BTreeMap<(usize, usize), Vec<usize>> = BTreeMap::new();
             for (i, d) in demandes.iter().enumerate() {
                 if d.reste <= 0 {

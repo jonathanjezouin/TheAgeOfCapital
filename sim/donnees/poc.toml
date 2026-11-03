@@ -9,7 +9,7 @@ jours_par_an = 365
 jours_stock_sortie = 10.0          # plafond du stock d'extrant d'un bâtiment (jours de production)
 jours_stock_entree = 5.0           # plafond du stock d'intrants (jours de besoin)
 jours_stock_quartier = 10.0        # cible de stock d'un hameau (jours de consommation)
-nb_rondes_appel_offres = 3
+nb_rondes_appel_offres = 0           # 0 = un client interroge tous les fournisseurs à portée (distance_max) ; n > 0 : les n plus proches
 stock_initial_quartier_jours = 5.0
 stock_initial_entree_jours = 3.0
 stock_initial_sortie_jours = 2.0
