@@ -129,6 +129,7 @@ Sans poste : il prend le **temps libre du hameau**. 1 pop-jour par jour de trava
 | Couture | 6 tissu | 4 vêtements |
 
 ### Fertilité, distance et extension
+- Cible (aptitude sol/culture, fertilité dynamique) : voir `06`. Extension compacte et terroir : `02` §10.2.
 - **Fertilité** d'une tile : bruit lissé (cellule de ~6 km) entre 0,85 et 1,3, qui s'effondre autour du centre du village (pleine jusqu'à 12 tiles, puis déclin linéaire jusqu'à 0,15 à 28 tiles). La fertilité d'une terre est la moyenne de son emprise.
 - **Distance maximale** : 100 (10 tiles-équivalents, 2,5 km) entre deux lieux (travail, approvisionnement). À calibrer.
 - **Extension** : une terre naît à 4 tiles contiguës et s'agrandit par blocs de 4 jusqu'à son emprise maximale ; au-delà on en fonde une autre. Une maison s'ajoute à un hameau jusqu'à 4 ; hameau plein, ou plus de terre à portée, un hameau neuf se fonde en périphérie du réseau (route neuve de 8 tiles au plus) et des pops sans poste s'y installent. Coûts : `02` §7.
@@ -210,9 +211,23 @@ Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregist
 | Temps | Jour/nuit par teinte globale ; une pop = un sprite, au travail le jour, au logement la nuit |
 | Debug | Choc de récolte (« mauvaise récolte »), modifier un paramètre en direct |
 
-## Prochaine étape du POC (décidée le 2026-11-03)
+## Prochaine étape du POC (révisée le 2026-11-03)
 
-**Jour/nuit et saisons**, ensemble, parce qu'ils se servent mutuellement :
+La production reste **continue, sans saisons** dans le POC. Ordre de travail décidé (détail : `02` §10) :
+
+| # | Chantier | Référence |
+|---|---|---|
+| 1 | Traversabilité par type (terres et chantiers non traversables), tile nœud d'accès en bordure, pathfinding | `02` §10.1 |
+| 2 | Extension compacte des terres (score fertilité, périmètre, distance) et terroir par hameau | `02` §10.2 |
+| 3 | **Une pop = un lieu de travail par jour**, avec motif ; puis stock personnel par pop | `02` §10.4 |
+| 4 | Inspecteur de pop et vue « par ressource » (qui travaille où, produit, stocké, consommé) | `02` §10.5 |
+| 5 | Animation des pops sur leur chemin réel, jour/nuit, ombres (non prioritaire) | `02` §10.6 |
+| 6 | Économies d'échelle de l'emprise, après le 2 | `02` §10.3 |
+
+Fertilité : une seule valeur par tile dans le POC ; la cible (aptitude sol/culture) est notée dans `06`.
+
+### Rappel : jour/nuit, ombres et saisons (idée antérieure, saisons reportées)
+Les saisons de la simulation sont reportées hors POC pour l'instant ; le jour/nuit et les ombres restent des idées de rendu :
 
 | Sujet | Contenu |
 |---|---|
@@ -220,6 +235,6 @@ Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregist
 | **Jour/nuit** | Cycle visible et lisible : les pops rentrent le soir et partent le matin, teinte de la lumière selon l'heure |
 | **Visuels associés** | **Ombres portées** et lumière en rotation : shader de ré-éclairage à partir de l'albedo et des normales (déjà générés pour les maisons, `03` §7), ombres des maisons, des arbres et des clôtures qui tournent avec le soleil ; ambiance des saisons (couleur des champs, neige, feuillage) |
 
-Jusqu'ici les assets sont éclairés au zénith, sans ombre, et la production est continue : les pops restent donc des mois sur la même terre (ce qui est voulu, voir `02` §8.3). Les saisons donnent des raisons de bouger, le jour/nuit un rythme à l'écran.
+Jusqu'ici les assets sont éclairés au zénith, sans ombre, et la production est continue. Avec un lieu de travail par jour (`02` §10.4), les pops changent de lieu selon leurs besoins sans saisons ; les saisons s'y ajouteront plus tard.
 
 Reste ensuite : **déclin et abandon** des lieux, **plusieurs groupes de hameaux** (`05`, question 23), puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.

@@ -10,9 +10,9 @@
 
 Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 
-## Prochaine étape du POC : jour/nuit, ombres et saisons
+## Prochaine étape du POC (révisée le 2026-11-03)
 
-Décidée le 2026-11-03 (détail dans `04`). Elle reprend les trois premiers sujets des listes ci-dessous : **saisons** (profils mensuels du travail, stocks annuels, aléa de récolte), **lumière en rotation** et ombres portées (shader de ré-éclairage), **cycle jour/nuit** lisible à l'écran.
+Ordre décidé dans `04` (détail `02` §10) : traversabilité et tile nœud, extension compacte, une pop = un lieu de travail par jour, inspecteur de pop et vue par ressource, puis animation. Les **saisons** (profils mensuels du travail, stocks annuels, aléa de récolte) restent **reportées** : production continue dans le POC. Jour/nuit et ombres portées : rendu seul, non prioritaire. Fertilité cible : `06`.
 
 ## Explicitement reporté après le POC
 
@@ -88,7 +88,7 @@ Décidée le 2026-11-03 (détail dans `04`). Elle reprend les trois premiers suj
 7. **Calibration démographique et des besoins** : seuils vitaux, capacité du hameau (1 ou 2 pops), `mortalite_famine`, taille de village de départ (voir `02` §6 et `04`).
 8. **Monnaie** (POC-B) : salaires, budget des pops, formation des prix ; articulation avec la consommation directe du POC-A.
 6. **Monde extérieur** : abstraction type marché mondial vs simulation multi-niveaux.
-9. **Jours de travail par pop** : `[travail] jours_personne_par_pop_an = 12 500` (50 travailleurs × 250 jours) est dans `poc.toml` et dans le moteur, ce qui **déroge à la règle de `00` §3** (« le 50 % de travailleurs n'apparaît pas dans les formules »). Dérogation assumée, à acter dans `00`.
+9. **Jours de travail par pop** : `[travail] jours_personne_par_pop_an = 12 500` (50 travailleurs × 250 jours) est dans `poc.toml` et dans le moteur, ce qui **déroge à la règle de `00` §3** (« le 50 % de travailleurs n'apparaît pas dans les formules »). Dérogation assumée, à acter dans `00`. Avec « un lieu par pop et par jour » (`02` §10.4), cette valeur ne sert plus qu'à convertir le besoin d'un lieu en pop-jours : à recalibrer.
 10. **Moteur de travail** : étape 1 faite (budget lissé, priorité aux terres en tension, temps libre au textile) ; reste les profils mensuels (étape 2), le coût en jours des recettes textiles, les jours par tile du verger, de la forêt et de l'élevage (à calibrer), et des priorités plus fines (vital > confort).
 11. **Spécialisation régionale** (anneaux de Von Thünen, vigne, lin, herbages) : émergence en POC-B avec prix et transport ; premier bien importé (sel, fer, outils) à choisir pour faire naître le bourg.
 12. **Dispersion de l'habitat** : fermes isolées (bocage) vs villages groupés à champs ouverts ; paramètre du générateur.
@@ -103,6 +103,13 @@ Décidée le 2026-11-03 (détail dans `04`). Elle reprend les trois premiers suj
 19. **Traversée d'un village** : coût seul par défaut ; veto des habitants plus tard (politique).
 20. **Croisement de diagonales** dans un carré 2×2 : interdit ou jonction.
 21. **Rues rectilignes en ville** : décalage organique du rendu décroissant avec l'urbanisation, trame planifiée et immeubles d'angle (`02` §9.4).
+25. **Règle de partage des stocks entre pops** (`02` §10.4) : au prorata du manque dans le POC (équivalent à l'actuel) ; contribution au travail, salaire ou achat ensuite. À trancher avec la monnaie (question 8).
+26. **Choix du lieu de travail d'une pop** : pondération vital > confort > reste, rôle de la distance, départage entre pops, éviter les oscillations (toutes vers la même ressource le même jour) ; postes du jour par lieu.
+27. **Pop et stock** : inventaire personnel (ressources, plafond ?), devenir du stock de hameau, place du travail domestique (`02` §8.4) dans la décision quotidienne.
+28. **Score d'extension des terres** (`02` §10.2) : poids fertilité / voisins / distance, terroir par hameau (Voronoi sur le réseau), critère de forme dur en réserve.
+29. **Économies d'échelle** (`02` §10.3) : forme du gain (coûts fixes, compacité, seuil d'équipe), plafonds contre les champs géants, lien avec la fusion de terres par propriété.
+30. **Terre inaccessible ou enclavée** : une terre qu'aucune route ne peut desservir n'est pas défrichée ; que faire d'un enclavement créé après coup par une autre construction ?
+31. **Fertilité cible** : aptitude sol/culture, rivières, aire géographique de la carte (`06`).
 22. **Chantier d'une maison** (1 pop) au lieu d'un chantier de hameau (2 pops) : valeur de départ dérivée de l'existant (300 pop-jours et 200 bois pour 2 pops, soit ~150 pop-jours et ~100 bois par maison) ; à calibrer à l'alignement du POC. Les pops en attente de logement font bâtir une maison, plus un hameau.
 
 ## Incohérences relevées dans les échanges de design (à trancher)
@@ -116,4 +123,7 @@ Décidée le 2026-11-03 (détail dans `04`). Elle reprend les trois premiers suj
 | Décision économique | Firmes autonomes | Personnages qui dirigent les firmes | POC : firmes à règles simples (POC-B) + maire inactif ; personnages plus tard |
 | Emprise des bâtiments | Usage unique par tile | « Bâtiments sur plusieurs tiles » (vision) ; hameau textile = habitat + atelier | **Tranché le 2026-11-02** : une terre exploitée = un bâtiment de N tiles contiguës ; hameau = 1 tile ; hameau textile supprimé (`02` §8) |
 | Infrastructure | Tiles de chemin (usage unique par tile), orthogonal seulement | Arêtes sur les tiles, 8 directions | **Tranché le 2026-11-02** : couche d'arêtes, coûts 10/14, emprise = largeur × longueur (`02` §9) |
+| Travail des pops | Budget de jours réparti entre les terres par hameau | Une pop = un seul lieu par jour, stock personnel | **Tranché le 2026-11-03** (`02` §10.4) ; le budget de jours reste pour dimensionner le besoin des lieux |
+| Routes et terres | Une route peut traverser des tiles occupées | Terres et chantiers non traversables, raccordement par la tile nœud | **Tranché le 2026-11-03** (`02` §10.1) ; routes sur bords de tiles écartées pour le POC |
+| Saisons | Prochaine étape du POC (matin du 2026-11-03) | Reportées, production continue | **Tranché le 2026-11-03** : reportées hors POC |
 | Taille de tile | 50–200 m², puis ~1 km², puis unité comptable à surface variable | Surface réelle fixe | **Tranché le 2026-11-02** : 250 m × 250 m = 6,25 ha (`02` §1) |
