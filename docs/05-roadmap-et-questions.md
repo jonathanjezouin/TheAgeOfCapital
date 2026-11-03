@@ -10,6 +10,10 @@
 
 Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 
+## Prochaine étape du POC : jour/nuit, ombres et saisons
+
+Décidée le 2026-11-03 (détail dans `04`). Elle reprend les trois premiers sujets des listes ci-dessous : **saisons** (profils mensuels du travail, stocks annuels, aléa de récolte), **lumière en rotation** et ombres portées (shader de ré-éclairage), **cycle jour/nuit** lisible à l'écran.
+
 ## Explicitement reporté après le POC
 
 - **Passage à l'échelle** (centaines de milliers de bâtiments / pops, rendu sur la seule zone caméra) : principes retenus dans `03` §5b ; **banc d'essai reporté** (moteur : 500 k bâtiments + 200 k pops synthétiques, structures denses vs existant, mono-thread vs Rayon ; rendu : carte 2 000×2 000 avec chunks, culling et niveaux de détail, captures Chromium + FPS). À lancer quand le design sera prêt

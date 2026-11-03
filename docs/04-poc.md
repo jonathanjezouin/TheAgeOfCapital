@@ -210,6 +210,16 @@ Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregist
 | Temps | Jour/nuit par teinte globale ; une pop = un sprite, au travail le jour, au logement la nuit |
 | Debug | Choc de récolte (« mauvaise récolte »), modifier un paramètre en direct |
 
-## Prochaine étape de design identifiée
+## Prochaine étape du POC (décidée le 2026-11-03)
 
-**Représentation visuelle** : voir le village vivre (carte, vitesse de simulation, informations par tile). Le **déclin et l'abandon** des lieux, les **saisons**, l'**aléa de récolte** et les autres fonctionnalités écartées sont consignés dans `05` (« Fonctionnalités écartées du POC-A ») et seront repris plus tard. Puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.
+**Jour/nuit et saisons**, ensemble, parce qu'ils se servent mutuellement :
+
+| Sujet | Contenu |
+|---|---|
+| **Saisons** | Profils mensuels du travail (`02` §8.3, étape 2) : labours et semis en octobre-novembre et mars, moisson en juillet-août (~⅓ du travail des céréales en 4 à 6 semaines), battage de novembre à février, textile domestique l'hiver. Les pops se déplacent d'une terre à l'autre au fil de l'année. Stocks annuels (greniers), soudure, aléa de récolte (`05`) |
+| **Jour/nuit** | Cycle visible et lisible : les pops rentrent le soir et partent le matin, teinte de la lumière selon l'heure |
+| **Visuels associés** | **Ombres portées** et lumière en rotation : shader de ré-éclairage à partir de l'albedo et des normales (déjà générés pour les maisons, `03` §7), ombres des maisons, des arbres et des clôtures qui tournent avec le soleil ; ambiance des saisons (couleur des champs, neige, feuillage) |
+
+Jusqu'ici les assets sont éclairés au zénith, sans ombre, et la production est continue : les pops restent donc des mois sur la même terre (ce qui est voulu, voir `02` §8.3). Les saisons donnent des raisons de bouger, le jour/nuit un rythme à l'écran.
+
+Reste ensuite : **déclin et abandon** des lieux, **plusieurs groupes de hameaux** (`05`, question 23), puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.
