@@ -94,6 +94,25 @@ struct BrutExtension {
     chantiers_max: usize,
     materiau: String,
     tuiles_par_defrichement: u32,
+    /// Score d'extension d'une terre (docs/02 §10.2) : poids par voisin déjà dans l'emprise.
+    #[serde(default = "poids_voisins_defaut")]
+    poids_voisins: f64,
+    /// Poids par tile de distance au hameau demandeur.
+    #[serde(default = "poids_distance_defaut")]
+    poids_distance: f64,
+    /// Pénalité d'une tile hors du terroir de la terre.
+    #[serde(default = "penalite_terroir_defaut")]
+    penalite_terroir: f64,
+}
+
+fn poids_voisins_defaut() -> f64 {
+    0.15
+}
+fn poids_distance_defaut() -> f64 {
+    0.01
+}
+fn penalite_terroir_defaut() -> f64 {
+    0.30
 }
 
 #[derive(Deserialize)]
@@ -261,6 +280,13 @@ pub struct ParamsExtension {
     pub materiau: usize,
     /// Tiles défrichées d'un coup : taille d'une terre à sa fondation et d'une extension.
     pub tuiles_par_defrichement: u32,
+    /// Score d'extension (docs/02 §10.2), en ppm de fertilité : bonus par voisin (4-voisinage) déjà
+    /// dans l'emprise, c'est-à-dire un périmètre plus court.
+    pub poids_voisins_ppm: i64,
+    /// Malus par tile de distance au hameau demandeur (trajet de travail).
+    pub poids_distance_ppm: i64,
+    /// Malus d'une tile hors du terroir de la terre (hameau le plus proche différent).
+    pub penalite_terroir_ppm: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -530,6 +556,9 @@ impl Catalogue {
                 chantiers_max: b.extension.chantiers_max,
                 materiau: id(&b.extension.materiau)?,
                 tuiles_par_defrichement: b.extension.tuiles_par_defrichement,
+                poids_voisins_ppm: (b.extension.poids_voisins * PPM as f64).round() as i64,
+                poids_distance_ppm: (b.extension.poids_distance * PPM as f64).round() as i64,
+                penalite_terroir_ppm: (b.extension.penalite_terroir * PPM as f64).round() as i64,
             },
             habitats,
             travail: ParamsTravail {

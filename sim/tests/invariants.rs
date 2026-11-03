@@ -365,6 +365,61 @@ fn verifier_routes_hors_des_terres(s: &Simulation) {
     }
 }
 
+/// Compacité moyenne des terres de 8 tiles ou plus : périmètre ÷ périmètre du carré de même aire
+/// (1,0 = carré parfait ; un serpent est bien au-dessus).
+fn irregularite_moyenne(s: &Simulation) -> Option<f64> {
+    let mut rapports = Vec::new();
+    for bat in &s.monde.batiments {
+        let n = bat.emprise.len();
+        if bat.chantier.is_some() || n < 8 {
+            continue;
+        }
+        let perimetre: usize = bat
+            .emprise
+            .iter()
+            .map(|&t| {
+                [0usize, 2, 4, 6]
+                    .iter()
+                    .filter(|&&d| s.monde.voisin(t, d).map_or(true, |v| !bat.emprise.contains(&v)))
+                    .count()
+            })
+            .sum();
+        rapports.push(perimetre as f64 / (4.0 * (n as f64).sqrt()));
+    }
+    if rapports.is_empty() {
+        None
+    } else {
+        Some(rapports.iter().sum::<f64>() / rapports.len() as f64)
+    }
+}
+
+#[test]
+fn le_score_d_extension_rend_les_terres_plus_compactes() {
+    let mesure = |compact: bool| {
+        let (mut somme, mut nb) = (0.0, 0);
+        for graine in 1..=6u64 {
+            let mut s = village(graine);
+            if !compact {
+                // Ancien comportement : la fertilité seule décide.
+                s.cat.extension.poids_voisins_ppm = 0;
+                s.cat.extension.poids_distance_ppm = 0;
+                s.cat.extension.penalite_terroir_ppm = 0;
+            }
+            s.avancer(365 * 150);
+            if let Some(r) = irregularite_moyenne(&s) {
+                somme += r;
+                nb += 1;
+            }
+        }
+        assert!(nb > 0, "aucune terre de 8 tiles");
+        somme / nb as f64
+    };
+    let (compact, libre) = (mesure(true), mesure(false));
+    println!("irrégularité moyenne : score {compact:.3}, fertilité seule {libre:.3}");
+    assert!(compact < libre, "{compact} >= {libre}");
+    assert!(compact < 1.35, "terres trop irrégulières : {compact}");
+}
+
 #[test]
 fn les_routes_contournent_les_terres() {
     for graine in [1u64, 2, 3] {

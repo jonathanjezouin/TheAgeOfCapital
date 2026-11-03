@@ -106,7 +106,7 @@ Ordre décidé dans `04` (détail `02` §10) : traversabilité et tile nœud, ex
 25. **Règle de partage des stocks entre pops** (`02` §10.4) : au prorata du manque dans le POC (équivalent à l'actuel) ; contribution au travail, salaire ou achat ensuite. À trancher avec la monnaie (question 8).
 26. **Choix du lieu de travail d'une pop** : pondération vital > confort > reste, rôle de la distance, départage entre pops, éviter les oscillations (toutes vers la même ressource le même jour) ; postes du jour par lieu.
 27. **Pop et stock** : inventaire personnel (ressources, plafond ?), devenir du stock de hameau, place du travail domestique (`02` §8.4) dans la décision quotidienne.
-28. **Score d'extension des terres** (`02` §10.2) : poids fertilité / voisins / distance, terroir par hameau (Voronoi sur le réseau), critère de forme dur en réserve.
+28. **Score d'extension des terres** (`02` §10.2) : fait avec des poids de départ (0,25 / 0,01 / 0,30) ; restent le terroir sur le réseau plutôt qu'à vol d'oiseau, son usage dans le choix du site d'une terre neuve, le critère de forme dur en réserve, et le réglage des poids sur plusieurs terroirs.
 29. **Économies d'échelle** (`02` §10.3) : forme du gain (coûts fixes, compacité, seuil d'équipe), plafonds contre les champs géants, lien avec la fusion de terres par propriété.
 30. **Terre inaccessible ou enclavée** : une terre qu'aucune route ne peut desservir n'est pas défrichée ; que faire d'un enclavement créé après coup par une autre construction ?
 31. **Fertilité cible** : aptitude sol/culture, rivières, aire géographique de la carte (`06`).

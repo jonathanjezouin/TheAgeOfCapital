@@ -1448,14 +1448,20 @@ impl Simulation {
 
     /// Choisit jusqu'à `k` tiles libres contiguës (voisines par un côté) à `base`, de proche en proche,
     /// les plus fertiles d'abord. Une tile libre est vide et traversée par aucune arête.
-    fn agrandir(&self, base: &[usize], k: usize) -> Vec<usize> {
+    ///
+    /// Score de chaque candidate (docs/02 §10.2, poids dans `[extension]`) : fertilité, plus un bonus par
+    /// voisin déjà dans l'emprise (périmètre court : clôtures, trajets), moins la distance au hameau
+    /// demandeur, moins une pénalité hors du terroir de la terre (hameau le plus proche différent).
+    fn agrandir(&self, base: &[usize], k: usize, hameau: Option<usize>) -> Vec<usize> {
         let libre = |t: usize| {
             self.monde.tuiles[t].contenu == Contenu::Vide && self.monde.tuiles[t].aretes == 0
         };
+        let ext = &self.cat.extension;
+        let terroir_terre = base.first().and_then(|&t| self.terroir(t));
         let mut occupees: Vec<usize> = base.to_vec();
         let mut choisies: Vec<usize> = Vec::new();
         while choisies.len() < k {
-            let mut meilleure: Option<((i64, usize), usize)> = None;
+            let mut meilleure: Option<((i64, std::cmp::Reverse<usize>), usize)> = None;
             for &t in &occupees {
                 for d in [0usize, 2, 4, 6] {
                     let Some(v) = self.monde.voisin(t, d) else {
@@ -1464,8 +1470,22 @@ impl Simulation {
                     if !libre(v) || occupees.contains(&v) {
                         continue;
                     }
-                    let cle = (-self.monde.tuiles[v].fertilite_ppm, v);
-                    if meilleure.map_or(true, |(c, _)| cle < c) {
+                    let voisins = [0usize, 2, 4, 6]
+                        .iter()
+                        .filter_map(|&e| self.monde.voisin(v, e))
+                        .filter(|w| occupees.contains(w))
+                        .count() as i64;
+                    let mut score =
+                        self.monde.tuiles[v].fertilite_ppm + voisins * ext.poids_voisins_ppm;
+                    if let Some(h) = hameau {
+                        score -= self.distance_tiles(v, self.monde.quartiers[h].tuile)
+                            * ext.poids_distance_ppm;
+                    }
+                    if terroir_terre.is_some() && self.terroir(v) != terroir_terre {
+                        score -= ext.penalite_terroir_ppm;
+                    }
+                    let cle = (score, std::cmp::Reverse(v));
+                    if meilleure.map_or(true, |(c, _)| cle > c) {
                         meilleure = Some((cle, v));
                     }
                 }
@@ -1475,6 +1495,19 @@ impl Simulation {
             choisies.push(v);
         }
         choisies
+    }
+
+    /// Distance entre deux tiles en tiles (octile : max + min / 2).
+    fn distance_tiles(&self, a: usize, b: usize) -> i64 {
+        let ((ax, ay), (bx, by)) = (self.monde.xy(a), self.monde.xy(b));
+        let (dx, dy) = ((ax as i64 - bx as i64).abs(), (ay as i64 - by as i64).abs());
+        dx.max(dy) + dx.min(dy) / 2
+    }
+
+    /// Terroir d'une tile : le hameau le plus proche (distance à vol d'oiseau ; égalité : le premier).
+    fn terroir(&self, t: usize) -> Option<usize> {
+        (0..self.monde.quartiers.len())
+            .min_by_key(|&q| (self.distance_tiles(t, self.monde.quartiers[q].tuile), q))
     }
 
     /// Réutilise le site de chantier inerte posé sur `tuile`, ou en crée un.
@@ -1530,7 +1563,7 @@ impl Simulation {
             let Some(ch) = self.reseau.chemin(centre, nq + b) else {
                 continue;
             };
-            let voisines = self.agrandir(&bat.emprise, 1);
+            let voisines = self.agrandir(&bat.emprise, 1, Some(centre));
             let Some(&v) = voisines.first() else {
                 continue;
             };
@@ -1547,13 +1580,13 @@ impl Simulation {
     }
 
     /// Agrandit la terre `b` de quelques tiles contiguës (`tuiles_par_defrichement`).
-    fn lancer_extension(&mut self, _centre: usize, b: usize, motif: &str) -> bool {
+    fn lancer_extension(&mut self, centre: usize, b: usize, motif: &str) -> bool {
         let nq = self.nq();
         let type_id = self.monde.batiments[b].type_id;
         let max = self.cat.batiments[type_id].emprise_max as usize;
         let k = (self.cat.extension.tuiles_par_defrichement as usize)
             .min(max.saturating_sub(self.monde.batiments[b].emprise.len()));
-        let nouvelles = self.agrandir(&self.monde.batiments[b].emprise, k);
+        let nouvelles = self.agrandir(&self.monde.batiments[b].emprise, k, Some(centre));
         if nouvelles.is_empty() {
             return false;
         }
@@ -1601,7 +1634,7 @@ impl Simulation {
         let Some(site) = self.meilleur_site(centre, true, &requis) else {
             return false;
         };
-        let reste = self.agrandir(&[site.tuile], k.saturating_sub(1));
+        let reste = self.agrandir(&[site.tuile], k.saturating_sub(1), Some(centre));
         let mut emprise = vec![site.tuile];
         emprise.extend(reste);
         let Some(cout) = self.cout_defrichement(type_id, emprise.len()) else {

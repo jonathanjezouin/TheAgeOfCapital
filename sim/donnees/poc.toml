@@ -69,6 +69,10 @@ periode_jours = 90
 chantiers_max = 2                  # chantiers simultanés
 materiau = "bois"
 tuiles_par_defrichement = 4        # tiles défrichées d'un coup : taille d'une terre fondée, ou d'une extension
+# Score d'extension d'une terre (docs/02 §10.2), en part de la fertilité : compacité sans forme codée.
+poids_voisins = 0.25               # bonus par voisin déjà dans l'emprise (4-voisinage) : périmètre court
+poids_distance = 0.01              # malus par tile de distance au hameau demandeur
+penalite_terroir = 0.30            # malus d'une tile hors du terroir (hameau le plus proche) de la terre
 
 # Besoins vitaux : sans eux, la population décline.
 [vital]
