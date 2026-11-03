@@ -49,6 +49,7 @@ cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
 # reste est le temps libre du hameau, que le textile domestique utilise (docs/02 §8.4).
 [travail]
 jours_personne_par_pop_an = 12500.0
+seuil_deplacement = 0.5            # pop-jours qu'une terre doit réclamer pour qu'une pop se déplace (docs/02 §10.4)
 
 [demographie]
 habitants_par_pop = 100

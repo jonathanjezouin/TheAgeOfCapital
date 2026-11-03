@@ -7,16 +7,124 @@ use crate::reseau::Reseau;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+/// Ce qui pousse une pop vers un lieu de travail (docs/02 §10.4), par ordre de priorité.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Classe {
+    /// Nourriture ou chauffage qui s'épuise.
+    Vital,
+    /// Viande, vêtements.
+    Confort,
+    /// Matière première dont un atelier manque pour vêtir le hameau.
+    Intrant,
+    /// Rien ne manque : la terre est entretenue pour garder ses stocks pleins.
+    Entretien,
+}
+
+/// Pourquoi la pop travaille là aujourd'hui (ou pourquoi elle reste chez elle).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Motif {
+    /// Pas encore de décision (pop née aujourd'hui).
+    Aucun,
+    /// Équipe d'un chantier : poste fixe.
+    Chantier,
+    /// Elle travaille pour une ressource qui lui manque.
+    Besoin {
+        ressource: usize,
+        classe: Classe,
+        /// Jours d'autonomie qui manquent pour atteindre la cible de stock, en milli-jours.
+        manque_milli_jours: i64,
+    },
+    /// Aucune terre ne réclame assez de travail à sa portée : elle reste chez elle (travail domestique).
+    Repos,
+}
+
 #[derive(Clone, Debug, Serialize)]
 pub struct Pop {
     pub id: u32,
     /// Index du hameau de résidence.
     pub residence: usize,
-    /// Index du bâtiment d'emploi (None = pop sans poste).
+    /// Lieu de travail d'aujourd'hui, un seul (None = chez elle). Équipe d'un chantier : poste fixe.
     pub emploi: Option<usize>,
     /// Jauge de croissance en micro-habitants : à +100 habitants la pop se duplique,
     /// à −100 elle disparaît. Alimentée chaque jour par la couverture des besoins.
     pub croissance: i64,
+    /// Inventaire personnel, par ressource (milli-unités) : la pop consomme sur son propre stock.
+    pub stock: Vec<Qte>,
+    pub motif: Motif,
+    /// Travail fourni aujourd'hui sur son lieu (milli pop-jours) et sa moyenne sur ~30 jours.
+    pub travail_milli: i64,
+    pub travail_lisse_milli: i64,
+    /// Besoins couverts lors du dernier jour (ppm), et ration reçue par ressource.
+    pub vital_jour_ppm: i64,
+    pub confort_jour_ppm: i64,
+    pub sat_par_ressource_ppm: Vec<i64>,
+    /// Quantités consommées lors du dernier jour, par ressource (milli-unités).
+    pub conso_jour: Vec<Qte>,
+}
+
+impl Pop {
+    pub fn nouvelle(id: u32, residence: usize, croissance: i64, nb_ressources: usize) -> Pop {
+        Pop {
+            id,
+            residence,
+            emploi: None,
+            croissance,
+            stock: vec![0; nb_ressources],
+            motif: Motif::Aucun,
+            travail_milli: 0,
+            travail_lisse_milli: 0,
+            vital_jour_ppm: PPM,
+            confort_jour_ppm: PPM,
+            sat_par_ressource_ppm: vec![PPM; nb_ressources],
+            conso_jour: vec![0; nb_ressources],
+        }
+    }
+}
+
+/// Une terre que la pop pourrait choisir, avec la raison de son rang (docs/02 §10.5).
+#[derive(Clone, Debug, Serialize)]
+pub struct Candidat {
+    pub lieu: usize,
+    /// Coût du trajet depuis son hameau (unités d'arête).
+    pub cout: i64,
+    pub ressource: usize,
+    pub classe: Classe,
+    pub manque_milli_jours: i64,
+    /// Travail que la terre réclame encore (milli pop-jours).
+    pub demande_milli: i64,
+}
+
+/// Jours d'autonomie d'une pop (milli-jours) : combien de temps son stock tient sans réapprovisionnement.
+#[derive(Clone, Debug, Serialize)]
+pub struct Autonomies {
+    pub nutrition: i64,
+    pub chauffage: i64,
+    /// Par ressource de ration (i64::MAX si la ressource n'est pas une ration).
+    pub par_ressource: Vec<i64>,
+}
+
+/// Partage `qte` au prorata de `poids` (somme exacte, plus grandes fractions d'abord).
+fn partager(qte: Qte, poids: &[Qte]) -> Vec<Qte> {
+    let total: Qte = poids.iter().sum();
+    if total <= 0 || qte <= 0 {
+        return vec![0; poids.len()];
+    }
+    let mut parts: Vec<Qte> = poids.iter().map(|&w| mul_div(qte, w, total)).collect();
+    let mut restes: Vec<(i128, usize)> = poids
+        .iter()
+        .enumerate()
+        .map(|(i, &w)| ((qte as i128 * w as i128) % total as i128, i))
+        .collect();
+    let mut reste = qte - parts.iter().sum::<Qte>();
+    restes.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    for (_, i) in restes {
+        if reste == 0 {
+            break;
+        }
+        parts[i] += 1;
+        reste -= 1;
+    }
+    parts
 }
 
 /// Marchandise partie du stock du fournisseur mais pas encore arrivée (congestion).
@@ -103,6 +211,8 @@ pub struct Simulation {
     fournisseurs: Vec<Vec<Vec<(i64, usize)>>>,
     /// Temps libre de chaque hameau aujourd'hui, en milli pop-jours (ce que les terres n'ont pas pris).
     pub libre_milli: Vec<i64>,
+    /// Temps libre de chaque hameau, moyenne mobile sur ~30 jours (milli pop-jours) : sert à compter les bras sans emploi.
+    pub libre_lisse_milli: Vec<i64>,
 }
 
 /// Résultat de l'évaluation des besoins d'un hameau sur une journée.
@@ -230,6 +340,7 @@ impl Simulation {
             evenements: Vec::new(),
             fournisseurs: Vec::new(),
             libre_milli: Vec::new(),
+            libre_lisse_milli: Vec::new(),
         };
         sim.calculer_fournisseurs();
         sim.bilan.initial = sim.stock_total();
@@ -299,11 +410,16 @@ impl Simulation {
 
     // ---------- Observation ----------
 
-    /// Stock total par ressource : hameaux + bâtiments + marchandises en transit.
+    /// Stock total par ressource : pops + réserves de hameau + bâtiments + marchandises en transit.
     pub fn stock_total(&self) -> Vec<Qte> {
         let mut t = vec![0; self.cat.ressources.len()];
         for q in &self.monde.quartiers {
             for (r, v) in q.stock.iter().enumerate() {
+                t[r] += v;
+            }
+        }
+        for p in &self.pops {
+            for (r, v) in p.stock.iter().enumerate() {
                 t[r] += v;
             }
         }
@@ -345,8 +461,55 @@ impl Simulation {
         self.pops.iter().filter(|p| p.residence == q).count()
     }
 
+    /// Bras sans emploi : temps libre moyen des hameaux (ce que les terres ne réclament pas), en pops entières.
+    /// Une pop compte comme sans poste quand plus de 90 % de son temps reste libre (docs/02 §10.4).
     pub fn sans_poste(&self) -> usize {
-        self.pops.iter().filter(|p| p.emploi.is_none()).count()
+        let eff = self.effectifs();
+        self.libre_lisse_milli
+            .iter()
+            .enumerate()
+            .map(|(q, &l)| (((l + 100) / 1000).max(0) as usize).min(eff.get(q).copied().unwrap_or(0) as usize))
+            .sum()
+    }
+
+    /// Stock d'une ressource dans un hameau : pops qui y vivent + réserve commune.
+    pub fn stock_hameau(&self, q: usize, res: usize) -> Qte {
+        self.monde.quartiers[q].stock[res]
+            + self.pops.iter().filter(|p| p.residence == q).map(|p| p.stock[res]).sum::<Qte>()
+    }
+
+    /// Verse `qte` aux pops du hameau `q`, au prorata de ce qui leur manque pour atteindre leur cible de
+    /// stock (à parts égales si rien ne manque). Sans habitant, la marchandise reste dans la réserve du hameau.
+    fn distribuer_hameau(&mut self, q: usize, res: usize, qte: Qte) {
+        if qte <= 0 {
+            return;
+        }
+        let idx: Vec<usize> = (0..self.pops.len()).filter(|&i| self.pops[i].residence == q).collect();
+        if idx.is_empty() {
+            self.monde.quartiers[q].stock[res] += qte;
+            return;
+        }
+        let cible = Catalogue::jours_x(self.cat.ration_pop(res), self.cat.sim.jours_stock_quartier);
+        let mut poids: Vec<Qte> = idx.iter().map(|&i| (cible - self.pops[i].stock[res]).max(0)).collect();
+        if poids.iter().sum::<Qte>() == 0 {
+            poids = vec![1; idx.len()];
+        }
+        let parts = partager(qte, &poids);
+        for (k, &i) in idx.iter().enumerate() {
+            self.pops[i].stock[res] += parts[k];
+        }
+    }
+
+    /// Les réserves de hameau sans habitant sont versées aux pops qui s'y installent.
+    fn vider_reserves(&mut self) {
+        for q in 0..self.nq() {
+            for r in 0..self.cat.ressources.len() {
+                let v = std::mem::take(&mut self.monde.quartiers[q].stock[r]);
+                if v > 0 {
+                    self.distribuer_hameau(q, r, v);
+                }
+            }
+        }
     }
 
     /// Effectif par bâtiment (pops affectées, présentes ou non).
@@ -389,7 +552,7 @@ impl Simulation {
     fn crediter(&mut self, client: usize, res: usize, qte: Qte) {
         let nq = self.nq();
         if client < nq {
-            self.monde.quartiers[client].stock[res] += qte;
+            self.distribuer_hameau(client, res, qte);
         } else {
             self.monde.batiments[client - nq].stock_entree[res] += qte;
         }
@@ -406,6 +569,7 @@ impl Simulation {
         self.stats.consomme_pops = vec![0; nr];
         self.stats.retards_pops = 0;
 
+        self.vider_reserves();
         // 1. Livraison des différés de la veille (priorité sur les nouveaux flux).
         let anciens = std::mem::take(&mut self.differes);
         for mut d in anciens {
@@ -513,7 +677,7 @@ impl Simulation {
                     continue;
                 }
                 let stock = if client < nq {
-                    self.monde.quartiers[client].stock[res]
+                    self.stock_hameau(client, res)
                 } else {
                     self.monde.batiments[client - nq].stock_entree[res]
                 };
@@ -583,114 +747,187 @@ impl Simulation {
         }
     }
 
-    /// Budget de jours de travail (docs/02 §8.3). Les équipes de chantier ont un poste fixe. Le temps des
-    /// autres pops est réparti chaque jour entre les terres à portée, celles dont la ressource est la plus
-    /// en tension d'abord, au prorata du temps disponible dans chaque hameau ; ce qui reste est le temps
-    /// libre du hameau (textile domestique).
+    /// Autonomie d'une pop : combien de jours son stock personnel tient pour chaque besoin.
+    pub fn autonomies(&self, p: &Pop) -> Autonomies {
+        let cat = &self.cat;
+        let nutri: Qte = (0..cat.ressources.len())
+            .map(|r| p.stock[r] * cat.ressources[r].nutritive_milli / 1000)
+            .sum();
+        let jours = |stock: Qte, par_jour: Qte| if par_jour > 0 { stock * 1000 / par_jour } else { i64::MAX };
+        let mut par = vec![i64::MAX; cat.ressources.len()];
+        for b in &cat.besoins {
+            par[b.ressource] = jours(p.stock[b.ressource], b.par_pop);
+        }
+        Autonomies {
+            nutrition: jours(nutri, cat.vital.nourriture),
+            chauffage: jours(p.stock[cat.vital.chauffage_ressource], cat.vital.chauffage),
+            par_ressource: par,
+        }
+    }
+
+    /// Terres à portée de la pop `i`, de la plus pressante à la moins pressante (docs/02 §10.4) :
+    /// d'abord ce qui lui manque pour vivre (nourriture, chauffage), puis le confort, puis les matières
+    /// premières dont un atelier manque, puis l'entretien des stocks ; à classe égale, la plus grande
+    /// pénurie d'abord, puis la plus proche. `demande[b]` : travail encore réclamé par la terre `b`.
+    pub fn candidats(&self, i: usize, demande: &[i64], tension: &[i64]) -> Vec<Candidat> {
+        let nq = self.nq();
+        let p = &self.pops[i];
+        let a = self.autonomies(p);
+        let cible = (self.cat.sim.jours_stock_quartier * 1000.0).round() as i64;
+        let manque = |aut: i64| (cible - aut).max(0);
+        let mut v: Vec<Candidat> = Vec::new();
+        for (b, bat) in self.monde.batiments.iter().enumerate() {
+            let t = &self.cat.batiments[bat.type_id];
+            if !t.par_tile || bat.chantier.is_some() {
+                continue;
+            }
+            let Some(ch) = self.reseau.chemin(p.residence, nq + b) else {
+                continue;
+            };
+            let Some(&(r, _)) = t.extrants_finaux().first() else {
+                continue;
+            };
+            let (classe, m) = if self.cat.ressources[r].nutritive_milli > 0 && manque(a.nutrition) > 0 {
+                (Classe::Vital, manque(a.nutrition))
+            } else if r == self.cat.vital.chauffage_ressource && manque(a.chauffage) > 0 {
+                (Classe::Vital, manque(a.chauffage))
+            } else if self.cat.confort.iter().any(|c| c.ressource == r) && manque(a.par_ressource[r]) > 0 {
+                (Classe::Confort, manque(a.par_ressource[r]))
+            } else if tension.get(r).copied().unwrap_or(0) > 0 {
+                (Classe::Intrant, 0)
+            } else {
+                (Classe::Entretien, 0)
+            };
+            v.push(Candidat {
+                lieu: b,
+                cout: ch.cout,
+                ressource: r,
+                classe,
+                manque_milli_jours: m,
+                demande_milli: demande[b],
+            });
+        }
+        v.sort_by_key(|c| (c.classe as u8, std::cmp::Reverse(c.manque_milli_jours), c.cout, c.lieu));
+        v
+    }
+
+    /// Les candidats d'une pop d'après l'état de fin de journée (pour l'affichage) : le lieu choisi
+    /// est celui de `Pop::emploi`, le premier de la liste qui réclamait assez de travail ce matin-là.
+    pub fn expliquer_pop(&self, id: u32) -> Option<Vec<Candidat>> {
+        let i = self.pops.iter().position(|p| p.id == id)?;
+        let demande: Vec<i64> = self.monde.batiments.iter().map(|b| b.demande_milli).collect();
+        Some(self.candidats(i, &demande, &self.poids_tension()))
+    }
+
+    /// Demande de travail de chaque terre (milli pop-jours) : de quoi remplir son stock de sortie.
+    fn demandes_de_travail(&self) -> Vec<i64> {
+        self.monde
+            .batiments
+            .iter()
+            .map(|bat| {
+                let t = &self.cat.batiments[bat.type_id];
+                if !t.par_tile || bat.chantier.is_some() {
+                    return 0;
+                }
+                let n = bat.emprise.len() as i64;
+                let Some(&(r, q)) = t.extrants_finaux().first() else {
+                    return 0;
+                };
+                let plafond = Catalogue::jours_x(q * n, self.cat.sim.jours_stock_sortie);
+                let libre = (plafond - bat.stock_sortie[r]).max(0);
+                let jours_de_place_ppm = (libre * PPM / (q * n).max(1)).min(bat.sur_pied_ppm);
+                self.cat.besoin_mo_milli(bat.type_id, bat.emprise.len()) * jours_de_place_ppm / PPM
+            })
+            .collect()
+    }
+
+    /// Chaque pop libre choisit **un seul lieu** de travail pour la journée (docs/02 §10.4) :
+    /// la terre la plus utile à ce qui lui manque, qui réclame encore assez de travail. Une pop fournit
+    /// au plus un pop-jour ; le reste de sa journée est du temps libre (travail domestique à la maison).
+    /// Les équipes de chantier ont un poste fixe. Les pops passent dans un ordre qui tourne chaque jour.
     fn resoudre_main_oeuvre(&mut self) {
         let nq = self.nq();
-        let nb = self.monde.batiments.len();
         for b in &mut self.monde.batiments {
             b.presents = 0;
             b.mo_milli = 0;
         }
         let poids = self.cat.infra.poids_trajet_pop;
         // 1. Équipes de chantier : trajet complet de chaque pop.
-        let mut cap = vec![0i64; nq];
+        let mut libres: Vec<usize> = Vec::new();
         for i in 0..self.pops.len() {
+            self.pops[i].travail_milli = 0;
             match self.pops[i].emploi {
                 Some(emploi) if self.est_chantier_type(emploi) => {
+                    self.pops[i].motif = Motif::Chantier;
                     let res = self.pops[i].residence;
                     let ok = self.charger(res, nq + emploi, poids);
                     if ok >= poids {
                         self.monde.batiments[emploi].presents += 1;
+                        self.pops[i].travail_milli = 1000;
                     } else {
                         // La charge partielle n'est pas rendue : la pop n'est pas arrivée mais a encombré la route.
                         self.stats.retards_pops += 1;
                     }
                 }
                 _ => {
-                    cap[self.pops[i].residence] += 1000;
                     self.pops[i].emploi = None;
+                    libres.push(i);
                 }
             }
         }
-        // 2. Terres : demande de travail, réduite quand le stock de sortie est presque plein.
+        // 2. Les pops libres choisissent, l'une après l'autre ; le travail réclamé par une terre baisse d'autant.
         let tension = self.poids_tension();
-        let mut terres: Vec<(i64, usize, i64)> = Vec::new(); // (-tension, lieu, besoin en milli pop-jours)
-        for b in 0..nb {
-            let bat = &self.monde.batiments[b];
-            let t = &self.cat.batiments[bat.type_id];
-            if !t.par_tile || bat.chantier.is_some() {
-                continue;
-            }
-            let n = bat.emprise.len() as i64;
-            let plein = self.cat.besoin_mo_milli(bat.type_id, bat.emprise.len());
-            let Some(&(r, q)) = t.extrants_finaux().first() else {
-                continue;
-            };
-            let plafond = Catalogue::jours_x(q * n, self.cat.sim.jours_stock_sortie);
-            let libre = (plafond - bat.stock_sortie[r]).max(0);
-            let place_ppm = (libre * PPM / (q * n).max(1)).min(PPM);
-            terres.push((-tension[r], b, plein * place_ppm / PPM));
-        }
-        terres.sort();
-        let mut alloc: Vec<Vec<(usize, i64)>> = vec![Vec::new(); nq];
-        for &(_, b, besoin) in &terres {
-            if besoin <= 0 {
-                continue;
-            }
-            let candidats: Vec<usize> = (0..nq)
-                .filter(|&q| cap[q] > 0 && self.reseau.chemin(q, nq + b).is_some())
-                .collect();
-            let dispo: Vec<Qte> = candidats.iter().map(|&q| cap[q]).collect();
-            let parts = repartir_pro_rata(besoin, &dispo);
-            for (k, &q) in candidats.iter().enumerate() {
-                let take = parts[k];
-                if take <= 0 {
-                    continue;
-                }
-                let load = mul_div(poids, take, 1000);
-                let ok = if load > 0 { self.charger(q, nq + b, load) } else { 0 };
-                let eff = if load > 0 { mul_div(take, ok, load) } else { take };
-                if load > 0 && ok < load {
-                    self.stats.retards_pops += 1;
-                }
-                cap[q] -= take;
-                alloc[q].push((b, take));
-                self.monde.batiments[b].mo_milli += eff;
-            }
-        }
-        // 3. Temps libre des hameaux ; emploi « principal » de chaque pop (affichage et chantiers).
-        self.libre_milli = cap;
-        for q in 0..nq {
-            let mut membres: Vec<usize> = (0..self.pops.len())
-                .filter(|&i| self.pops[i].residence == q && self.pops[i].emploi.is_none())
-                .collect();
-            membres.sort_by_key(|&i| self.pops[i].id);
-            let mut liste = alloc[q].clone();
-            let mut k = 0;
-            for &i in &membres {
-                let mut dispo = 1000;
-                let mut parts: Vec<(usize, i64)> = Vec::new();
-                while dispo > 0 && k < liste.len() {
-                    let pris = dispo.min(liste[k].1);
-                    parts.push((liste[k].0, pris));
-                    liste[k].1 -= pris;
-                    dispo -= pris;
-                    if liste[k].1 == 0 {
-                        k += 1;
+        let mut demande = self.demandes_de_travail();
+        let seuil = self.cat.travail.seuil_deplacement_milli;
+        let mut cap = vec![0i64; nq];
+        libres.sort_by_key(|&i| self.pops[i].id);
+        let depart = if libres.is_empty() { 0 } else { self.jour as usize % libres.len() };
+        for k in 0..libres.len() {
+            let i = libres[(k + depart) % libres.len()];
+            let q = self.pops[i].residence;
+            let choix = self
+                .candidats(i, &demande, &tension)
+                .into_iter()
+                .find(|c| demande[c.lieu] >= seuil);
+            match choix {
+                Some(c) => {
+                    let b = c.lieu;
+                    let travail = demande[b].min(1000);
+                    let ok = self.charger(q, nq + b, poids);
+                    let eff = if poids > 0 { mul_div(travail, ok, poids) } else { travail };
+                    if ok < poids {
+                        self.stats.retards_pops += 1;
                     }
+                    demande[b] -= travail;
+                    self.monde.batiments[b].mo_milli += eff;
+                    self.pops[i].emploi = Some(b);
+                    self.pops[i].travail_milli = eff;
+                    self.pops[i].motif = Motif::Besoin {
+                        ressource: c.ressource,
+                        classe: c.classe,
+                        manque_milli_jours: c.manque_milli_jours,
+                    };
+                    cap[q] += 1000 - travail;
                 }
-                let total: i64 = parts.iter().map(|p| p.1).sum();
-                // Une pop presque inoccupée est « sans poste ».
-                self.pops[i].emploi = if total >= 100 {
-                    parts.iter().max_by_key(|p| (p.1, std::cmp::Reverse(p.0))).map(|p| p.0)
-                } else {
-                    None
-                };
+                None => {
+                    self.pops[i].motif = Motif::Repos;
+                    cap[q] += 1000;
+                }
             }
         }
+        // 3. Bilan de la journée : travail réclamé et non fait, temps libre, moyennes mobiles.
+        for (b, bat) in self.monde.batiments.iter_mut().enumerate() {
+            bat.demande_milli = demande[b];
+            bat.mo_lisse_milli += (bat.mo_milli - bat.mo_lisse_milli) / 30;
+        }
+        for p in &mut self.pops {
+            p.travail_lisse_milli += (p.travail_milli - p.travail_lisse_milli) / 30;
+        }
+        self.libre_lisse_milli.resize(nq, 0);
+        for q in 0..nq {
+            self.libre_lisse_milli[q] += (cap[q] - self.libre_lisse_milli[q]) / 30;
+        }
+        self.libre_milli = cap;
     }
 
     fn produire(&mut self) {
@@ -721,8 +958,10 @@ impl Simulation {
                 let q = b.quartier.expect("atelier domestique sans hameau");
                 (libre.get(q).copied().unwrap_or(0) * PPM / (t.pops as i64 * 1000)).min(PPM)
             } else if t.par_tile {
+                // Le travail arrive par visites : un pop-jour peut valoir plusieurs jours de production
+                // (borné par la place restante dans le stock de sortie).
                 let besoin = cat.besoin_mo_milli(b.type_id, b.emprise.len()).max(1);
-                (b.mo_milli * PPM / besoin).min(PPM)
+                b.mo_milli * PPM / besoin
             } else {
                 b.presents as i64 * PPM / t.pops as i64
             };
@@ -730,7 +969,7 @@ impl Simulation {
             let mut limitant = Limitant::Aucun;
             let mut f_dernier = 0;
             for (si, e) in t.etapes.iter().enumerate() {
-                let mut f = f_mo.min(PPM);
+                let mut f = if t.par_tile { f_mo } else { f_mo.min(PPM) };
                 let mut lim = if f_mo < PPM {
                     Limitant::MainOeuvre
                 } else {
@@ -749,13 +988,14 @@ impl Simulation {
                     }
                     let plafond = Catalogue::jours_x(q * n, cat.sim.jours_stock_sortie);
                     let libre_stock = (plafond - b.stock_sortie[r]).max(0);
-                    let f_out = (libre_stock * PPM / (q * n).max(1)).min(PPM);
+                    let f_out = libre_stock * PPM / (q * n).max(1);
                     if f_out < f {
                         f = f_out;
                         lim = Limitant::StockPlein;
                     }
                 }
-                let f = f.max(0);
+                // Une terre ne produit pas plus que ce qui a poussé.
+                let f = if t.par_tile { f.min(b.sur_pied_ppm) } else { f }.max(0);
                 for &(r, q) in &e.intrants {
                     let c = mul_div(q, f, PPM);
                     b.stock_entree[r] -= c;
@@ -777,12 +1017,29 @@ impl Simulation {
                 }
                 f_dernier = f;
             }
-            b.prod_ppm = f_dernier;
-            b.limitant = if f_min >= PPM {
-                Limitant::Aucun
+            if t.par_tile {
+                let plafond_pied = (cat.sim.jours_stock_sortie * PPM as f64) as i64;
+                b.sur_pied_ppm = (b.sur_pied_ppm - f_dernier + PPM).clamp(0, plafond_pied);
+                // Moyenne mobile : la production d'une terre est faite de visites espacées.
+                b.prod_ppm += (f_dernier.min(PPM * 20) - b.prod_ppm) / 30;
+                let sortie_pleine = t.extrants_finaux().first().map_or(false, |&(r, q)| {
+                    b.stock_sortie[r] * 10 >= Catalogue::jours_x(q * n, cat.sim.jours_stock_sortie) * 9
+                });
+                b.limitant = if b.demande_milli >= cat.travail.seuil_deplacement_milli {
+                    Limitant::MainOeuvre
+                } else if sortie_pleine {
+                    Limitant::StockPlein
+                } else {
+                    Limitant::Aucun
+                };
             } else {
-                limitant
-            };
+                b.prod_ppm = f_dernier;
+                b.limitant = if f_min >= PPM {
+                    Limitant::Aucun
+                } else {
+                    limitant
+                };
+            }
         }
     }
 
@@ -871,7 +1128,7 @@ impl Simulation {
                     // Le matériau resté sur le chantier revient au hameau.
                     let mat = self.cat.extension.materiau;
                     let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
-                    self.monde.quartiers[q].stock[mat] += reste;
+                    self.distribuer_hameau(q, mat, reste);
                     if let Some(at) = atelier {
                         self.monde.batiments[b].type_id = at;
                         self.monde.batiments[b].quartier = Some(q);
@@ -886,7 +1143,7 @@ impl Simulation {
                     // Le matériau resté sur le chantier revient au hameau.
                     let mat = self.cat.extension.materiau;
                     let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
-                    self.monde.quartiers[q].stock[mat] += reste;
+                    self.distribuer_hameau(q, mat, reste);
                     let cap = self.monde.quartiers[q].capacite_pops;
                     self.journal(format!(
                         "Nouvelle maison dans le hameau en ({x}, {y}) : {cap} maisons"
@@ -924,26 +1181,48 @@ impl Simulation {
         }
     }
 
+    /// Chaque pop consomme sur son propre stock ; le hameau agrège la couverture de ses habitants.
     fn consommer(&mut self) {
         let nr = self.cat.ressources.len();
-        let eff = self.effectifs();
-        for q in 0..self.nq() {
-            let n = eff[q] as i64;
-            let quartier = &mut self.monde.quartiers[q];
+        let nq = self.nq();
+        let mut n = vec![0i64; nq];
+        let mut vital = vec![0i64; nq];
+        let mut confort = vec![0i64; nq];
+        let mut sat = vec![vec![0i64; nr]; nq];
+        for p in &mut self.pops {
             let mut recu = vec![0; nr];
             for b in &self.cat.besoins {
-                let r = quartier.stock[b.ressource].min(b.par_pop * n).max(0);
-                quartier.stock[b.ressource] -= r;
+                let r = p.stock[b.ressource].min(b.par_pop).max(0);
+                p.stock[b.ressource] -= r;
                 recu[b.ressource] = r;
                 self.bilan.consomme_pops[b.ressource] += r;
                 self.stats.consomme_pops[b.ressource] += r;
             }
-            let ev = evaluer_besoins(&self.cat, n, &recu);
-            quartier.vital_jour_ppm = ev.vital_ppm;
-            quartier.confort_jour_ppm = ev.confort_ppm;
-            quartier.sat_par_ressource_ppm = ev.par_ressource_ppm;
-            quartier.cumul_vital_ppm += ev.vital_ppm;
-            quartier.cumul_confort_ppm += ev.confort_ppm;
+            let ev = evaluer_besoins(&self.cat, 1, &recu);
+            p.vital_jour_ppm = ev.vital_ppm;
+            p.confort_jour_ppm = ev.confort_ppm;
+            p.sat_par_ressource_ppm = ev.par_ressource_ppm;
+            p.conso_jour = recu;
+            let q = p.residence;
+            n[q] += 1;
+            vital[q] += p.vital_jour_ppm;
+            confort[q] += p.confort_jour_ppm;
+            for r in 0..nr {
+                sat[q][r] += p.sat_par_ressource_ppm[r];
+            }
+        }
+        for q in 0..nq {
+            let quartier = &mut self.monde.quartiers[q];
+            let (v, c, s) = if n[q] == 0 {
+                (PPM, PPM, vec![PPM; nr])
+            } else {
+                (vital[q] / n[q], confort[q] / n[q], sat[q].iter().map(|x| x / n[q]).collect())
+            };
+            quartier.vital_jour_ppm = v;
+            quartier.confort_jour_ppm = c;
+            quartier.sat_par_ressource_ppm = s;
+            quartier.cumul_vital_ppm += v;
+            quartier.cumul_confort_ppm += c;
             quartier.jours_an += 1;
         }
     }
@@ -966,23 +1245,26 @@ impl Simulation {
     fn croissance_quotidienne(&mut self) {
         let seuil = self.seuil_croissance();
         let jours = self.cat.sim.jours_par_an;
-        let taux: Vec<i64> = self
-            .monde
-            .quartiers
-            .iter()
-            .map(|q| taux_croissance_ppm(&self.cat.demo, q.vital_jour_ppm, q.confort_jour_ppm))
-            .collect();
         for p in &mut self.pops {
-            p.croissance += mul_div(seuil, taux[p.residence], PPM * jours);
+            let taux = taux_croissance_ppm(&self.cat.demo, p.vital_jour_ppm, p.confort_jour_ppm);
+            p.croissance += mul_div(seuil, taux, PPM * jours);
         }
 
         // Disparitions d'abord (elles libèrent du logement et des postes).
         let morts: Vec<usize> = (0..self.pops.len())
             .filter(|&i| self.pops[i].croissance <= -seuil)
             .collect();
+        let mut heritages: Vec<(usize, Vec<Qte>)> = Vec::new();
         for &i in morts.iter().rev() {
-            self.pops.remove(i);
+            let p = self.pops.remove(i);
+            heritages.push((p.residence, p.stock));
             self.deces_an += 1;
+        }
+        // Le stock d'une pop disparue revient aux habitants de son hameau (ou à sa réserve).
+        for (q, stock) in heritages {
+            for (r, v) in stock.into_iter().enumerate() {
+                self.distribuer_hameau(q, r, v);
+            }
         }
 
         // Duplications : la nouvelle pop se loge et prend le poste vacant le plus proche.
@@ -996,12 +1278,7 @@ impl Simulation {
                 Some(h) => {
                     let id = self.prochain_pop_id;
                     self.prochain_pop_id += 1;
-                    self.pops.push(Pop {
-                        id,
-                        residence: h,
-                        emploi: None, // le travail se répartit chaque jour (budget de jours)
-                        croissance: 0,
-                    });
+                    self.pops.push(Pop::nouvelle(id, h, 0, self.cat.ressources.len()));
                     eff[h] += 1;
                     self.pops[i].croissance -= seuil;
                     self.naissances_an += 1;
@@ -1442,6 +1719,9 @@ impl Simulation {
             presents: 0,
             mo_milli: 0,
             prod_ppm: 0,
+            demande_milli: 0,
+            sur_pied_ppm: 0,
+            mo_lisse_milli: 0,
             limitant: Limitant::Aucun,
         }
     }
@@ -1945,6 +2225,11 @@ impl Simulation {
         for q in &mut self.monde.quartiers {
             for r in 0..q.stock.len() {
                 perdre(&mut q.stock[r], r);
+            }
+        }
+        for p in &mut self.pops {
+            for r in 0..p.stock.len() {
+                perdre(&mut p.stock[r], r);
             }
         }
         for b in &mut self.monde.batiments {

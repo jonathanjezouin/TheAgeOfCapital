@@ -2,6 +2,7 @@
 //! village, distances, fertilité, et chacun des mécanismes expliqués dans docs/02.
 
 use sim::monde::{Contenu, Monde, Tuile};
+use sim::simulation::{Classe, Motif};
 use sim::reseau::Reseau;
 use sim::{generer, Catalogue, ParamsVillage, Simulation, PPM};
 
@@ -615,16 +616,142 @@ fn le_budget_de_jours_est_conserve() {
 }
 
 #[test]
-fn sans_bras_une_terre_ne_produit_pas_et_le_travail_va_aux_terres_en_tension() {
+fn sans_bras_une_terre_ne_produit_pas() {
     let mut s = sans_extension(village(1));
     s.pops.clear();
+    let produit_avant = s.bilan.produit.clone();
     s.jour_suivant();
     for b in &s.monde.batiments {
         if s.cat.batiments[b.type_id].par_tile {
             assert_eq!(b.mo_milli, 0);
-            assert_eq!(b.prod_ppm, 0);
         }
     }
+    assert_eq!(s.bilan.produit, produit_avant, "sans travail, rien ne se récolte");
+}
+
+#[test]
+fn une_pop_travaille_en_un_seul_lieu_et_le_temps_est_conserve() {
+    // Chaque pop libre fournit au plus un pop-jour, sur le seul lieu qu'elle a choisi ; le reste est du temps libre.
+    let mut s = sans_extension(village(3));
+    for _ in 0..120 {
+        s.jour_suivant();
+        for p in &s.pops {
+            assert!(p.travail_milli >= 0 && p.travail_milli <= 1000);
+            if p.emploi.is_none() {
+                assert_eq!(p.travail_milli, 0);
+                assert_eq!(p.motif, Motif::Repos);
+            }
+        }
+        for (b, bat) in s.monde.batiments.iter().enumerate() {
+            let somme: i64 = s.pops.iter().filter(|p| p.emploi == Some(b)).map(|p| p.travail_milli).sum();
+            if s.cat.batiments[bat.type_id].par_tile {
+                assert_eq!(somme, bat.mo_milli, "lieu {b} : le travail reçu est la somme de celui des pops venues");
+            }
+        }
+        // Le temps libre est ce que les pops libres n'ont pas donné à leur lieu (moins, si la route était saturée).
+        let attendu: i64 = s
+            .pops
+            .iter()
+            .filter(|p| !matches!(p.motif, Motif::Chantier))
+            .map(|p| 1000 - p.travail_milli)
+            .sum();
+        let libre: i64 = s.libre_milli.iter().sum();
+        assert!(libre <= attendu, "libre {libre} > attendu {attendu}");
+    }
+}
+
+#[test]
+fn la_pop_qui_manque_de_nourriture_va_vers_une_terre_nourriciere() {
+    let mut s = sans_extension(village(1));
+    // Tout le monde a de quoi manger, sauf la pop 0 qui n'a plus rien de nutritif.
+    let nr = s.cat.ressources.len();
+    for p in s.pops.iter_mut() {
+        for r in 0..nr {
+            if s.cat.ressources[r].nutritive_milli > 0 {
+                p.stock[r] = 200_000;
+            }
+        }
+    }
+    let nutritives: Vec<usize> = (0..nr).filter(|&r| s.cat.ressources[r].nutritive_milli > 0).collect();
+    for &r in &nutritives {
+        s.pops[0].stock[r] = 0;
+    }
+    s.jour_suivant();
+    match s.pops[0].motif {
+        Motif::Besoin { ressource, classe, manque_milli_jours } => {
+            assert_eq!(classe, Classe::Vital);
+            assert!(nutritives.contains(&ressource), "elle va vers de la nourriture");
+            assert!(manque_milli_jours > 0);
+        }
+        autre => panic!("motif inattendu : {autre:?}"),
+    }
+    let lieu = s.pops[0].emploi.expect("elle travaille quelque part");
+    assert!(s.pops[0].travail_milli > 0);
+    let nq = s.monde.quartiers.len();
+    assert!(s.reseau.chemin(s.pops[0].residence, nq + lieu).is_some(), "le lieu est à sa portée");
+    // Les candidats expliquent le choix : le premier réclamant du travail est celui qu'elle a pris.
+    let cands = s.expliquer_pop(s.pops[0].id).unwrap();
+    assert!(cands.iter().any(|c| c.lieu == lieu));
+}
+
+#[test]
+fn le_stock_est_personnel_et_la_couverture_aussi() {
+    // Deux pops d'un même hameau, l'une à sec : elles ne sont pas nourries pareil (plus de stock de hameau).
+    let mut s = sans_extension(village(1));
+    let q = s.pops[0].residence;
+    let idx: Vec<usize> = (0..s.pops.len()).filter(|&i| s.pops[i].residence == q).collect();
+    assert!(idx.len() >= 2, "hameau de deux pops au moins");
+    // Plus rien n'arrive : on vide les producteurs.
+    for b in s.monde.batiments.iter_mut() {
+        b.stock_sortie.iter_mut().for_each(|x| *x = 0);
+    }
+    let nr = s.cat.ressources.len();
+    for r in 0..nr {
+        s.pops[idx[0]].stock[r] = 0;
+        s.pops[idx[1]].stock[r] = 200_000;
+    }
+    s.jour_suivant();
+    assert!(s.pops[idx[0]].vital_jour_ppm < PPM, "la pop à sec a faim");
+    assert_eq!(s.pops[idx[1]].vital_jour_ppm, PPM, "sa voisine mange à sa faim");
+}
+
+#[test]
+fn le_stock_d_une_pop_disparue_revient_a_son_hameau() {
+    let mut s = village(1);
+    let seuil = s.seuil_croissance();
+    let q = s.pops[0].residence;
+    let avant = s.stock_hameau(q, s.cat.res_id("grain").unwrap());
+    s.pops[0].croissance = -seuil - 10_000;
+    s.jour_suivant();
+    assert!(s.ecart_conservation().iter().all(|&e| e == 0), "la matière se conserve : {:?}", s.ecart_conservation());
+    // Le hameau garde (à la consommation du jour près) le grain du défunt.
+    let apres = s.stock_hameau(q, s.cat.res_id("grain").unwrap());
+    assert!(apres > avant / 2, "stock du hameau : {avant} -> {apres}");
+}
+
+#[test]
+fn une_terre_ne_produit_pas_plus_vite_que_son_rythme_nominal() {
+    // Venir souvent ne fait pas pousser plus : la récolte est bornée par ce qui a poussé (docs/02 §10.4).
+    let mut s = sans_extension(village(1));
+    let g = s.cat.res_id("grain").unwrap();
+    let nominal: i64 = s
+        .monde
+        .batiments
+        .iter()
+        .filter(|b| s.cat.batiments[b.type_id].extrants_finaux().iter().any(|&(r, _)| r == g))
+        .map(|b| {
+            let t = &s.cat.batiments[b.type_id];
+            let fert = b.emprise.iter().map(|&i| s.monde.tuiles[i].fertilite_ppm).sum::<i64>() / b.emprise.len() as i64;
+            t.extrants_finaux()[0].1 * b.emprise.len() as i64 * fert / PPM
+        })
+        .sum();
+    let avant = s.bilan.produit[g];
+    s.avancer(365);
+    let produit = s.bilan.produit[g] - avant;
+    // 365 jours de croissance, plus les jours de récolte déjà sur pied au départ (la moitié du stock de sortie).
+    let borne = nominal * (365 + 10) + nominal;
+    assert!(produit <= borne, "produit {produit} > borne {borne}");
+    assert!(produit > nominal * 365 / 4, "la récolte n'est pas nulle : {produit}");
 }
 
 #[test]

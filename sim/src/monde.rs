@@ -109,8 +109,17 @@ pub struct Batiment {
     pub presents: u32,
     /// Travail reçu aujourd'hui par une terre ou un atelier domestique, en milli pop-jours.
     pub mo_milli: i64,
-    /// Production effective du dernier jour, en ppm de la production maximale.
+    /// Production effective, en ppm de la production maximale : moyenne mobile sur ~30 jours pour une
+    /// terre (le travail arrive par visites), valeur du jour sinon.
     pub prod_ppm: i64,
+    /// Travail encore réclamé en fin de journée par une terre (milli pop-jours) : ce que personne n'est venu faire.
+    pub demande_milli: i64,
+    /// Récolte sur pied d'une terre, en ppm de journée de production : elle croît d'une journée par jour
+    /// (plafonnée au stock de sortie) et le travail la convertit en stock. La terre ne peut donc pas
+    /// produire plus vite que son rythme nominal, même si l'on y vient souvent (docs/02 §10.4).
+    pub sur_pied_ppm: i64,
+    /// Travail reçu, moyenne mobile sur ~30 jours (milli pop-jours par jour).
+    pub mo_lisse_milli: i64,
     pub limitant: Limitant,
 }
 

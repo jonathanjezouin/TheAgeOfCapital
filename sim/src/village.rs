@@ -202,7 +202,10 @@ fn nouveau_batiment(
         stock_sortie: vec![0; nr],
         presents: 0,
         mo_milli: 0,
-        prod_ppm: 0,
+        prod_ppm: if cat.batiments[type_id].par_tile { PPM } else { 0 },
+        demande_milli: 0,
+        sur_pied_ppm: if cat.batiments[type_id].par_tile { (cat.sim.jours_stock_sortie * PPM as f64 / 2.0) as i64 } else { 0 },
+        mo_lisse_milli: 0,
         limitant: Limitant::Aucun,
     }
 }
@@ -442,14 +445,6 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
     }
 
     // --- Stocks initiaux ---
-    for (q, qu) in monde.quartiers.iter_mut().enumerate() {
-        for b in &cat.besoins {
-            qu.stock[b.ressource] = Catalogue::jours_x(
-                b.par_pop * n0[q] as i64,
-                cat.sim.stock_initial_quartier_jours,
-            );
-        }
-    }
     for b in &mut monde.batiments {
         let t = &cat.batiments[b.type_id];
         for (r, q) in t.intrants_externes() {
@@ -498,12 +493,12 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
     for q in 0..nq {
         for _ in 0..n0[q] {
             // Jauges décalées pour que les duplications ne soient pas synchrones.
-            pops.push(Pop {
-                id,
-                residence: q,
-                emploi: None,
-                croissance: (rng.u64() % seuil as u64) as i64,
-            });
+            let mut pop = Pop::nouvelle(id, q, (rng.u64() % seuil as u64) as i64, cat.ressources.len());
+            // Stock personnel de départ : quelques jours de ration.
+            for b in &cat.besoins {
+                pop.stock[b.ressource] = Catalogue::jours_x(b.par_pop, cat.sim.stock_initial_quartier_jours);
+            }
+            pops.push(pop);
             id += 1;
         }
     }

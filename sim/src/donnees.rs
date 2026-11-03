@@ -86,6 +86,13 @@ struct BrutTypeHabitat {
 #[derive(Deserialize)]
 struct BrutTravail {
     jours_personne_par_pop_an: f64,
+    /// Travail (pop-jours) qu'une terre doit réclamer pour qu'une pop se déplace jusqu'à elle.
+    #[serde(default = "seuil_deplacement_defaut")]
+    seuil_deplacement: f64,
+}
+
+fn seuil_deplacement_defaut() -> f64 {
+    0.5
 }
 
 #[derive(Deserialize)]
@@ -271,6 +278,8 @@ pub struct TypeHabitat {
 pub struct ParamsTravail {
     /// Jours-personne qu'une pop fournit par an (~50 travailleurs × 250 jours).
     pub jours_personne_par_pop_an: i64,
+    /// Travail minimal réclamé par une terre pour qu'une pop s'y rende (milli pop-jours, docs/02 §10.4).
+    pub seuil_deplacement_milli: Qte,
 }
 
 #[derive(Clone, Debug)]
@@ -563,6 +572,7 @@ impl Catalogue {
             habitats,
             travail: ParamsTravail {
                 jours_personne_par_pop_an: b.travail.jours_personne_par_pop_an.round() as i64,
+                seuil_deplacement_milli: en_milli(b.travail.seuil_deplacement),
             },
             demo: ParamsDemo {
                 habitants_par_pop: b.demographie.habitants_par_pop,
