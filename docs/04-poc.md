@@ -217,7 +217,7 @@ La production reste **continue, sans saisons** dans le POC. Ordre de travail dé
 
 | # | Chantier | Référence |
 |---|---|---|
-| 1 | Traversabilité par type (terres et chantiers non traversables), tile nœud d'accès en bordure, pathfinding | `02` §10.1 |
+| 1 | ✅ Traversabilité par type (terres et chantiers non traversables), tile nœud d'accès en bordure, pathfinding (moteur fait ; rendu `app/` à valider) | `02` §10.1 |
 | 2 | Extension compacte des terres (score fertilité, périmètre, distance) et terroir par hameau | `02` §10.2 |
 | 3 | **Une pop = un lieu de travail par jour**, avec motif ; puis stock personnel par pop | `02` §10.4 |
 | 4 | Inspecteur de pop et vue « par ressource » (qui travaille où, produit, stocké, consommé) | `02` §10.5 |

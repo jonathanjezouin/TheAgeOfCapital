@@ -145,8 +145,23 @@ struct BrutEtape {
     extrants: Vec<BrutFlux>,
 }
 
+/// Une route neuve peut-elle traverser les tiles d'un bâtiment ? (docs/02 §10.1)
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum Traversabilite {
+    /// Rues locales comprises dans la densité de la tile (habitat).
+    Libre,
+    /// Traversable moyennant un surcoût de pathfinding (`SURCOUT_TRAVERSEE`).
+    Couteuse,
+    /// On ne s'y raccorde que par la tile nœud (terre, chantier, usine).
+    #[default]
+    Interdite,
+}
+
 #[derive(Deserialize)]
 struct BrutBatiment {
+    #[serde(default)]
+    traversable: Traversabilite,
     nom: String,
     asset: String,
     #[serde(default)]
@@ -294,6 +309,8 @@ pub struct Etape {
 
 #[derive(Clone, Debug)]
 pub struct TypeBatiment {
+    /// Traversée des tiles de l'emprise par une route neuve (docs/02 §10.1) ; `interdite` par défaut.
+    pub traversable: Traversabilite,
     pub nom: String,
     pub asset: String,
     /// Travail requis à plein régime, en pop-jours par jour (atelier domestique ; 0 pour une terre, qui
@@ -452,6 +469,7 @@ impl Catalogue {
                 });
             }
             batiments.push(TypeBatiment {
+                traversable: x.traversable,
                 nom: x.nom.clone(),
                 asset: x.asset.clone(),
                 pops: x.pops,

@@ -329,7 +329,7 @@ Largeurs d'ordre de grandeur, à vérifier.
 - **Rues rectilignes en ville** : en ville les rues sont planifiées (lotissement) : droites, avec des immeubles d'angle. À la campagne, les chemins sont sinueux et contournent le bâti existant (parfois autour de petits bâtiments). Le **décalage organique du rendu décroît avec le niveau d'urbanisation** (0 pour une trame planifiée). Une trame urbaine est un ensemble de rues parallèles dans la tile (voirie native), pas des arêtes distinctes tant qu'elles sont locales.
 - **Rendu des routes** : courbe lissée (Catmull-Rom vers Bézier) passant par les centres de tiles, avec décalage déterministe (hash de la position et de la graine, ±0,34 tile au plus) ; largeur exagérée à l'écran. L'atlas de 15 tiles de chemin est abandonné pour le réseau (`03` §6).
 
-## 10. Décisions de design du 2026-11-03 (à implémenter ; aucun code modifié)
+## 10. Décisions de design du 2026-11-03 (§10.1 implémenté, le reste à implémenter)
 
 Issues d'une discussion sur le rendu des routes, la forme des terres et la vie des pops. Elles **précisent ou remplacent** : §7 « Où » (route qui traverse des tiles occupées), §9.1 (« un chemin ne coupe plus un champ de N tiles » : vrai pour la comptabilité, faux à l'écran), §8.3 (budget de jours réparti) et §6 (couverture par hameau).
 
@@ -347,7 +347,7 @@ Issues d'une discussion sur le rendu des routes, la forme des terres et la vie d
 - **Conséquences.** Le pathfinding exclut les tiles interdites, sauf comme destination (tile nœud). Les routes **contournent** les terres. Une terre qu'aucune route ne peut desservir n'est pas défrichée. Le passage à `couteuse` reste possible en donnée si le contournement devient trop contraignant.
 - **Écarté : la parcelle coupée en deux** (calculs et visuels multipliés, illisible pour le joueur).
 - **Écarté pour le POC : routes sur les bords de tiles.** Une diagonale entre sommets coupe toujours une tile en deux triangles ; il faudrait des routes orthogonales lissées au rendu, des distances en norme Manhattan (jusqu'à +41 %), et décider à quelle tile appartient une route de frontière (§9.2). Le gain est déjà obtenu par la tile nœud et la traversabilité. À reprendre si besoin (voir `05`, question 20).
-- Implémentation : `sim/src/reseau.rs` (coût de segment, tiles exclues), `Simulation::etendre` (accessibilité du site), rendu des routes (`app/`).
+- **Implémenté (2026-11-03)** : champ `traversable` par type de bâtiment (`donnees.rs`, `interdite` par défaut), `Simulation::traversabilite` et exclusion dans `meilleur_site` (`couteuse` = surcoût de 30). Le nœud est en bordure par construction : il est la tile d'arrivée de la route neuve, dont les tiles ne sont jamais prises par une terre (une tile à arête n'est pas « libre »). Test : `les_routes_contournent_les_terres`. Le raccord à la tile nœud existait déjà ; reste le rendu côté `app/` à valider visuellement.
 
 ### 10.2 Extension compacte des terres
 `Simulation::agrandir` choisit aujourd'hui, de proche en proche, la tile libre voisine **la plus fertile** : un filon de fertilité donne un champ en serpent. Remplacer par un **score de placement** par tile candidate, avec des poids en donnée :

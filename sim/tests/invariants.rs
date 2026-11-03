@@ -349,6 +349,44 @@ fn stable_sans_extension_sur_plusieurs_siecles() {
 
 // ---------- Mécanismes ----------
 
+/// Les routes ne traversent ni terre ni chantier : une tile à arêtes est vide, habitée, ou la tile
+/// nœud (entrée) de son bâtiment (docs/02 §10.1).
+fn verifier_routes_hors_des_terres(s: &Simulation) {
+    for (t, tuile) in s.monde.tuiles.iter().enumerate() {
+        if tuile.aretes == 0 {
+            continue;
+        }
+        if let Contenu::Batiment(b) = tuile.contenu {
+            assert_eq!(
+                s.monde.batiments[b].tuile, t,
+                "une route traverse la tile {t} de l'emprise du bâtiment {b}"
+            );
+        }
+    }
+}
+
+#[test]
+fn les_routes_contournent_les_terres() {
+    for graine in [1u64, 2, 3] {
+        let mut s = village(graine);
+        verifier_routes_hors_des_terres(&s);
+        for _ in 0..60 {
+            s.avancer(365);
+            verifier_routes_hors_des_terres(&s);
+        }
+        // Toute terre est desservie par sa tile nœud.
+        let nq = s.monde.quartiers.len();
+        for (b, bat) in s.monde.batiments.iter().enumerate() {
+            if bat.chantier.is_none() && bat.emprise.len() > 1 {
+                assert!(
+                    !s.reseau.acces(nq + b).is_empty(),
+                    "terre {b} (graine {graine}) sans accès au réseau"
+                );
+            }
+        }
+    }
+}
+
 #[test]
 fn la_production_suit_la_fertilite_de_la_tile() {
     let produit_grain = |fertilite: i64| {

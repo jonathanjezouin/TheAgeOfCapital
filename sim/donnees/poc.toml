@@ -1,6 +1,8 @@
 # Données du POC-A : économie de subsistance d'un hameau isolé de 1750.
 # Quantités en unités/jour (converties en milli-unités au chargement).
 # Aucune valeur de gameplay n'est codée en dur dans le moteur.
+# `traversable` (par bâtiment) : "libre" | "couteuse" | "interdite" (défaut) — une route neuve contourne
+# les tiles d'un bâtiment « interdite » (terres, chantiers) ; on s'y raccorde par la tile nœud (docs/02 §10.1).
 
 [simulation]
 jours_par_an = 365

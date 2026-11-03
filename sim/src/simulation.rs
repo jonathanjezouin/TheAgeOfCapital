@@ -1,7 +1,7 @@
 //! Boucle quotidienne (voir docs/02 §5), démographie par jauge de pop (docs/02 §6)
 //! et réorientation de la main-d'œuvre selon le besoin (docs/02 §3).
 
-use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, PPM};
+use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, Traversabilite, PPM};
 use crate::monde::{cout_dir, Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier};
 use crate::reseau::Reseau;
 use serde::Serialize;
@@ -66,6 +66,9 @@ pub struct Evenement {
     pub jour: u64,
     pub texte: String,
 }
+
+/// Surcoût de pathfinding (unités d'arête) pour entrer dans une tile `couteuse` (docs/02 §10.1).
+const SURCOUT_TRAVERSEE: i64 = 30;
 
 /// Longueur maximale (coût) de la route neuve qui relie un hameau fondé au réseau existant.
 const ROUTE_FONDATION_MAX: i64 = 80;
@@ -1331,9 +1334,9 @@ impl Simulation {
                 ));
             }
         };
-        // Dijkstra depuis tout le réseau atteignable : une route neuve peut traverser des tiles occupées
-        // (l'infrastructure n'occupe pas la tile, docs/02 §9) mais pas rejoindre une autre arête ; le site
-        // lui-même doit être libre.
+        // Dijkstra depuis tout le réseau atteignable : une route neuve ne traverse que les tiles dont le
+        // type est traversable (habitat) ; elle contourne terres et chantiers (docs/02 §10.1) et ne rejoint
+        // pas une autre arête ; le site lui-même doit être libre.
         let n = self.monde.tuiles.len();
         let mut cout = vec![i64::MAX; n];
         let mut prec = vec![usize::MAX; n];
@@ -1362,7 +1365,13 @@ impl Simulation {
                 if self.monde.tuiles[v].aretes != 0 || !self.monde.peut_relier(t, v) {
                     continue;
                 }
-                let nc = c + cout_dir(dir);
+                // Traversabilité (docs/02 §10.1) : une route neuve contourne les terres et les chantiers.
+                let surcout = match self.traversabilite(v) {
+                    Traversabilite::Libre => 0,
+                    Traversabilite::Couteuse => SURCOUT_TRAVERSEE,
+                    Traversabilite::Interdite => continue,
+                };
+                let nc = c + cout_dir(dir) + surcout;
                 let ok = if fertile { nc <= dmax } else { nc - d[racine[t]] <= limite_route };
                 if ok && nc < cout[v] {
                     cout[v] = nc;
@@ -1390,6 +1399,14 @@ impl Simulation {
             essayer(v, r, &route, cout[v], &mut best);
         }
         best.map(|(_, s)| s)
+    }
+
+    /// Traversabilité d'une tile par une route neuve, selon son contenu (docs/02 §10.1).
+    pub fn traversabilite(&self, t: usize) -> Traversabilite {
+        match self.monde.tuiles[t].contenu {
+            Contenu::Vide | Contenu::Quartier(_) => Traversabilite::Libre,
+            Contenu::Batiment(b) => self.cat.batiments[self.monde.batiments[b].type_id].traversable,
+        }
     }
 
     fn poser_site(&mut self, site: &Site) {
