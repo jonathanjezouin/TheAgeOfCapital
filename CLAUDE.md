@@ -33,6 +33,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/03-architecture.md` | Architecture technique, schéma de données, pipeline de rendu (technique) |
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
+| `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
 
 ## Code
 

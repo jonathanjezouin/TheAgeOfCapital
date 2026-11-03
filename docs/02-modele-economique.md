@@ -87,7 +87,7 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, à p
 
 ### Main-d'œuvre
 
-**POC-A : budget de jours, entraide du hameau, sans marché** *(implémenté, voir §8.3).* Une pop n'a plus de poste : chaque jour, le temps des pops de chaque hameau (1 pop = 1 pop-jour, hors équipes de chantier) est réparti entre les terres à portée (`distance_max`), au prorata du temps disponible dans chaque hameau, les terres dont la ressource est en **tension** (ration couverte à moins de 97 %) d'abord. Une terre demande `N tiles × jours par tile et par an ÷ 12 500` pop-jours par jour ; si son stock de sortie est presque plein, elle ne demande que de quoi le remplir. Ce qui reste est le **temps libre** du hameau, que l'atelier domestique utilise. L'« emploi » d'une pop n'est qu'un affichage : sa terre principale, ou « sans poste » si elle est presque inoccupée.
+**POC-A : budget de jours, entraide du hameau, sans marché** *(implémenté, voir §8.3 ; à remplacer par §10.4 : un lieu par pop et par jour).* Une pop n'a plus de poste : chaque jour, le temps des pops de chaque hameau (1 pop = 1 pop-jour, hors équipes de chantier) est réparti entre les terres à portée (`distance_max`), au prorata du temps disponible dans chaque hameau, les terres dont la ressource est en **tension** (ration couverte à moins de 97 %) d'abord. Une terre demande `N tiles × jours par tile et par an ÷ 12 500` pop-jours par jour ; si son stock de sortie est presque plein, elle ne demande que de quoi le remplir. Ce qui reste est le **temps libre** du hameau, que l'atelier domestique utilise. L'« emploi » d'une pop n'est qu'un affichage : sa terre principale, ou « sans poste » si elle est presque inoccupée.
 
 | Événement | Règle |
 |---|---|
@@ -178,6 +178,7 @@ Chaque tile a un **plafond de stock** (`capacite_max`) : une production qui ne t
 ## 6. Besoins, satisfaction et démographie (POC)
 
 ### Couverture des besoins (chaque jour, par hameau)
+> ⚠️ Le stock devient **personnel** et la couverture se calcule **par pop** (§10.4, non implémenté).
 Chaque pop tire sa ration normale sur le stock de son hameau (`04`). On compare ce qu'elle a **reçu** aux besoins :
 
 ```
@@ -227,7 +228,7 @@ Aucune firme, aucune monnaie : la **communauté** étend le village, à rythme *
 Au plus `chantiers_max` chantiers en même temps.
 
 ### Où
-Un site de terre est **libre** (tile vide, sans arête), à **moins de `distance_max`** du hameau demandeur, et **desservi** : sa tile « nœud » est reliée au réseau par une **route neuve**, qui peut traverser des tiles occupées (l'infrastructure n'occupe pas la tile, §9) et dont le coût entre dans la limite de distance. Un agrandissement prend des tiles libres voisines (par un côté) de la terre, les plus fertiles d'abord, sans route. Un site de hameau doit trouver à portée de chaque ration (hors ce que son atelier produit lui-même), de la fibre pour cet atelier et du bois de construction ; il est le plus proche du hameau demandeur, sur la terre la plus pauvre, avec au plus 8 tiles de route neuve.
+Un site de terre est **libre** (tile vide, sans arête), à **moins de `distance_max`** du hameau demandeur, et **desservi** : sa tile « nœud » est reliée au réseau par une **route neuve** qui contourne les terres et les chantiers (traversée interdite, §10.1) et peut traverser les tiles d'habitat et dont le coût entre dans la limite de distance. Un agrandissement prend des tiles libres voisines (par un côté) de la terre, les plus fertiles d'abord, sans route. Un site de hameau doit trouver à portée de chaque ration (hors ce que son atelier produit lui-même), de la fibre pour cet atelier et du bois de construction ; il est le plus proche du hameau demandeur, sur la terre la plus pauvre, avec au plus 8 tiles de route neuve.
 
 ### Coût
 Un chantier est un lieu de travail temporaire : une **équipe** de pops y fournit un nombre de **pop-jours**, et le **matériau** (bois) arrive par le réseau, consommé au prorata du travail. Sans bois, le chantier n'avance pas.
@@ -267,6 +268,7 @@ Voir §1. Conséquence : le POC actuel (60–90 pops dans ~7 tiles de rayon) sup
 - Intérêt : réalisme spatial sans multiplier les nœuds (~1 nœud pour 5–6 tiles). Les parcelles contiguës ouvrent plus tard la voie aux enclosures et à la propriété (cadastre = ensemble de tiles).
 
 ### 8.3 Le travail se compte en jours
+> ⚠️ **Partiellement remplacé par §10.4** (décision du 2026-11-03, non implémentée) : une pop travaille en un seul lieu par jour, avec un stock personnel. Le besoin des lieux en pop-jours reste valable.
 - Chaque terre a un **besoin en jours-travail par an** (jours/ha × 6,25 ha par tile). Ordre de grandeur 1750 : céréales ~250 jours-personne par tile et par an (voir `04`).
 - **Budget de jours par hameau** : capacité = pops × `jours_par_pop_an` (~12 500 = 50 travailleurs × 250 jours ; **exception à la règle de `00` §3**, à acter, voir `05`). Allocation par priorité : **vital** (nourriture, chauffage), puis confort, puis ce qui reste. Pas de « raisonnement » individuel des pops : un budget par hameau, déterministe.
 - **Étape 1 (POC-A)** : budget **annuel lissé**, sans saisons. Les jours non pris par les champs vont au **travail domestique** (§8.4).
@@ -287,7 +289,7 @@ Voir §1. Conséquence : le POC actuel (60–90 pops dans ~7 tiles de rayon) sup
 Maquette de référence : `docs/maquettes/routes-250m.html` (à ouvrir dans un navigateur : avant/après du réseau, puis emprise d'une voie sur une tile).
 
 ### 9.1 Le réseau
-- L'infrastructure est une **couche d'arêtes** reliant les centres de deux tiles voisines, dans **8 directions**. La tile garde son usage (champ, hameau…) : un chemin ne coupe plus un champ de N tiles, et une piste de 5 m ne consomme plus 6,25 ha.
+- L'infrastructure est une **couche d'arêtes** reliant les centres de deux tiles voisines, dans **8 directions**. La tile garde son usage (champ, hameau…) : la comptabilité de la tile ne change plus (à l'écran, un chemin ne traverse pas un champ : §10.1), et une piste de 5 m ne consomme plus 6,25 ha.
 - **Coûts entiers** (déterministes) : **10** pour un côté, **14** pour une diagonale. L'erreur reste ≤ 8 % ; sans diagonales, un trajet à 45° est surévalué de 41 % (maquette : +16 à +41 % sur les liaisons). `distance_max` = 100 unités.
 - **Dijkstra à coûts entiers**, toujours borné, remplace la recherche en largeur à coût 1 de `sim/src/reseau.rs`. Le terrain module le coût (forêt ×3 dans la maquette ; à calibrer avec le relief).
 - Un lieu est **desservi** si une arête passe par sa tile. Plus de règle « accolé à un chemin » ni de « bout d'antenne d'une tile ».
@@ -326,3 +328,82 @@ Largeurs d'ordre de grandeur, à vérifier.
 - **Densification** : le bâti s'améliore (maison isolée, mitoyenne, petit immeuble, immeuble). Le plafond de 10 pops est celui du bâti bas ; des immeubles le relèvent (ordre de grandeur : ~400 hab/ha, soit ~25 pops par tile). Le plafond deviendrait une propriété du type de bâtiment, pas une constante.
 - **Rues rectilignes en ville** : en ville les rues sont planifiées (lotissement) : droites, avec des immeubles d'angle. À la campagne, les chemins sont sinueux et contournent le bâti existant (parfois autour de petits bâtiments). Le **décalage organique du rendu décroît avec le niveau d'urbanisation** (0 pour une trame planifiée). Une trame urbaine est un ensemble de rues parallèles dans la tile (voirie native), pas des arêtes distinctes tant qu'elles sont locales.
 - **Rendu des routes** : courbe lissée (Catmull-Rom vers Bézier) passant par les centres de tiles, avec décalage déterministe (hash de la position et de la graine, ±0,34 tile au plus) ; largeur exagérée à l'écran. L'atlas de 15 tiles de chemin est abandonné pour le réseau (`03` §6).
+
+## 10. Décisions de design du 2026-11-03 (à implémenter ; aucun code modifié)
+
+Issues d'une discussion sur le rendu des routes, la forme des terres et la vie des pops. Elles **précisent ou remplacent** : §7 « Où » (route qui traverse des tiles occupées), §9.1 (« un chemin ne coupe plus un champ de N tiles » : vrai pour la comptabilité, faux à l'écran), §8.3 (budget de jours réparti) et §6 (couverture par hameau).
+
+### 10.1 Traversabilité et tile nœud
+- **Tile nœud = entrée du bâtiment.** C'est la seule tile d'une emprise sur laquelle le réseau se raccorde (c'est déjà `Batiment.tuile`). Elle est placée **en bordure de l'emprise**, côté route, pour que la route n'entre jamais dans la terre. Agrandir l'emprise ne la déplace pas.
+- **Traversabilité par type de tile**, en donnée (`poc.toml`) : `libre`, `couteuse` ou `interdite`.
+
+| Type | Traversabilité (POC) | Raison |
+|---|---|---|
+| Habitat (maisons) | libre | les rues locales sont dans la densité (§1) |
+| Terre exploitée (champ, pré, verger, forêt, lin, élevage) | **interdite** | une route couperait la parcelle : lisibilité du joueur et calculs |
+| Chantier | interdite | |
+| Usine, atelier (plus tard) | interdite | on s'y raccorde par la tile nœud (la porte), cour en cul-de-sac |
+
+- **Conséquences.** Le pathfinding exclut les tiles interdites, sauf comme destination (tile nœud). Les routes **contournent** les terres. Une terre qu'aucune route ne peut desservir n'est pas défrichée. Le passage à `couteuse` reste possible en donnée si le contournement devient trop contraignant.
+- **Écarté : la parcelle coupée en deux** (calculs et visuels multipliés, illisible pour le joueur).
+- **Écarté pour le POC : routes sur les bords de tiles.** Une diagonale entre sommets coupe toujours une tile en deux triangles ; il faudrait des routes orthogonales lissées au rendu, des distances en norme Manhattan (jusqu'à +41 %), et décider à quelle tile appartient une route de frontière (§9.2). Le gain est déjà obtenu par la tile nœud et la traversabilité. À reprendre si besoin (voir `05`, question 20).
+- Implémentation : `sim/src/reseau.rs` (coût de segment, tiles exclues), `Simulation::etendre` (accessibilité du site), rendu des routes (`app/`).
+
+### 10.2 Extension compacte des terres
+`Simulation::agrandir` choisit aujourd'hui, de proche en proche, la tile libre voisine **la plus fertile** : un filon de fertilité donne un champ en serpent. Remplacer par un **score de placement** par tile candidate, avec des poids en donnée :
+
+| Terme | Sens physique |
+|---|---|
+| Fertilité de la tile | rendement (inchangé) |
+| Voisins déjà dans l'emprise (4-voisinage) | minimise le **périmètre** : clôtures, haies, trajets sur la parcelle |
+| Distance au hameau demandeur | coût du trajet de travail |
+
+La compacité **émerge d'un coût réel**, elle n'est pas scriptée (principe 6). Garde-fous :
+- **Terroir par hameau** : une zone de terres (distance sur le réseau, type Voronoi) par hameau ; deux hameaux ne se disputent pas les mêmes tiles et leurs champs ne se soudent pas par accident.
+- **Terres voisines du même type** : des bâtiments **distincts**, séparés par une haie au rendu (base du cadastre, des enclosures, des propriétaires). Leur fusion viendra de la propriété (§10.3).
+- Un critère de forme dur (rapport des côtés de la boîte englobante) reste en réserve si le score ne suffit pas.
+
+### 10.3 Économies d'échelle de l'emprise *(à modéliser après §10.2, pas dans le POC actuel)*
+Intention : **privilégier l'extension d'une terre** (puis le cumul de terres proches, issu des enclosures et de la propriété, et l'extension d'usines) plutôt que la multiplication de petites cellules autonomes aussi rentables. Aujourd'hui la production est proportionnelle à N : deux terres de 4 tiles valent une de 8, donc rien ne récompense l'extension. Les gains doivent avoir une **cause physique**, pas un bonus plat :
+
+| Source | Effet |
+|---|---|
+| Coûts fixes par bâtiment (route et nœud neufs, équipe minimale, outillage) | économisés quand on étend au lieu de fonder |
+| Compacité (périmètre ÷ aire) | moins de jours-travail par tile pour une terre compacte : une terre « moche » est moins rentable |
+| Seuil d'équipe (une charrue et son attelage couvrent N tiles) | sous-utilisation en dessous, seconde équipe au-dessus : l'optimum émerge |
+
+Garde-fous contre les champs géants : emprise maximale par type (`04`), distance, périmètre. C'est aussi le mécanisme historique de la **concentration** (enclosures), cœur du jeu.
+
+### 10.4 Une pop travaille en un seul lieu par jour ; stock par pop
+**Règle.** Une pop travaille **en un seul lieu chaque jour**, visible le jour J (cohérent avec `00` §3 : un seul lieu de travail). Cela **remplace** le budget de jours réparti entre les terres (§8.3 et « Main-d'œuvre » POC-A), qui rendait « son lieu de travail du jour » ambigu.
+
+**Décision quotidienne d'une pop (raisonnement simple du POC, à enrichir : salaire, contrat, démission).**
+1. Elle calcule, pour chaque ration, son **autonomie** : `stock_de_la_pop ÷ ration_par_jour` (en jours).
+2. Elle classe ses besoins : **vital d'abord** (nourriture, chauffage), puis confort, puis le reste (travail domestique, chantier).
+3. Candidats : lieux **à portée** (`distance_max`) qui ont du travail à donner aujourd'hui (postes du jour) et dont la production répond au besoin visé.
+4. Elle choisit le lieu qui produit la ressource **la moins couverte**, puis le plus proche. Rien de pressant : travail domestique ou chantier.
+5. Elle **enregistre le motif** : ressource visée, autonomie, candidats et raison d'écart (trop loin, pas de poste, stock plein).
+
+**Production linéaire.** Un jour de travail donne un jour de production. Le besoin d'un lieu s'exprime en pop-jours (formule actuelle) : une terre de 4 tiles ne demande qu'environ 1/12 de pop par jour, donc les pops **tournent** d'un lieu à l'autre au fil des jours selon leurs besoins. Les **postes du jour** de chaque lieu évitent que toutes les pops aillent au même endroit.
+
+**Stock par pop** *(et non par tile ni par hameau)* : chaque pop a son inventaire personnel (grain, viande, fruit, bois, vêtements) et **consomme sur son propre stock**. Deux pops d'une même maison ou d'un même hameau peuvent avoir des statuts, besoins et couvertures différents (strates, richesse, plus tard). Conséquences :
+- la couverture des besoins (§6) se calcule **par pop**, plus par hameau ;
+- les stocks de bâtiments (sortie) approvisionnent les pops par les liens (J+1, principe 5) ; la **règle de partage** du POC reste au prorata du manque (équivalente à l'actuelle) tant qu'il n'y a pas de monnaie ; elle deviendra salaire ou achat en POC-B ;
+- le travail domestique (§8.4) transforme les intrants **de la pop** ;
+- attributs de vie à prévoir en champs **nullables**, sans logique tant que le POC n'en a pas besoin (principe 7) : richesse, santé, culture, déménagement, émigration.
+
+**Impacts à traiter à l'implémentation.** `sim/` (affectation quotidienne, consommation, partage), `03` (schéma : stock porté par la pop), `app/` (panneau de pop), recalibrage de `jours_personne_par_pop_an` qui ne sert plus qu'à convertir les besoins des lieux en pop-jours (`05`, question 9). Migration en deux temps conseillée : (a) un lieu par jour avec les stocks de hameau actuels, (b) puis stock par pop. **Risques** : oscillations (toutes les pops vers la même ressource le même jour), à corriger par les postes du jour ; coût (pops = entités individuelles, déjà le cas, `03` §5b).
+
+### 10.5 Comprendre les flux et les stocks (priorité avant les animations)
+L'objet du jeu est l'organisation du travail et le partage de ses fruits : le joueur doit voir **qui travaille où et pourquoi, ce qui est produit, où c'est stocké, qui consomme**.
+
+| Vue | Contenu |
+|---|---|
+| **Pop** (clic sur son icône dans sa maison) | lieu de travail du jour et motif (§10.4), lieux possibles (surlignés sur la carte, avec la raison d'écart des autres), stock personnel et autonomie par ration, consommation du jour, état (satisfaite, en manque) ; plus tard salaire, contrat, richesse, santé, culture |
+| **Lieu de production** | production du jour (cumul), facteur limitant, stock de sortie, pops présentes aujourd'hui, destinataires des sorties |
+| **Par ressource** (ex. grain) | la carte met en évidence producteurs, stocks (bâtiments **et** pops), flux en transit et consommateurs ; bilan produit / stocké / consommé |
+
+Données à conserver pour cela : affectation et motif du jour par pop, production et consommation du jour par bâtiment et par pop, flux J→J+1 par lien. Ce sont des agrégats déjà calculés par le moteur ; il manque leur exposition (`PanneauInfos`, instantanés du pont wasm).
+
+### 10.6 Animation (non prioritaire)
+Une fois §10.4 en place, les sprites de pops marchent sur le **chemin réel** de leur maison à leur lieu de travail du jour : ce sont de vraies pops, pas des figurants dérivés. Jour/nuit = rendu seul. Les saisons dans la simulation restent hors POC pour l'instant (production continue, `04`).
