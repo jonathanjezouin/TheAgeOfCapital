@@ -205,10 +205,10 @@ Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregist
 | Hameau | Ses pops et leur lieu de travail, état de chaque pop (satisfaite / insatisfaite / en manque), couverture de chaque ration (reçu/requis, et auprès de quel fournisseur), jauge de croissance, atelier textile sur place |
 | Terre exploitée | Production effective %, **fertilité de la tile**, facteur limitant, stocks, pops affectées et leurs hameaux, clients |
 | Chantier | Ce qui est construit, travail restant, équipe présente, bois reçu, **motif** (« grain manque, 2 pops sans poste ») |
-| Pop sans poste | Pastille distincte dans la liste du hameau |
-| Modes de carte | Couverture des besoins, pénuries, utilisation des terres, **fertilité**, portée (tiles chemin) autour d'un lieu |
+| Pop | **Inspecteur** (clic sur une pop) : lieu du jour et motif, stock personnel et autonomie par ration, terres possibles et raison du choix, santé et croissance. Contour clair sur la carte = reste chez elle aujourd'hui |
+| Modes de carte | Couverture des besoins, pénuries, utilisation des terres, **fertilité**, portée (tiles chemin) autour d'un lieu, **Flux** (où une marchandise est produite, stockée, expédiée, consommée) |
 | Global | Date, vitesse, courbes (pop, production vs consommation), journal d'événements (naissance, disparition, bras réorientés vers…, **chantier lancé / terminé**) |
-| Temps | Jour/nuit par teinte globale ; une pop = un sprite, au travail le jour, au logement la nuit |
+| Temps | Jour/nuit par teinte globale ; une pop = un sprite qui marche sur les routes matin et soir, au travail le jour, à sa maison la nuit |
 | Debug | Choc de récolte (« mauvaise récolte »), modifier un paramètre en direct |
 
 ## Prochaine étape du POC (révisée le 2026-11-03)
@@ -219,9 +219,9 @@ La production reste **continue, sans saisons** dans le POC. Ordre de travail dé
 |---|---|---|
 | 1 | ✅ Traversabilité par type (terres et chantiers non traversables), tile nœud d'accès en bordure, pathfinding (moteur fait ; rendu `app/` à valider) | `02` §10.1 |
 | 2 | ✅ Extension compacte des terres (score fertilité, périmètre, distance) et terroir par hameau (moteur fait ; terroir en pénalité douce) | `02` §10.2 |
-| 3 | **Une pop = un lieu de travail par jour**, avec motif ; puis stock personnel par pop | `02` §10.4 |
-| 4 | Inspecteur de pop et vue « par ressource » (qui travaille où, produit, stocké, consommé) | `02` §10.5 |
-| 5 | Animation des pops sur leur chemin réel, jour/nuit, ombres (non prioritaire) | `02` §10.6 |
+| 3 | ✅ **Une pop = un lieu de travail par jour**, avec motif ; stock personnel par pop | `02` §10.4 |
+| 4 | ✅ Inspecteur de pop et vue « par ressource » (mode Flux) : qui travaille où, produit, stocké, consommé | `02` §10.5 |
+| 5 | ✅ Animation des pops sur leur chemin réel en mode Jour/nuit (ombres portées toujours à faire) | `02` §10.6 |
 | 6 | Économies d'échelle de l'emprise, après le 2 | `02` §10.3 |
 
 Fertilité : une seule valeur par tile dans le POC ; la cible (aptitude sol/culture) est notée dans `06`.

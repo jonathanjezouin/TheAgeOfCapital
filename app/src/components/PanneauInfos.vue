@@ -25,8 +25,8 @@ const entite = computed(() => {
 const pops = computed(() => {
   const en = entite.value, e = store.etat
   if (!en || !e) return []
-  if (en.genre === 'hameau') return e.pops.filter((p) => p[1] === en.q)
-  if (en.genre === 'terre' || (en.genre === 'chantier' && en.b != null)) return e.pops.filter((p) => p[2] === en.b)
+  if (en.genre === 'hameau') return e.pops.filter((p) => p.residence === en.q)
+  if (en.genre === 'terre' || (en.genre === 'chantier' && en.b != null)) return e.pops.filter((p) => p.emploi === en.b)
   return []
 })
 
@@ -71,8 +71,9 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
         <span class="pastille" style="background: #86c250"></span>satisfaite
         <span class="pastille" style="background: #e0a03a"></span>insatisfaite
         <span class="pastille" style="background: #d65a4a"></span>en manque
-        <span class="pastille" style="background: #4a4a48; border-color: #d9d4c4"></span>sans poste.
-        En mode <i>Jour/nuit</i>, elles rentrent chez elles le soir.</p>
+        (contour clair : reste chez elle aujourd'hui). <b>Cliquez une pop</b> pour voir où elle travaille, pourquoi, et ce qu'elle possède.
+        En mode <i>Jour/nuit</i>, elles marchent sur les routes.</p>
+      <p>Mode <b>Flux</b> : suivre une marchandise de sa production à sa consommation.</p>
       <p>Le <b>journal</b> en bas dit pourquoi le village s'étend : cliquez un événement pour aller sur sa tile.</p>
     </div>
 
@@ -106,16 +107,17 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
           <div class="barre"><i :style="{ width: Math.min(100, x.couv * 100) + '%', background: couleurRatio(x.couv) }"></i></div>
           <span class="val">{{ pct(x.couv) }}</span>
         </div>
-        <h3>Stock du hameau</h3>
+        <h3>Stock des pops du hameau</h3>
         <div class="doux">
           <span v-for="x in rations" :key="x.nom" style="margin-right: 10px">{{ RESSOURCES[x.nom] }} {{ un(x.stock, 0) }}</span>
         </div>
         <h3>Pops</h3>
-        <div v-for="p in pops" :key="p[0]" class="pop">
-          <span class="pastille" :style="{ background: etatPop(entite.h).couleur }"></span><b>Pop {{ p[0] }}</b>
-          <span class="etiquette">{{ etatPop(entite.h).texte }}</span><br />
-          <small v-if="lieuDe(p[2])">travaille : {{ nomLieu(lieuDe(p[2])) }} ({{ lieuDe(p[2]).x }}, {{ lieuDe(p[2]).y }})</small>
-          <small v-else>sans poste : elle consomme mais ne produit pas</small>
+        <div v-for="p in pops" :key="p.id" class="pop">
+          <span class="pastille" :style="{ background: etatPop(p).couleur }"></span>
+          <button class="lien" title="Inspecter cette pop" @click="store.selectionPop = p.id"><b>Pop {{ p.id }}</b></button>
+          <span class="etiquette">{{ etatPop(p).texte }}</span><br />
+          <small v-if="lieuDe(p.emploi)">aujourd'hui : {{ nomLieu(lieuDe(p.emploi)) }} ({{ lieuDe(p.emploi).x }}, {{ lieuDe(p.emploi).y }})</small>
+          <small v-else>aujourd'hui : chez elle</small>
         </div>
         <p v-if="!pops.length" class="doux">Aucune pop n'y vit pour le moment.</p>
       </div>
@@ -128,18 +130,19 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
         <div class="ligne"><span>Limité par</span><span>{{ limitantTexte(entite.l.limitant) }}</span></div>
         <div class="ligne"><span>Surface</span><span>{{ entite.l.emprise.length }} tiles ({{ un(entite.l.emprise.length * 6.25, 0) }} ha)</span></div>
         <div class="ligne"><span>Fertilité moyenne</span><span>{{ pct(entite.l.fertilite) }}</span></div>
-        <div class="ligne"><span>Travail reçu / requis</span><span>{{ un(entite.l.recu, 2) }} / {{ un(entite.l.postes, 2) }} pops</span></div>
-        <div class="note" v-if="entite.l.limitant === 'main_oeuvre'">Pas assez de temps de travail à portée : les pops des hameaux voisins se partagent leur temps entre les terres, celles qui manquent d'abord.</div>
-        <div class="note" v-else-if="entite.l.limitant === 'stock_plein'">Rien à écouler : le temps de travail va aux terres qui manquent.</div>
+        <div class="ligne"><span>Travail reçu (moy. 30 j) / requis</span><span>{{ un(entite.l.recu, 2) }} / {{ un(entite.l.postes, 2) }} pops</span></div>
+        <div class="ligne"><span>Reçu aujourd'hui · encore réclamé</span><span>{{ un(entite.l.recu_jour, 2) }} · {{ un(entite.l.demande, 2) }} pop-jour</span></div>
+        <div class="note" v-if="entite.l.limitant === 'main_oeuvre'">Cette terre réclame du travail que personne n'est venu faire : les pops vont d'abord vers ce qui leur manque pour vivre.</div>
+        <div class="note" v-else-if="entite.l.limitant === 'stock_plein'">Rien à écouler : le stock de sortie est presque plein, personne n'a besoin de venir.</div>
         <h3>Stock de sortie</h3>
         <div class="doux">
           <template v-for="(q, r) in entite.l.sortie" :key="r"><span v-if="q > 0.05" style="margin-right: 10px">{{ RESSOURCES[nomRes(r)] }} {{ un(q, 0) }}</span></template>
         </div>
-        <h3>Pops dont c'est la terre principale</h3>
-        <div v-for="p in pops" :key="p[0]" class="pop">
-          <b>Pop {{ p[0] }}</b> <small>du hameau ({{ hameauDe(p[1]).x }}, {{ hameauDe(p[1]).y }})</small>
+        <h3>Pops venues y travailler aujourd'hui</h3>
+        <div v-for="p in pops" :key="p.id" class="pop">
+          <button class="lien" @click="store.selectionPop = p.id"><b>Pop {{ p.id }}</b></button> <small>du hameau ({{ hameauDe(p.residence).x }}, {{ hameauDe(p.residence).y }}) · {{ un(p.travail, 2) }} pop-jour</small>
         </div>
-        <p v-if="!pops.length" class="doux">Personne n'y travaille.</p>
+        <p v-if="!pops.length" class="doux">Personne n'est venu aujourd'hui.</p>
       </div>
 
       <!-- Chantier -->
@@ -153,7 +156,7 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
         <div class="note" v-if="motif">Pourquoi : {{ motif }}.</div>
         <div class="note" v-if="entite.lieu.limitant.startsWith('intrant')">Le chantier attend son matériau (bois) : il arrive par le réseau comme toute marchandise.</div>
         <h3>Équipe</h3>
-        <div v-for="p in pops" :key="p[0]" class="pop"><b>Pop {{ p[0] }}</b> <small>du hameau ({{ hameauDe(p[1]).x }}, {{ hameauDe(p[1]).y }})</small></div>
+        <div v-for="p in pops" :key="p.id" class="pop"><button class="lien" @click="store.selectionPop = p.id"><b>Pop {{ p.id }}</b></button> <small>du hameau ({{ hameauDe(p.residence).x }}, {{ hameauDe(p.residence).y }})</small></div>
         <p v-if="!pops.length" class="doux">Personne pour l'instant : le chantier recrutera à la prochaine saison (corvée si besoin).</p>
       </div>
       <small class="doux">{{ jours }}</small>

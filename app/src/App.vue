@@ -4,6 +4,8 @@ import BarreHaut from './components/BarreHaut.vue'
 import PanneauInfos from './components/PanneauInfos.vue'
 import Journal from './components/Journal.vue'
 import Courbes from './components/Courbes.vue'
+import PanneauPop from './components/PanneauPop.vue'
+import PanneauRessource from './components/PanneauRessource.vue'
 import { chargerSim } from './sim.js'
 import { Carte } from './carte.js'
 import { store } from './store.js'
@@ -22,7 +24,20 @@ function lireEtat() {
   if (e.evenements.length) store.evenements.push(...e.evenements)
   store.etat = markRaw(e)
   if (!store.carte || store.carte.version !== e.version) lireCarte(e)
+  lireDetails()
   carte.rafraichir(e)
+}
+
+/** Vues détaillées demandées au moteur : la pop inspectée, la ressource suivie. */
+function lireDetails() {
+  if (store.selectionPop != null) {
+    const d = sim.pop(store.selectionPop)
+    if (!d) store.selectionPop = null
+    store.popDetail = d ? markRaw(d) : null
+  } else {
+    store.popDetail = null
+  }
+  store.ressourceDetail = store.mode === 'ressource' ? markRaw(sim.ressource(store.ressource)) : null
 }
 
 function lireCarte(etat) {
@@ -43,6 +58,7 @@ function nouvellePartie() {
   }
   store.evenements.length = 0
   store.selection = null
+  store.selectionPop = null
   store.carte = null
   store.fertilite = sim.fertilite()
   carte.remplacerFertilite(store.fertilite)
@@ -99,6 +115,7 @@ onMounted(async () => {
     store.meta = markRaw(sim.meta())
     store.fertilite = sim.fertilite()
     carte = await new Carte().init(zone.value, URLS, store.meta, store.fertilite)
+    carte.sim = sim
     window.__carte = carte
     window.__sim = sim
     window.__store = store
@@ -121,7 +138,11 @@ onBeforeUnmount(() => {
   carte?.detruire()
 })
 
-watch(() => [store.mode, store.selection], () => store.etat && carte?.rafraichir(store.etat))
+watch(() => [store.mode, store.selection, store.selectionPop, store.ressource], () => {
+  if (!store.etat || !carte) return
+  lireDetails()
+  carte.rafraichir(store.etat)
+})
 watch(() => store.vitesse, () => carte?.majNuit())
 </script>
 
@@ -141,12 +162,19 @@ watch(() => store.vitesse, () => carte?.majNuit())
         <div class="degrade" style="background: linear-gradient(90deg, rgb(150,84,56), rgb(196,150,70), rgb(150,176,70), rgb(74,150,70), rgb(30,110,76))"></div>
         pauvre <span style="float: right">riche</span>
       </div>
+      <div v-if="store.pret && store.mode === 'ressource'" class="legende">
+        Suivi d'une ressource : <span style="color: #7ab648">producteurs</span> · flèches = expéditions du jour · hameaux colorés par couverture · <span style="color: #e0a03a">ateliers</span> qui l'utilisent
+      </div>
       <div v-if="store.pret && store.mode === 'besoins'" class="legende">
         Hameaux : <span style="color: #e0725f">vital manquant</span> · <span style="color: #e0b04a">confort insuffisant</span> · <span style="color: #7ab648">tout couvert</span><br />
         Terres : production (rouge → vert)
       </div>
     </div>
-    <PanneauInfos v-if="store.pret" />
+    <template v-if="store.pret">
+      <PanneauPop v-if="store.popDetail" />
+      <PanneauRessource v-else-if="store.mode === 'ressource' && !store.selection" />
+      <PanneauInfos v-else />
+    </template>
     <aside v-else class="infos"></aside>
     <div class="bas" v-if="store.pret">
       <Journal />

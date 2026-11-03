@@ -126,7 +126,9 @@ Contrat
   qualite         (non utilisé POC)
 
 Pop (unité de population, 100 hab fixe)
-  id, tile_residence_id, tile_emploi_id (nullable)
+  id, tile_residence_id, tile_emploi_id (nullable : lieu de travail du jour, un seul)
+  stock           { ressource: qte }   (inventaire personnel : la pop consomme sur son propre stock, 02 §10.4)
+  motif           (pourquoi ce lieu aujourd'hui : classe vital | confort | intrant | entretien, ressource visée) ; travail_du_jour, travail_lisse
   croissance      (jauge en micro-habitants : +100 hab = duplication, −100 hab = disparition)
   strate          : paysan | ouvrier | bourgeois | domestique | noble …
   culture, religion, orientation, alphabetise   (fixes en POC ; bascule hors POC)
@@ -135,7 +137,7 @@ Pop (unité de population, 100 hab fixe)
 
 Hameau / Quartier (tile d'habitat)
   habitat_id (hameau | hameau_textile), capacite_pops (0 pendant la construction), atelier (nullable : bâtiment à 1 poste sur la même tile)
-  stock, vital_jour, confort_jour, couverture par ressource, vital_annuel, confort_annuel
+  stock (réserve commune, sans habitant seulement), vital_jour, confort_jour, couverture par ressource (moyennes de ses pops), vital_annuel, confort_annuel
   salaire_reference (POC-B)
 
 Batiment (type)

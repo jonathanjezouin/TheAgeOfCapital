@@ -146,8 +146,21 @@ pub struct Bilan {
     pub perime: Vec<Qte>,
 }
 
+/// Une marchandise partie d'un lieu vers un autre aujourd'hui (indices de lieux : hameaux puis bâtiments).
+#[derive(Clone, Debug, Serialize)]
+pub struct Flux {
+    pub de: usize,
+    pub vers: usize,
+    pub ressource: usize,
+    pub qte: Qte,
+}
+
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct StatsJour {
+    /// Marchandises expédiées aujourd'hui (fournisseur → client), pour suivre où va la production.
+    pub flux: Vec<Flux>,
+    /// Production du jour par bâtiment : (bâtiment, ressource, quantité).
+    pub produits_par_lieu: Vec<(usize, usize, Qte)>,
     pub produit: Vec<Qte>,
     pub consomme_pops: Vec<Qte>,
     pub nb_differes: usize,
@@ -568,6 +581,8 @@ impl Simulation {
         self.stats.produit = vec![0; nr];
         self.stats.consomme_pops = vec![0; nr];
         self.stats.retards_pops = 0;
+        self.stats.flux.clear();
+        self.stats.produits_par_lieu.clear();
 
         self.vider_reserves();
         // 1. Livraison des différés de la veille (priorité sur les nouveaux flux).
@@ -731,6 +746,7 @@ impl Simulation {
 
         // Transport : le stock du fournisseur est débité, l'arrivée dépend de la congestion.
         for (f, c, res, qte) in transferts {
+            self.stats.flux.push(Flux { de: f, vers: c, ressource: res, qte });
             self.monde.batiments[f - nq].stock_sortie[res] -= qte;
             let ok = self.charger(f, c, qte);
             if ok > 0 {
@@ -934,7 +950,7 @@ impl Simulation {
         let libre = self.libre_milli.clone();
         let cat = &self.cat;
         let tuiles = &self.monde.tuiles;
-        for b in &mut self.monde.batiments {
+        for (idx_b, b) in self.monde.batiments.iter_mut().enumerate() {
             let t = &cat.batiments[b.type_id];
             if t.chantier {
                 Self::avancer_chantier(b, cat, &mut self.bilan);
@@ -1009,6 +1025,9 @@ impl Simulation {
                     } else {
                         b.stock_sortie[r] += p;
                         self.stats.produit[r] += p;
+                        if p > 0 {
+                            self.stats.produits_par_lieu.push((idx_b, r, p));
+                        }
                     }
                 }
                 if f < f_min {

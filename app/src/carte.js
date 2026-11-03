@@ -62,6 +62,10 @@ export class Carte {
       } catch { this.solChemin = null }
     }
     this.chantiersMaison = []
+    this.slotsHameau = new Map() // emplacements des maisons de chaque hameau
+    this.cheminsCache = new Map() // trajets hameau -> lieu, lissés
+    this.posPops = []
+    this.sim = null
 
     this.monde = new Container()
     this.sol = new Container()
@@ -160,6 +164,8 @@ export class Carte {
     this.infra.removeChildren().forEach((c) => c.destroy())
     this.bat.removeChildren().forEach((c) => c.destroy())
     this.chantiersMaison = []
+    this.slotsHameau.clear()
+    this.cheminsCache.clear()
     const W = this.meta.largeur
     const grille = new Map()
     for (const t of carte.tuiles) grille.set(t.y * W + t.x, t)
@@ -307,6 +313,7 @@ export class Carte {
   poserMaisons(t, etat) {
     const h = etat.hameaux[t.m]
     const slots = this.emplacementsMaisons(t)
+    this.slotsHameau.set(t.m, slots)
     const n = h.capacite
     for (let i = 0; i < n; i++) {
       const s = slots[i % slots.length]
@@ -366,31 +373,173 @@ export class Carte {
     })
   }
 
+  // ---------- Pops : une par maison, un seul lieu de travail par jour ----------
+
+  /** Rang de chaque pop dans son hameau (par ordre d'identifiant) : c'est aussi le rang de sa maison. */
+  rangsPops(etat) {
+    const n = new Map(), rang = new Map()
+    for (const p of etat.pops) {
+      const r = n.get(p.residence) ?? 0
+      rang.set(p.id, r)
+      n.set(p.residence, r + 1)
+    }
+    return rang
+  }
+
+  /** Porte de la maison d'une pop. */
+  positionMaison(p, rang, etat) {
+    const slots = this.slotsHameau.get(p.residence)
+    if (slots?.length) {
+      const s = slots[rang % slots.length]
+      return [s.x, s.y]
+    }
+    const h = etat.hameaux[p.residence]
+    return [(h.x + 0.5) * T, (h.y + 0.5) * T]
+  }
+
+  /** Où elle travaille : une tile de l'emprise du lieu et un point dans cette tile (stable pour une pop). */
+  positionTravail(p, etat) {
+    const lieu = etat.lieux[p.emploi]
+    const tuiles = lieu.emprise.length ? lieu.emprise : [[lieu.x, lieu.y]]
+    const h = hash(p.id * 7 + 3, p.id * 13 + 5)
+    const [tx, ty] = tuiles[h % tuiles.length]
+    return [(tx + 0.5) * T + (((h >> 4) & 255) / 255 - 0.5) * 0.7 * T, (ty + 0.5) * T + (((h >> 12) & 255) / 255 - 0.5) * 0.7 * T]
+  }
+
+  /** Trajet d'un hameau à un lieu, lissé comme les routes (mêmes décalages organiques), échantillonné. */
+  chemin(q, b) {
+    const cle = q + ':' + b
+    let c = this.cheminsCache.get(cle)
+    if (c) return c
+    const tuiles = this.sim ? this.sim.chemin(q, b) : []
+    const W = this.meta.largeur
+    const nbArêtes = (a) => { let n = 0; for (let d = 0; d < 8; d++) if (a & (1 << d)) n++; return n }
+    const pts = tuiles.map(([x, y], i) => {
+      let px = (x + 0.5) * T, py = (y + 0.5) * T
+      const t = this.grille.get(y * W + x)
+      if (t && t.c === 'chemin' && nbArêtes(t.a) === 2 && i > 0 && i < tuiles.length - 1) {
+        px += (hashf(x, y, 1) - 0.5) * 2 * DECALAGE_ROUTE * T
+        py += (hashf(x, y, 2) - 0.5) * 2 * DECALAGE_ROUTE * T
+      }
+      return [px, py]
+    })
+    const echantillons = []
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || p2
+      const c1 = [p1[0] + (p2[0] - p0[0]) / 6, p1[1] + (p2[1] - p0[1]) / 6]
+      const c2 = [p2[0] - (p3[0] - p1[0]) / 6, p2[1] - (p3[1] - p1[1]) / 6]
+      for (let k = 0; k < 8; k++) {
+        const u = k / 8, v = 1 - u
+        echantillons.push([
+          v * v * v * p1[0] + 3 * v * v * u * c1[0] + 3 * v * u * u * c2[0] + u * u * u * p2[0],
+          v * v * v * p1[1] + 3 * v * v * u * c1[1] + 3 * v * u * u * c2[1] + u * u * u * p2[1],
+        ])
+      }
+    }
+    if (pts.length) echantillons.push(pts[pts.length - 1])
+    c = { pts: echantillons, tiles: tuiles.length }
+    this.cheminsCache.set(cle, c)
+    return c
+  }
+
+  /** Point à la fraction `u` (0..1) de la longueur d'une ligne brisée. */
+  pointSur(pts, u) {
+    if (pts.length < 2) return pts[0]
+    let total = 0
+    const lg = []
+    for (let i = 1; i < pts.length; i++) { const l = Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]); lg.push(l); total += l }
+    let reste = Math.max(0, Math.min(1, u)) * total
+    for (let i = 0; i < lg.length; i++) {
+      if (reste <= lg[i] || i === lg.length - 1) {
+        const k = lg[i] > 0 ? Math.min(1, reste / lg[i]) : 0
+        return [pts[i][0] + (pts[i + 1][0] - pts[i][0]) * k, pts[i][1] + (pts[i + 1][1] - pts[i][1]) * k]
+      }
+      reste -= lg[i]
+    }
+    return pts[pts.length - 1]
+  }
+
+  /** Position d'une pop à l'heure `h` : à la maison la nuit, en marche sur la route matin et soir
+   *  (en mode « Jour/nuit » seulement), sur son lieu de travail dans la journée. */
+  positionPop(p, rang, etat, h) {
+    const maison = this.positionMaison(p, rang, etat)
+    if (p.emploi < 0 || !etat.lieux[p.emploi]) {
+      // Chez elle : elle flâne autour de sa porte.
+      const a = hash(p.id, 5) % 628 / 100 + h * 0.15
+      return { pos: [maison[0] + Math.cos(a) * 0.05 * T, maison[1] + Math.sin(a) * 0.05 * T], travail: false }
+    }
+    const travail = this.positionTravail(p, etat)
+    if (store.vitesse > 0.5) return { pos: travail, travail: true }
+    const hh = hash(p.id * 11 + 1, p.id * 3 + 9)
+    const depart = 6 + (hh & 255) / 255 * 1.3
+    const retour = 16.5 + ((hh >> 8) & 255) / 255 * 1.5
+    const ch = this.chemin(p.residence, p.emploi)
+    const trace = [maison, ...ch.pts, travail]
+    const duree = Math.min(2.5, 0.1 * ch.tiles + 0.15)
+    if (h < depart || h >= retour + duree) return { pos: maison, travail: false }
+    if (h < depart + duree) return { pos: this.pointSur(trace, (h - depart) / duree), travail: false, marche: true }
+    if (h < retour) return { pos: travail, travail: true }
+    return { pos: this.pointSur(trace, 1 - (h - retour) / duree), travail: false, marche: true }
+  }
+
   dessinerPops(etat) {
     const g = this.pops
     g.clear()
-    const jour = store.heure >= 7 && store.heure < 18
-    for (const [id, res, emploi, jauge] of etat.pops) {
-      const hameau = etat.hameaux[res]
-      const lieu = emploi >= 0 ? etat.lieux[emploi] : null
-      const cible = jour && lieu ? lieu : hameau
-      const h = hash(id * 7 + 3, id * 13 + 5)
-      const ox = ((h & 255) / 255 - 0.5) * 150
-      const oy = (((h >> 8) & 255) / 255 - 0.5) * 150
-      const px = cible.x * T + T / 2 + ox
-      const py = cible.y * T + T / 2 + oy
-      const couleur = hameau.vital < 0.999 ? 0xd65a4a : hameau.confort < 0.999 ? 0xe0a03a : 0x86c250
-      if (emploi < 0) {
-        g.circle(px, py, 15).fill({ color: 0x4a4a48, alpha: 0.9 }).stroke({ width: 4, color: 0xd9d4c4 })
-      } else {
-        g.circle(px, py, 14).fill(couleur).stroke({ width: 4, color: 0x1f1d18 })
-      }
+    const h = store.heure
+    const rang = this.rangsPops(etat)
+    this.posPops = []
+    for (const p of etat.pops) {
+      const { pos, travail, marche } = this.positionPop(p, rang.get(p.id), etat, h)
+      this.posPops.push({ id: p.id, x: pos[0], y: pos[1] })
+      const couleur = p.vital < 0.999 ? 0xd65a4a : p.confort < 0.999 ? 0xe0a03a : 0x86c250
+      const rayon = marche ? 13 : 15
+      if (travail || marche) g.circle(pos[0], pos[1], rayon).fill(couleur).stroke({ width: 4, color: 0x1f1d18 })
+      else g.circle(pos[0], pos[1], rayon).fill({ color: couleur, alpha: 0.85 }).stroke({ width: 4, color: 0xd9d4c4 })
+    }
+  }
+
+  /** Mode « Flux » : où une ressource est produite, stockée, expédiée et consommée. */
+  dessinerRessource(g) {
+    const d = store.ressourceDetail
+    if (!d) return
+    const c = (x, y) => [(x + 0.5) * T, (y + 0.5) * T]
+    // Hameaux : couverture de la ration (rouge -> vert), cercle proportionnel au stock des pops.
+    for (const h of d.hameaux) {
+      const [x, y] = c(h.x, h.y)
+      g.rect(h.x * T + 6, h.y * T + 6, T - 12, T - 12).fill({ color: hsl(8 + 112 * Math.min(1, h.couverture), 62, 42), alpha: 0.5 })
+      if (h.stock > 0) g.circle(x, y, 18 + 10 * Math.sqrt(h.stock)).stroke({ width: 6, color: 0xf0e6c0, alpha: 0.9 })
+    }
+    for (const u of d.utilisateurs) g.rect(u.x * T + 20, u.y * T + 20, T - 40, T - 40).stroke({ width: 8, color: 0xe0a03a, alpha: 0.9 })
+    // Expéditions du jour : courbes dont l'épaisseur suit la quantité, une flèche à l'arrivée.
+    const groupes = new Map()
+    for (const f of d.flux) {
+      const k = f.de + '>' + f.vers
+      const e = groupes.get(k) ?? { ...f, qte: 0 }
+      e.qte += f.qte
+      groupes.set(k, e)
+    }
+    for (const f of groupes.values()) {
+      const [x0, y0] = c(f.de[0], f.de[1]), [x1, y1] = c(f.vers[0], f.vers[1])
+      const mx = (x0 + x1) / 2, my = (y0 + y1) / 2
+      const dx = x1 - x0, dy = y1 - y0
+      const cx = mx - dy * 0.18, cy = my + dx * 0.18
+      const larg = 6 + 9 * Math.sqrt(f.qte)
+      g.moveTo(x0, y0).quadraticCurveTo(cx, cy, x1, y1).stroke({ width: larg, color: 0xf2c94c, alpha: 0.55, cap: 'round' })
+      const a = Math.atan2(y1 - cy, x1 - cx), L = 50 + larg
+      g.poly([x1, y1, x1 - Math.cos(a - 0.45) * L, y1 - Math.sin(a - 0.45) * L, x1 - Math.cos(a + 0.45) * L, y1 - Math.sin(a + 0.45) * L]).fill({ color: 0xf2c94c, alpha: 0.85 })
+    }
+    // Producteurs : disque vert proportionnel au stock de sortie, anneau si ça produit aujourd'hui.
+    for (const p of d.producteurs) {
+      const [x, y] = c(p.x, p.y)
+      g.circle(x, y, 22 + 12 * Math.sqrt(p.stock_sortie)).fill({ color: 0x7ab648, alpha: 0.75 }).stroke({ width: 5, color: 0x1f1d18 })
+      if (p.produit_jour > 0) g.circle(x, y, 34 + 12 * Math.sqrt(p.stock_sortie)).stroke({ width: 5, color: 0xcdf08a })
     }
   }
 
   dessinerModes(etat) {
     const g = this.couleurs
     g.clear()
+    if (store.mode === 'ressource') return this.dessinerRessource(g)
     if (store.mode !== 'besoins') return
     for (const h of etat.hameaux) {
       const c = h.vital < 0.999 ? hsl(8 + 40 * h.vital, 65, 45) : hsl(30 + 90 * h.confort, 62, 45)
@@ -402,9 +551,49 @@ export class Carte {
     }
   }
 
+  /** Pop inspectée : lieux possibles colorés selon leur statut, trajet du jour, halo sur la pop. */
+  dessinerPopSelectionnee(g) {
+    const d = store.popDetail
+    const etat = this.etat
+    if (!d || !etat) return
+    const COUL = { choisi: 0x86c250, moins_pressant: 0xe0a03a, complet: 0x9a9a92 }
+    for (const c of d.candidats) {
+      const lieu = etat.lieux[c.lieu]
+      if (!lieu) continue
+      const tuiles = lieu.emprise.length ? lieu.emprise : [[lieu.x, lieu.y]]
+      for (const [x, y] of tuiles) g.rect(x * T + 4, y * T + 4, T - 8, T - 8).fill({ color: COUL[c.statut], alpha: c.statut === 'choisi' ? 0.38 : 0.22 })
+      g.rect(c.x * T + 8, c.y * T + 8, T - 16, T - 16).stroke({ width: c.statut === 'choisi' ? 10 : 6, color: COUL[c.statut] })
+    }
+    if (d.emploi >= 0) {
+      const ch = this.chemin(d.residence, d.emploi)
+      if (ch.pts.length > 1) {
+        g.moveTo(ch.pts[0][0], ch.pts[0][1])
+        for (const p of ch.pts.slice(1)) g.lineTo(p[0], p[1])
+        g.stroke({ width: 18, color: 0xfff4c2, alpha: 0.55, cap: 'round', join: 'round' })
+      }
+    }
+    g.rect(d.x * T + 4, d.y * T + 4, T - 8, T - 8).stroke({ width: 6, color: 0xfff4c2, alpha: 0.7 })
+    const p = this.posPops.find((q) => q.id === d.id)
+    if (p) g.circle(p.x, p.y, 30).stroke({ width: 8, color: 0xfff4c2 })
+  }
+
+  /** Pop sous le pointeur (points des pops, puis portes des maisons). Retourne son identifiant. */
+  popSous(clientX, clientY) {
+    const r = this.app.canvas.getBoundingClientRect()
+    const p = this.monde.toLocal(new Point(clientX - r.left, clientY - r.top))
+    const portee = Math.max(26, 14 / this.monde.scale.x)
+    let meilleur = null, d2 = portee * portee
+    for (const q of this.posPops) {
+      const d = (q.x - p.x) ** 2 + (q.y - p.y) ** 2
+      if (d < d2) { d2 = d; meilleur = q.id }
+    }
+    return meilleur
+  }
+
   dessinerSelection() {
     const g = this.selectionG
     g.clear()
+    this.dessinerPopSelectionnee(g)
     const s = store.selection
     if (!s) return
     const tuile = this.grille?.get(s.y * this.meta.largeur + s.x)
@@ -469,7 +658,14 @@ export class Carte {
     })
     cv.addEventListener('pointerup', (e) => {
       if (drag && !drag.bouge) {
-        store.selection = this.tuileSous(e.clientX, e.clientY)
+        const pop = this.popSous(e.clientX, e.clientY)
+        if (pop != null) {
+          store.selectionPop = pop
+          store.selection = null
+        } else {
+          store.selectionPop = null
+          store.selection = this.tuileSous(e.clientX, e.clientY)
+        }
         this.dessinerSelection()
       }
       drag = null

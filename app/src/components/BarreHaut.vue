@@ -13,6 +13,7 @@ const MODES = [
   { id: 'normal', label: 'Normal' },
   { id: 'fertilite', label: 'Fertilité' },
   { id: 'besoins', label: 'Besoins' },
+  { id: 'ressource', label: 'Flux' },
 ]
 </script>
 
@@ -38,7 +39,7 @@ const MODES = [
     </span>
 
     <span class="stat">Population <b>{{ store.etat?.nb_pops ?? 0 }}</b> pops ({{ habitants.toLocaleString('fr-FR') }} hab.)</span>
-    <span class="stat">Sans poste <b>{{ store.etat?.sans_poste ?? 0 }}</b></span>
+    <span class="stat" title="Temps de travail que les terres ne réclament pas">Bras libres <b>{{ store.etat?.sans_poste ?? 0 }}</b></span>
     <span class="stat">Chantiers <b>{{ store.etat?.chantiers ?? 0 }}</b></span>
 
     <span class="groupe">

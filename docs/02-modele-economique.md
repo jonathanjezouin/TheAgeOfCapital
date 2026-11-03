@@ -87,7 +87,7 @@ Sélection du fournisseur : **appel d'offres local** — le client choisit, à p
 
 ### Main-d'œuvre
 
-**POC-A : budget de jours, entraide du hameau, sans marché** *(implémenté, voir §8.3 ; à remplacer par §10.4 : un lieu par pop et par jour).* Une pop n'a plus de poste : chaque jour, le temps des pops de chaque hameau (1 pop = 1 pop-jour, hors équipes de chantier) est réparti entre les terres à portée (`distance_max`), au prorata du temps disponible dans chaque hameau, les terres dont la ressource est en **tension** (ration couverte à moins de 97 %) d'abord. Une terre demande `N tiles × jours par tile et par an ÷ 12 500` pop-jours par jour ; si son stock de sortie est presque plein, elle ne demande que de quoi le remplir. Ce qui reste est le **temps libre** du hameau, que l'atelier domestique utilise. L'« emploi » d'une pop n'est qu'un affichage : sa terre principale, ou « sans poste » si elle est presque inoccupée.
+**POC-A : budget de jours, entraide du hameau, sans marché** *(ancien modèle, remplacé par §10.4 : un lieu par pop et par jour ; description conservée pour mémoire).* Une pop n'a plus de poste : chaque jour, le temps des pops de chaque hameau (1 pop = 1 pop-jour, hors équipes de chantier) est réparti entre les terres à portée (`distance_max`), au prorata du temps disponible dans chaque hameau, les terres dont la ressource est en **tension** (ration couverte à moins de 97 %) d'abord. Une terre demande `N tiles × jours par tile et par an ÷ 12 500` pop-jours par jour ; si son stock de sortie est presque plein, elle ne demande que de quoi le remplir. Ce qui reste est le **temps libre** du hameau, que l'atelier domestique utilise. L'« emploi » d'une pop n'est qu'un affichage : sa terre principale, ou « sans poste » si elle est presque inoccupée.
 
 | Événement | Règle |
 |---|---|
@@ -178,7 +178,7 @@ Chaque tile a un **plafond de stock** (`capacite_max`) : une production qui ne t
 ## 6. Besoins, satisfaction et démographie (POC)
 
 ### Couverture des besoins (chaque jour, par hameau)
-> ⚠️ Le stock devient **personnel** et la couverture se calcule **par pop** (§10.4, non implémenté).
+> ⚠️ Le stock est **personnel** et la couverture se calcule **par pop** (§10.4, implémenté) : les valeurs du hameau sont la moyenne de ses pops. Ce qui suit décrit les formules, inchangées.
 Chaque pop tire sa ration normale sur le stock de son hameau (`04`). On compare ce qu'elle a **reçu** aux besoins :
 
 ```
@@ -268,7 +268,7 @@ Voir §1. Conséquence : le POC actuel (60–90 pops dans ~7 tiles de rayon) sup
 - Intérêt : réalisme spatial sans multiplier les nœuds (~1 nœud pour 5–6 tiles). Les parcelles contiguës ouvrent plus tard la voie aux enclosures et à la propriété (cadastre = ensemble de tiles).
 
 ### 8.3 Le travail se compte en jours
-> ⚠️ **Partiellement remplacé par §10.4** (décision du 2026-11-03, non implémentée) : une pop travaille en un seul lieu par jour, avec un stock personnel. Le besoin des lieux en pop-jours reste valable.
+> ⚠️ **Remplacé par §10.4** (2026-11-03, implémenté) : une pop travaille en un seul lieu par jour, avec un stock personnel. Le besoin des lieux en pop-jours reste valable (il fixe la demande de travail d'une terre).
 - Chaque terre a un **besoin en jours-travail par an** (jours/ha × 6,25 ha par tile). Ordre de grandeur 1750 : céréales ~250 jours-personne par tile et par an (voir `04`).
 - **Budget de jours par hameau** : capacité = pops × `jours_par_pop_an` (~12 500 = 50 travailleurs × 250 jours ; **exception à la règle de `00` §3**, à acter, voir `05`). Allocation par priorité : **vital** (nourriture, chauffage), puis confort, puis ce qui reste. Pas de « raisonnement » individuel des pops : un budget par hameau, déterministe.
 - **Étape 1 (POC-A)** : budget **annuel lissé**, sans saisons. Les jours non pris par les champs vont au **travail domestique** (§8.4).
@@ -329,7 +329,7 @@ Largeurs d'ordre de grandeur, à vérifier.
 - **Rues rectilignes en ville** : en ville les rues sont planifiées (lotissement) : droites, avec des immeubles d'angle. À la campagne, les chemins sont sinueux et contournent le bâti existant (parfois autour de petits bâtiments). Le **décalage organique du rendu décroît avec le niveau d'urbanisation** (0 pour une trame planifiée). Une trame urbaine est un ensemble de rues parallèles dans la tile (voirie native), pas des arêtes distinctes tant qu'elles sont locales.
 - **Rendu des routes** : courbe lissée (Catmull-Rom vers Bézier) passant par les centres de tiles, avec décalage déterministe (hash de la position et de la graine, ±0,34 tile au plus) ; largeur exagérée à l'écran. L'atlas de 15 tiles de chemin est abandonné pour le réseau (`03` §6).
 
-## 10. Décisions de design du 2026-11-03 (§10.1 implémenté, le reste à implémenter)
+## 10. Décisions de design du 2026-11-03 (§10.1, §10.2, §10.4, §10.5 et §10.6 implémentés ; §10.3 à venir)
 
 Issues d'une discussion sur le rendu des routes, la forme des terres et la vie des pops. Elles **précisent ou remplacent** : §7 « Où » (route qui traverse des tiles occupées), §9.1 (« un chemin ne coupe plus un champ de N tiles » : vrai pour la comptabilité, faux à l'écran), §8.3 (budget de jours réparti) et §6 (couverture par hameau).
 
@@ -393,9 +393,18 @@ Garde-fous contre les champs géants : emprise maximale par type (`04`), distanc
 - le travail domestique (§8.4) transforme les intrants **de la pop** ;
 - attributs de vie à prévoir en champs **nullables**, sans logique tant que le POC n'en a pas besoin (principe 7) : richesse, santé, culture, déménagement, émigration.
 
-**Impacts à traiter à l'implémentation.** `sim/` (affectation quotidienne, consommation, partage), `03` (schéma : stock porté par la pop), `app/` (panneau de pop), recalibrage de `jours_personne_par_pop_an` qui ne sert plus qu'à convertir les besoins des lieux en pop-jours (`05`, question 9). Migration en deux temps conseillée : (a) un lieu par jour avec les stocks de hameau actuels, (b) puis stock par pop. **Risques** : oscillations (toutes les pops vers la même ressource le même jour), à corriger par les postes du jour ; coût (pops = entités individuelles, déjà le cas, `03` §5b).
+**Implémenté (2026-11-03)** dans `sim/src/simulation.rs` (`resoudre_main_oeuvre`, `candidats`, `autonomies`, `distribuer_hameau`, `consommer`). Précisions de la mise en œuvre :
+- **Choix.** Les pops libres passent l'une après l'autre, dans un ordre qui tourne chaque jour. Pour chaque terre à portée, la classe est : *vital* si la ressource est nutritive et que l'autonomie en nutrition est sous la cible (10 jours, `jours_stock_quartier`), ou si c'est le chauffage ; *confort* (viande, vêtements) ; *intrant* si la tension du hameau le réclame (lin, laine) ; sinon *entretien*. Tri : classe, plus grande pénurie, distance, indice. On prend la première terre qui réclame au moins `seuil_deplacement` (0,5 pop-jour, `poc.toml`).
+- **Demande de travail d'une terre** = besoin plein × jours de place restant dans son stock de sortie (au plus 10) × récolte sur pied. Une pop fournit au plus 1 pop-jour ; le reste de sa journée est du temps libre (textile domestique).
+- **Récolte sur pied** (`sur_pied_ppm`) : une terre accumule une journée de production par jour (plafond 10 jours) ; le travail la transforme en stock. Sans cela, venir plusieurs fois par jour aurait fait produire au-delà du rythme nominal (la production est linéaire en travail, mais bornée par ce qui a poussé). Visites espacées, rythme moyen inchangé.
+- **Lissage** : `prod_ppm`, `mo_lisse_milli` d'une terre et `travail_lisse_milli` d'une pop sont des moyennes mobiles sur ~30 jours. Les « bras libres » (`sans_poste()`) sont le temps libre moyen des hameaux (une pop est sans poste quand plus de 90 % de son temps reste libre).
+- **Stock par pop** : livraisons au prorata de ce qui manque à chaque pop pour atteindre sa cible ; héritage du stock d'une pop disparue aux habitants du hameau ; une réserve de hameau (`Quartier.stock`) ne sert plus qu'aux hameaux sans habitant.
+- **Comparaison** (8 graines, 120 ans) : population et bras libres du même ordre qu'avant (13/7/12/16/8/12/11/9 pops avant, 13/6/10/14/10/9/10/11 après).
+- Tests : `une_pop_travaille_en_un_seul_lieu_et_le_temps_est_conserve`, `la_pop_qui_manque_de_nourriture_va_vers_une_terre_nourriciere`, `le_stock_est_personnel_et_la_couverture_aussi`, `le_stock_d_une_pop_disparue_revient_a_son_hameau`, `une_terre_ne_produit_pas_plus_vite_que_son_rythme_nominal`.
 
-### 10.5 Comprendre les flux et les stocks (priorité avant les animations)
+**Reste à faire.** Pas de salaire ni de contrat (POC-B) ; pas de décision de déménager ; la règle de partage reste « au prorata du manque ». **Impacts restants.** `sim/` (affectation quotidienne, consommation, partage), `03` (schéma : stock porté par la pop), `app/` (panneau de pop), recalibrage de `jours_personne_par_pop_an` qui ne sert plus qu'à convertir les besoins des lieux en pop-jours (`05`, question 9). Migration en deux temps conseillée : (a) un lieu par jour avec les stocks de hameau actuels, (b) puis stock par pop. **Risques** : oscillations (toutes les pops vers la même ressource le même jour), à corriger par les postes du jour ; coût (pops = entités individuelles, déjà le cas, `03` §5b).
+
+### 10.5 Comprendre les flux et les stocks (implémenté, `app/`)
 L'objet du jeu est l'organisation du travail et le partage de ses fruits : le joueur doit voir **qui travaille où et pourquoi, ce qui est produit, où c'est stocké, qui consomme**.
 
 | Vue | Contenu |
@@ -404,7 +413,9 @@ L'objet du jeu est l'organisation du travail et le partage de ses fruits : le jo
 | **Lieu de production** | production du jour (cumul), facteur limitant, stock de sortie, pops présentes aujourd'hui, destinataires des sorties |
 | **Par ressource** (ex. grain) | la carte met en évidence producteurs, stocks (bâtiments **et** pops), flux en transit et consommateurs ; bilan produit / stocké / consommé |
 
-Données à conserver pour cela : affectation et motif du jour par pop, production et consommation du jour par bâtiment et par pop, flux J→J+1 par lien. Ce sont des agrégats déjà calculés par le moteur ; il manque leur exposition (`PanneauInfos`, instantanés du pont wasm).
+Données conservées pour cela : affectation et motif du jour par pop (`Pop.motif`, `Pop.emploi`), production du jour par bâtiment (`StatsJour::produits_par_lieu`), expéditions du jour (`StatsJour::flux`). Exposition : `sim_pop_json`, `sim_ressource_json`, `sim_chemin_json` (pont wasm), panneaux `PanneauPop.vue` et `PanneauRessource.vue`, mode de carte **Flux**. Le détail d'une pop liste les terres à portée avec leur statut (choisie, ne réclame pas assez de travail aujourd'hui, moins pressante) ; les candidats sont recalculés à la demande d'après l'état de fin de journée. Le mode Flux dessine producteurs (disque proportionnel au stock de sortie), expéditions du jour (courbes, épaisseur ∝ quantité), hameaux colorés par la couverture, ateliers utilisateurs. Limite : les expéditions sont tracées en courbes directes, pas le long des routes.
 
-### 10.6 Animation (non prioritaire)
-Une fois §10.4 en place, les sprites de pops marchent sur le **chemin réel** de leur maison à leur lieu de travail du jour : ce sont de vraies pops, pas des figurants dérivés. Jour/nuit = rendu seul. Les saisons dans la simulation restent hors POC pour l'instant (production continue, `04`).
+### 10.6 Animation (implémentée, rendu seul)
+Les sprites de pops marchent sur le **chemin réel** de leur maison à leur lieu de travail du jour : ce sont de vraies pops, pas des figurants dérivés. Jour/nuit = rendu seul. Les saisons dans la simulation restent hors POC pour l'instant (production continue, `04`).
+
+Mise en œuvre (`app/src/carte.js`) : en mode *Jour/nuit* (un jour = 24 s), chaque pop part entre 6 h et 7 h 15 et revient entre 16 h 30 et 18 h, marche sur le trajet réel du moteur (`sim_chemin_json`) lissé comme les routes, à raison de 0,1 h par tile (au plus 2,5 h) ; à vitesse plus rapide elle est affichée sur son lieu. Une pop sans lieu du jour flâne près de sa maison (contour clair). Un clic sur une pop (ou sa fiche dans la liste d'un hameau) ouvre son inspecteur et surligne ses lieux possibles et son trajet.

@@ -12,8 +12,12 @@ export const store = reactive({
   // Vitesse en jours de simulation par seconde réelle ; 1/24 = « jour/nuit » (un jour dure 24 s).
   vitesse: 10,
   enPause: false,
-  mode: 'normal', // normal | fertilite | besoins
+  mode: 'normal', // normal | fertilite | besoins | ressource
   selection: null, // { x, y }
+  selectionPop: null, // identifiant de la pop inspectée
+  popDetail: null, // vue détaillée de cette pop (stock, rations, lieux possibles)
+  ressource: 0, // ressource suivie en mode « Flux » (index dans meta.ressources)
+  ressourceDetail: null,
   survol: null,
   heure: 12,
   fraction: 0,

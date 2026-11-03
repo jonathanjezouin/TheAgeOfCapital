@@ -48,9 +48,12 @@ export function limitantTexte(l) {
 }
 
 export const pct = (x) => `${Math.round(x * 100)} %`
-export const un = (x, d = 1) => (Math.round(x * 10 ** d) / 10 ** d).toLocaleString('fr-FR')
+export const un = (x, d = 1) => {
+  const v = Math.round(x * 10 ** d) / 10 ** d
+  return (Object.is(v, -0) ? 0 : v).toLocaleString('fr-FR')
+}
 
-/** État d'une pop d'après la couverture de son hameau. */
+/** État d'une pop (ou d'un hameau) d'après la couverture de ses besoins. */
 export function etatPop(hameau) {
   if (hameau.vital < 0.999) return { cle: 'manque', texte: 'en manque', couleur: '#d65a4a' }
   if (hameau.confort < 0.999) return { cle: 'insatisfaite', texte: 'insatisfaite', couleur: '#e0a03a' }

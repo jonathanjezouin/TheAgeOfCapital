@@ -22,6 +22,12 @@ export async function chargerSim(urlWasm) {
     carte: () => json(w.sim_carte_json()),
     /** `depuis` : nombre d'événements déjà reçus (le moteur ne renvoie que les nouveaux). */
     etat: (depuis = 0) => json(w.sim_etat_json(depuis)),
+    /** Détail d'une pop : stock, rations, lieux possibles et raison du choix du jour (null si elle a disparu). */
+    pop: (id) => json(w.sim_pop_json(id)),
+    /** Où une ressource est produite, stockée, expédiée et consommée. */
+    ressource: (r) => json(w.sim_ressource_json(r)),
+    /** Tiles du chemin du hameau `q` au bâtiment `b`. */
+    chemin: (q, b) => json(w.sim_chemin_json(q, b)),
     /** Fertilité de chaque tile en % (0 à 130), ligne par ligne. */
     fertilite: () => new Uint8Array(w.memory.buffer, w.sim_fertilite_ptr(), w.sim_fertilite_len()).slice(),
   }

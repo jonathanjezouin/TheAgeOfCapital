@@ -114,3 +114,15 @@ input[type='number'] { width: 4.2em; background: var(--panneau-2); border: 1px s
   .bas { grid-template-columns: 1fr; }
   .bas > section + section { border-left: none; border-top: 1px solid var(--bord); }
 }
+
+/* Inspecteur de pop et suivi des flux */
+button.lien { background: none; border: none; padding: 0; color: var(--accent); text-decoration: underline dotted; cursor: pointer; }
+button.lien:hover { text-decoration: underline; }
+.puces { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.puces button { padding: 3px 8px; font-size: 12px; }
+.tab { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 6px; }
+.tab th { text-align: left; font-weight: 500; color: var(--doux); font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; }
+.tab td, .tab th { padding: 2px 6px 2px 0; }
+.cand { margin: 8px 0; padding: 6px 8px; border: 1px solid var(--bord); border-radius: 6px; background: var(--panneau-2); }
+.cand.choisi { border-color: var(--bon); }
+.cand button.lien { float: right; }

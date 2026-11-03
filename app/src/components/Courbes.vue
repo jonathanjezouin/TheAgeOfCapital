@@ -30,7 +30,7 @@ const max = computed(() => Math.max(1, ...flux.value.flatMap((x) => [x.produit, 
 <template>
   <section aria-label="Population">
     <h3 style="margin-top: 0">Population par année</h3>
-    <svg :viewBox="`0 0 ${W} ${H}`" width="100%" height="110" role="img" aria-label="Courbe de la population (pops) et des pops sans poste">
+    <svg :viewBox="`0 0 ${W} ${H}`" width="100%" height="110" role="img" aria-label="Courbe de la population (pops) et des bras libres">
       <line :x1="M" :y1="H - 14" :x2="W - 4" :y2="H - 14" stroke="var(--bord)" />
       <line :x1="M" :y1="10" :x2="M" :y2="H - 14" stroke="var(--bord)" />
       <text :x="M - 4" y="16" text-anchor="end" font-size="10" fill="var(--doux)">{{ bornes.max }}</text>
@@ -40,7 +40,7 @@ const max = computed(() => Math.max(1, ...flux.value.flatMap((x) => [x.produit, 
       <path :d="chemin(2)" fill="none" stroke="var(--mauvais)" stroke-width="1.5" />
     </svg>
     <small><span class="pastille" style="background: var(--accent)"></span>pops
-      <span class="pastille" style="background: var(--mauvais); margin-left: 10px"></span>sans poste</small>
+      <span class="pastille" style="background: var(--mauvais); margin-left: 10px"></span>bras libres</small>
   </section>
   <section aria-label="Production et consommation">
     <h3 style="margin-top: 0">Dernier jour : produit / consommé</h3>
