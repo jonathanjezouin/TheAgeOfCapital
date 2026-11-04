@@ -41,6 +41,14 @@ const rendements = computed(() => {
   return m.batiments.filter((b) => b.fertile).map((b) => ({ nom: TYPES[b.nom] ?? b.nom, rendement: fert * b.aptitude[apres(b, t)], travail: b.travail_terrain[apres(b, t)] }))
 })
 const coutTerrain = computed(() => (store.meta && sol.value ? store.meta.cout_terrain[store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2]] : 1))
+// Tile libérée (terre ou hameau abandonné, chantier annulé) : depuis combien d'années, et dans combien la forêt reviendra.
+const friche = computed(() => {
+  const s = store.selection, m = store.meta
+  if (!s || !m || !store.vacance) return null
+  const i = (s.y * m.largeur + s.x) * 2
+  const ans = store.vacance[i], reste = store.vacance[i + 1]
+  return ans > 0 ? { ans, reste: reste === 255 ? null : reste } : null
+})
 const sansBatir = computed(() => !!sol.value && sol.value.eau !== '')
 const typeTerrain = computed(() => (store.selection && store.terrain && store.meta ? store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2] : 0))
 const eauTile = computed(() => (store.selection && store.terrain && store.meta ? store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2 + 1] & 3 : 0))
@@ -111,6 +119,7 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
           <div class="ligne"><span>Pont ou gué</span><span>{{ un(store.meta.pont[eauTile], 0) }} pop-jours</span></div>
         </template>
         <template v-else>
+          <p v-if="friche" class="doux"><b>Friche</b> depuis {{ friche.ans }} an{{ friche.ans > 1 ? 's' : '' }}<template v-if="friche.reste != null"> : la forêt reviendra dans environ {{ friche.reste }} an{{ friche.reste > 1 ? 's' : '' }} (plus vite en lisière d'une forêt).</template></p>
           <p class="doux"><b>{{ sol?.nom }}</b>. {{ sol?.texte }} Un défrichement doit rester à portée d'un hameau ({{ store.meta.distance_max }} tiles de chemin au plus).</p>
           <div class="ligne" v-for="r in rendements" :key="r.nom"><span>{{ r.nom }}</span><span>rendement {{ Math.round(r.rendement * 100) }} % · travail ×{{ un(r.travail, 1) }}</span></div>
           <div class="ligne"><span>Construire (maison, défrichement)</span><span>travail ×{{ un(coutTerrain, 1) }}</span></div>
@@ -124,7 +133,8 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
 
       <!-- Hameau -->
       <div v-else-if="entite.genre === 'hameau'">
-        <h2>{{ HABITATS[entite.h.habitat] }}</h2>
+        <h2>{{ HABITATS[entite.h.habitat] }}<span v-if="entite.h.abandon != null"> (abandonné)</span></h2>
+        <p v-if="entite.h.abandon != null" class="note">Hameau abandonné : plus de logement. Il s'use ({{ pct(entite.h.abandon) }} du délai de ruine) puis sera détruit.</p>
         <div class="ligne"><span>Pops</span><span>{{ entite.h.pops }} / {{ entite.h.capacite }} ({{ entite.h.pops * store.meta.habitants_par_pop }} hab.)</span></div>
         <div class="ligne"><span>Besoins vitaux</span><span :style="{ color: couleurRatio(entite.h.vital) }">{{ pct(entite.h.vital) }}</span></div>
         <div class="ligne"><span>Confort</span><span :style="{ color: couleurRatio(entite.h.confort) }">{{ pct(entite.h.confort) }}</span></div>
@@ -156,7 +166,8 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
 
       <!-- Terre exploitée -->
       <div v-else-if="entite.genre === 'terre'">
-        <h2>{{ TYPES[entite.l.type_nom] ?? entite.l.type_nom }}</h2>
+        <h2>{{ TYPES[entite.l.type_nom] ?? entite.l.type_nom }}<span v-if="entite.l.abandon != null"> (abandonnée)</span></h2>
+        <p v-if="entite.l.abandon != null" class="note">Abandonnée : elle ne produit plus et personne n'y travaille. Elle redevient friche quand {{ pct(entite.l.abandon) }} du délai est écoulé… puis la forêt reprend.</p>
         <div class="ligne"><span>Production</span><span :style="{ color: couleurRatio(entite.l.prod) }">{{ pct(entite.l.prod) }}</span></div>
         <div class="barre"><i :style="{ width: entite.l.prod * 100 + '%', background: couleurRatio(entite.l.prod) }"></i></div>
         <div class="ligne"><span>Limité par</span><span>{{ limitantTexte(entite.l.limitant) }}</span></div>

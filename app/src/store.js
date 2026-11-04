@@ -10,6 +10,7 @@ export const store = reactive({
   fertilite: null, // fertilité locale de chaque tile (% de 1,0)
   aptitude: null, // aptitude de chaque tile pour le type de terre choisi (mode Aptitude)
   typeAptitude: null, // index du type de terre dans meta.batiments
+  vacance: null, // 2 octets par tile : années de friche, années avant la forêt
   terrain: null, // 2 octets par tile (terrain ; eau et aval), voir terrain.js
   evenements: [], // tous les événements reçus : [jour, texte]
   // Vitesse en jours de simulation par seconde réelle ; 1/24 = « jour/nuit » (un jour dure 24 s).

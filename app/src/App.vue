@@ -48,6 +48,7 @@ function lireCarte(etat) {
   store.carte = markRaw({ version: c.version, tuiles: c.tuiles, grille })
   // Un défrichement ou un drainage change le terrain : on le relit et on repeint les tiles concernées.
   store.terrain = sim.terrain()
+  store.vacance = sim.vacance()
   carte.majSol(store.terrain)
   carte.appliquerCarte(c, etat)
 }
@@ -68,6 +69,7 @@ function nouvellePartie() {
   store.aptitude = sim.aptitude(store.typeAptitude)
   carte.remplacerFertilite(store.aptitude)
   store.terrain = sim.terrain()
+  store.vacance = sim.vacance()
   carte.construireSol(store.terrain)
   accumule = 0
   lireEtat()
@@ -122,6 +124,7 @@ onMounted(async () => {
     store.meta = markRaw(sim.meta())
     store.fertilite = sim.fertilite()
     store.terrain = sim.terrain()
+    store.vacance = sim.vacance()
     store.typeAptitude = store.meta.batiments.findIndex((b) => b.nom === 'champ')
     store.aptitude = sim.aptitude(store.typeAptitude)
     carte = await new Carte().init(zone.value, URLS, store.meta, store.aptitude, store.terrain)

@@ -45,6 +45,22 @@ struct Brut {
     terrains: BTreeMap<String, BrutTerrain>,
     eau: Option<BrutEau>,
     peuplement: BrutPeuplement,
+    abandon: BrutAbandon,
+}
+
+/// Usure et abandon des lieux (docs/07 §14), durées en années.
+#[derive(Deserialize)]
+struct BrutAbandon {
+    terre_inactive_ans: f64,
+    terre_friche_ans: f64,
+    hameau_vide_ans: f64,
+    hameau_ruine_ans: f64,
+    chantier_bloque_ans: f64,
+    memoire_site_ans: f64,
+    foret_apres_ans: f64,
+    lisiere_isolee: f64,
+    lisiere_moyenne: f64,
+    lisiere_forte: f64,
 }
 
 /// Où s'installer (docs/07 §4) : valeur d'un site pour des pops qui s'ajoutent.
@@ -271,6 +287,9 @@ struct BrutBatiment {
     /// La terre garde le terrain de ses tiles (forêt exploitée sur forêt) : pas de conversion ni de défrichement.
     #[serde(default)]
     conserve_terrain: bool,
+    /// Travail pour détruire une tile de cette terre (pop-jours par tile) ; 0 : on ne peut pas la détruire.
+    #[serde(default)]
+    destruction_pop_jours: f64,
     #[serde(default)]
     domestique: bool,
     cout_creation: Option<BrutCout>,
@@ -438,6 +457,8 @@ pub struct TypeBatiment {
     pub travail_terrain_ppm: [i64; 5],
     /// La terre garde le terrain de ses tiles : pas de conversion (forêt exploitée sur forêt).
     pub conserve_terrain: bool,
+    /// Travail pour détruire une tile de cette terre (milli pop-jours) ; 0 : indestructible.
+    pub destruction_milli: Qte,
     /// Travail domestique (docs/02 §8.4) : pas de poste ; la main-d'œuvre vient du temps libre des
     /// pops du hameau. `pops` est alors le travail requis à plein régime, en pop-jours par jour.
     pub domestique: bool,
@@ -507,6 +528,7 @@ pub struct Catalogue {
     pub travail: ParamsTravail,
     pub extension: ParamsExtension,
     pub peuplement: ParamsPeuplement,
+    pub abandon: ParamsAbandon,
     pub demo: ParamsDemo,
     pub mobilite: ParamsMobilite,
     pub vital: Vital,
@@ -543,6 +565,21 @@ pub struct ParamsPeuplement {
     pub poids_voisins_ppm: i64,
     pub rayon_voisinage: i64,
     pub seuil_fondation_ppm: i64,
+}
+
+/// Usure et abandon (docs/07 §14) : durées en mois, facteurs de lisière en ppm.
+#[derive(Clone, Debug)]
+pub struct ParamsAbandon {
+    pub terre_inactive_mois: u32,
+    pub terre_friche_mois: u32,
+    pub hameau_vide_mois: u32,
+    pub hameau_ruine_mois: u32,
+    pub chantier_bloque_mois: u32,
+    pub memoire_site_mois: u32,
+    pub foret_apres_mois: u32,
+    pub lisiere_isolee_ppm: i64,
+    pub lisiere_moyenne_ppm: i64,
+    pub lisiere_forte_ppm: i64,
 }
 
 pub const DONNEES_POC: &str = include_str!("../donnees/poc.toml");
@@ -623,6 +660,7 @@ impl Catalogue {
             };
             batiments.push(TypeBatiment {
                 conserve_terrain: x.conserve_terrain,
+                destruction_milli: en_milli(x.destruction_pop_jours),
                 aptitude_ppm: table(&x.aptitude, "aptitude")?,
                 travail_terrain_ppm: table(&x.travail_terrain, "travail_terrain")?,
                 traversable: x.traversable,
@@ -679,6 +717,21 @@ impl Catalogue {
             },
             habitat: ParamsHabitat {
                 densite_max_pops: b.habitat.densite_max_pops,
+            },
+            abandon: {
+                let mois = |ans: f64| (ans * 12.0).round().max(1.0) as u32;
+                ParamsAbandon {
+                    terre_inactive_mois: mois(b.abandon.terre_inactive_ans),
+                    terre_friche_mois: mois(b.abandon.terre_friche_ans),
+                    hameau_vide_mois: mois(b.abandon.hameau_vide_ans),
+                    hameau_ruine_mois: mois(b.abandon.hameau_ruine_ans),
+                    chantier_bloque_mois: mois(b.abandon.chantier_bloque_ans),
+                    memoire_site_mois: mois(b.abandon.memoire_site_ans),
+                    foret_apres_mois: mois(b.abandon.foret_apres_ans),
+                    lisiere_isolee_ppm: en_ppm(b.abandon.lisiere_isolee),
+                    lisiere_moyenne_ppm: en_ppm(b.abandon.lisiere_moyenne),
+                    lisiere_forte_ppm: en_ppm(b.abandon.lisiere_forte),
+                }
             },
             peuplement: ParamsPeuplement {
                 rayon_terroir: b.peuplement.rayon_terroir,

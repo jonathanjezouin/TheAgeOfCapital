@@ -39,6 +39,11 @@ export async function chargerSim(urlWasm) {
       const n = w.sim_terrain()
       return new Uint8Array(w.memory.buffer, w.sim_terrain_ptr(), n).slice()
     },
+    /** Vacance de chaque tile : 2 octets (années de friche, années avant la forêt ; 255 : ne repousse pas), ligne par ligne. */
+    vacance() {
+      const n = w.sim_vacance()
+      return new Uint8Array(w.memory.buffer, w.sim_vacance_ptr(), n).slice()
+    },
     fertilite: () => new Uint8Array(w.memory.buffer, w.sim_fertilite_ptr(), w.sim_fertilite_len()).slice(),
   }
 }

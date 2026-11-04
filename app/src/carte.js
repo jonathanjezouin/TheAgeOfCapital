@@ -195,7 +195,9 @@ export class Carte {
         const base = lieu.chantier ? 'bat_chantier_champ' : GROUPE[lieu.type_nom]
         if (!base) continue
         const plein = !lieu.chantier && this.manifeste.groupes[base + '_plein']
-        this.poser(this.terres, this.variante(plein ? base + '_plein' : base, hash(t.x, t.y)), t.x, t.y)
+        const sprite = this.poser(this.terres, this.variante(plein ? base + '_plein' : base, hash(t.x, t.y)), t.x, t.y)
+        // Terre abandonnée : elle se délave et s'assombrit à mesure qu'elle retourne à la friche.
+        if (lieu.abandon != null) { sprite.tint = 0xa89878; sprite.alpha = 0.85 - 0.45 * lieu.abandon }
         if (!lieu.chantier) this.bordureTerre(bordures, t, lieu.type_nom, grille, W)
       }
     }
@@ -335,6 +337,8 @@ export class Carte {
       sp.scale.set(ECHELLE_MAISON)
       sp.position.set(s.x, s.y)
       sp.rotation = s.angle
+      // Hameau abandonné : des maisons grisées qui se délabrent.
+      if (h.abandon != null) { sp.tint = 0x8c8478; sp.alpha = 0.8 - 0.4 * h.abandon }
       this.bat.addChild(sp)
     }
     // Chantier en cours (fondation du hameau, ou une maison de plus) : un sprite par chantier.

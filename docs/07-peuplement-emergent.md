@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts) et 4 (peuplement par la valeur du site) sont faites** (§8, §10 à §13), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts), 4 (peuplement par la valeur du site) et 4 bis (abandon, destruction, repousse) sont faites** (§8, §10 à §14) ; l'étape 6 (acteurs : pops et seigneur) est conçue au §15, le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -130,8 +130,10 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 2. ~~Table d'aptitudes et effet sur rendement, travail requis et coût de construction~~ ; mode de carte « aptitude » : **fait le 2026-11-04** (§11).
 3. ~~Défrichement (coût, bois récupéré), drainage, ponts et gués~~ : **fait le 2026-11-04** (§12). La repousse et les opportunités (pierre, tourbe) restent à faire.
 4. ~~Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4)~~ : **fait le 2026-11-04** (§13).
-5. Outils de mesure (distribution des tailles de hameaux, §6), puis réglage des poids.
-6. Plus tard : échange entre pops, outils, saisons, services, navigation, relief (collines, montagnes), régions macro.
+4 bis. ~~Abandon, destruction, repousse~~ : **fait le 2026-11-04** (§14) ; outils de mesure : `sim-cli --mesure N`.
+6. **Acteurs : le seigneur local, les pops serves, le grenier seigneurial** (§15). Les décisions d'aménagement quittent `etendre` pour le seigneur.
+5. Réglage des poids de `[peuplement]` et des durées de `[abandon]` sur plusieurs graines, **après la phase 6** (le critère de décision change avec le décideur).
+7. Plus tard : échange entre pops, outils, saisons, services (banalités), navigation, relief (collines, montagnes), régions macro.
 
 ## 9. Décisions prises (2026-11-04)
 
@@ -252,3 +254,62 @@ Travail requis par tile : rocailleuse ×1,3 (céréales, lin), marais ×1,4 à 2
 - **Tests relâchés, avec raison** : un chantier qui attend du bois ou des bras n'est plus compté comme « bloqué » (l'abandon est reporté, `05`) ; la compacité des terres passe à 1,6 (chemins ruraux, terrain) ; le nombre de champs à portée d'un hameau est de 3 au lieu de 4.
 
 **Mesure (8 graines, 150 ans, sans réglage)** : les villages passent de 6 à ~15 pops réparties en 5 à 17 hameaux, de taille médiane **1 pop**, au maximum **6**, dont environ un tiers **vides** (fondés puis dépeuplés : l'abandon est reporté). Les hameaux de 1 à 2 pops isolés sont donc bien là, mais **aucun noyau de 16 pops n'émerge** : les forces de regroupement (voisins +15 %, eau) sont trop faibles face au gain de terre libre ailleurs, et les services à coût fixe, l'entraide aux pointes de travail et la sécurité manquent encore (§1). C'est l'objet de l'étape 5 : mesurer la distribution des tailles sur plusieurs graines et régler les poids de `[peuplement]`.
+
+## 14. Étape 4 bis réalisée : abandon, destruction, repousse
+
+Décidé le 2026-11-04 avec Jonathan, en remplacement des deux rustines de l'étape 4 (terres traversables, chemins ruraux), **supprimées**.
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Routes et terres | `meilleur_site`, `poser_site` | une route **ne traverse plus** une terre ; si elle doit y passer, elle **détruit** les tiles traversées (travail `destruction_pop_jours` par tile : champ 2, pâturage 1, verger 8, forêt exploitée 3, lin 2, élevage 1), qui s'ajoute au chantier et pèse dans le choix du site comme un pont. Le nœud d'une terre, les chantiers et les hameaux restent intraversables |
+| Scission | `Simulation::scinder` | quand une destruction coupe l'emprise, **les tiles contiguës dissociées forment une nouvelle terre** (même type), qui garde sa part du stock et se relie à la route posée |
+| Abandon d'une terre | `abandonner_terre`, `entretien_mensuel` | une terre à laquelle on ne travaille presque pas (< 2 % du besoin) **et dont la ressource ne manque pas** depuis 20 ans est abandonnée : elle ne produit plus, ne reçoit plus de travail, ne compte plus comme fournisseur. Gratuit. Après 8 ans elle redevient friche (ses tiles sont libérées, le stock est compté comme perdu) |
+| Abandon d'un hameau | `abandonner_hameau`, `detruire_hameau` | sans pop depuis 10 ans, il est abandonné (plus de logement) ; en ruine après 40 ans, il est **détruit** (sa tile est libre, l'atelier devient un site inerte) |
+| Abandon d'un chantier | `abandonner_chantier` | sans progrès depuis 3 ans, il est abandonné : l'équipe est libérée, un hameau en fondation est détruit et ses pops retournent dans un autre hameau. Un hameau n'est plus fondé sur un site abandonné depuis moins de 10 ans, ni un chantier qui consomme du bois lancé dans un hameau qui en manque |
+| Repousse | `repousse_mensuelle`, `facteur_repousse_ppm` | une tile libérée (friche) redevient **forêt après 40 ans**, ×0,6 si trois tiles voisines ou plus sont de la forêt (lisière), ×1,0 pour 1 ou 2, ×1,5 isolée. Une tile qui a servi (`vacant_mois`) repousse ; une tile jamais utilisée ne change pas. L'app affiche depuis combien d'années elle est en friche et dans combien la forêt reviendra |
+| Données | `poc.toml` `[abandon]`, `destruction_pop_jours` | toutes les durées sont des données |
+| Mesure | `sim-cli --mesure N --annees A` | pour les graines 1 à N : pops, hameaux vivants, vides, abandonnés, détruits, terres abandonnées, tiles en friche, histogramme des tailles |
+| Tests | `sim/tests/abandon.rs` | scission, route à travers un champ (destruction), terre abandonnée puis friche puis forêt, repousse selon la lisière, hameau vide abandonné puis détruit, chantier abandonné, et sur 8 villages jamais de route dans une terre non détruite |
+
+**Ce que la mesure montre (8 graines, 150 ans, sans réglage)** : 73 pops, 27 hameaux vivants de taille médiane 2 (max 8), 3 vides, 6 abandonnés, **84 détruits** et 86 tiles en friche. Les hameaux détruits sont presque tous des **chantiers de fondation abandonnés** (faute de bois) puis relancés : la décision de fonder n'apprend pas de ses échecs. Une graine sur huit s'éteint. C'est le travail du seigneur (§15) puis du réglage (étape 5), pas de cette étape.
+
+**Écarts avec ce qui précédait**
+- `traversable = "couteuse"` pour les terres et la règle des « chemins ruraux » sont supprimés (décision de Jonathan : les routes ne traversent pas les champs).
+- Le test de chantier bloqué mesure maintenant la règle d'abandon (aucun chantier ne survit au-delà de 3 ans sans progrès) ; celui de croissance du pont WebAssembly n'exige plus qu'une population soit croissante, seulement vivante.
+- Le défaut de l'étape 3 (« le bois récupéré va au hameau le plus proche ») reste, ainsi qu'un défaut de la fondation : l'équipe d'un hameau qui n'avance pas vit sans ravitaillement ; l'abandon du chantier la libère désormais.
+
+## 15. Vision des acteurs et étape 6 (conçue, non réalisée)
+
+### 15.1 Qui fait quoi (formulation de Jonathan, 2026-11-04)
+
+| Acteur | Rôle | Dans le moteur |
+|---|---|---|
+| **Personnage** | le **décideur politico-économique** : règles, construction, installation, usage des terres, investissements. Le propriétaire (ou le gérant) d'une firme décide ; l'unité ne fait que travailler | `Personnage` (nouveau), créé par un **poste** (`00` §4) |
+| **Firme / domaine** | ce qui est décidé : terres, bâtiments, production | bâtiments et terres, avec un maître d'ouvrage |
+| **Pop** | « la matière » : une unité de 100 habitants qui **travaille, consomme, possède son stock personnel** et choisit **où elle travaille** parmi ce qui lui est ouvert ; elle ne décide ni des règles ni des constructions | `Pop` (existe) |
+
+Le principe 3 du `CLAUDE.md` est reformulé en ce sens (la Firme n'est plus « l'acteur économique » : le décideur est un personnage).
+
+### 15.2 Le POC : un seigneur local, des pops serves
+
+- **Un seul personnage** sur la carte : le **seigneur du village**, titulaire de la justice locale et propriétaire éminent des terres (poste `seigneur_local`, dévolution en donnée, par exemple primogéniture, non implémentée). Ses leviers historiques en plaine à champs ouverts : **champart** (part de la récolte, en nature), **cens**, **banalités** (moulin, four, pressoir : un service à coût fixe, donc une force de regroupement du §1), **corvées**, et l'**autorisation des installations**.
+- **Toutes les pops sont des serves** (champ `statut` nullable, principe 7) : **pas de liberté d'installation ni de construction** ; **liberté du lieu de travail** (inchangée).
+- **Ce que le seigneur décide** : défricher et fonder une terre, fonder un hameau, bâtir une maison, abandonner ou détruire. Les règles actuelles de `etendre` deviennent sa politique, vues depuis son revenu (champart) et non plus depuis le besoin des pops.
+- **Le stock pour construire** : un **grenier seigneurial** (stock du personnage). Le seigneur prélève en nature une part (`champart`, une donnée) de la production ; **un chantier a un maître d'ouvrage** : au début le seigneur (le matériau, bois, vient de son grenier ; la main-d'œuvre est la corvée des pops). Plus tard une pop libre pourra être maître d'ouvrage avec son propre stock, par le même mécanisme : c'est ce qui permettra d'ajouter les droits de construction des pops sans réécrire le modèle.
+- **Sans IA lourde** : des règles en données ; les décisions sont journalisées (« le seigneur ordonne… »). Le **joueur** pourra un jour prendre ce poste (ou un autre).
+
+### 15.3 Points d'attention, contradictions et ambiguïtés relevés
+
+| Point | Question | Proposition retenue |
+|---|---|---|
+| Pop « matière » ou « acteur » | le 2026-11-04 la pop est d'abord décrite comme acteur de base (homo economicus), puis comme « matière » | deux **niveaux de décision** : la pop décide en continu *dans ce qui est autorisé* (où travailler, quoi consommer, son stock) ; le personnage décide des **structures** (quoi bâtir, où, qui loger, quelles règles). Les pops libres, plus tard, pourraient être promues personnages (« chef d'exploitation ») |
+| Qui possède la récolte | si le seigneur est propriétaire, la pop travaille pour lui ; si elle est tenancière, elle garde sa récolte moins le champart | POC : **tenures** (les pops gardent le produit, moins le champart) ; pas de **réserve seigneuriale** exploitée en direct (à ajouter plus tard) |
+| Firme mono-secteur (principe 3) | les terres du seigneur couvrent plusieurs secteurs | le seigneur détient un **domaine** (ensemble de tiles, `Option`) ; les firmes mono-secteur viennent avec les capitalistes |
+| Naissances et installation | la croissance démographique n'est pas une décision | les pops naissent (jauge) ; **le logement est offert ou refusé par le seigneur** ; la famille reste par défaut |
+| Abandon : décidé ou subi | « gratuit » : par qui ? | **de fait** (inactivité, hameau vide, chantier sans progrès : fait) **et décidé** (le seigneur peut abandonner ou détruire ; `abandonner_*` sont déjà publiques) |
+| Émergence (principe 6) | un décideur à règles codées est-il de l'émergence ? | oui si ses règles sont des **données** (poids, seuils) et que la structure d'ensemble en ressort ; il ne place pas les hameaux |
+| Périmètre d'autorité | un seul décideur « pour l'instant » | le domaine du seigneur couvre toute la carte ; le modèle porte un identifiant de domaine pour en avoir plusieurs |
+
+### 15.4 Ordre de réalisation
+
+1. **Étape 4 bis** (fait). 2. **Étape 6** : personnage et poste, statut de serf, grenier et champart, maître d'ouvrage, `etendre` devient la politique du seigneur, panneau « Seigneur » dans l'app. 3. **Étape 5** : réglage des poids et durées, mesure sur plusieurs graines (noyaux de plusieurs pops, hameaux vides, échecs de fondation).

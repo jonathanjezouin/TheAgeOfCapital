@@ -62,6 +62,9 @@ pub struct Tuile {
     pub eau: Eau,
     /// Direction (index de `DIRS`) vers la tile aval d'un cours d'eau, 255 sinon : pur rendu.
     pub aval: u8,
+    /// Mois écoulés depuis que la tile a été abandonnée ou libérée (0 : jamais utilisée, ou occupée). Quand elle atteint
+    /// la durée de repousse, la tile redevient forêt (docs/07 §14).
+    pub vacant_mois: u16,
 }
 
 impl Tuile {
@@ -99,6 +102,12 @@ pub struct Quartier {
     pub jours_an: i64,
     pub vital_annuel_ppm: i64,
     pub confort_annuel_ppm: i64,
+    /// Mois consécutifs sans aucune pop (le hameau est abandonné après `hameau_vide_ans`).
+    pub vide_mois: u32,
+    /// Hameau abandonné : mois depuis l'abandon. Il n'offre plus de logement, s'use, puis est détruit.
+    pub abandon_mois: Option<u32>,
+    /// Hameau détruit : sa tile est libre, l'index reste (les lieux sont indexés par position).
+    pub detruit: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -141,6 +150,12 @@ pub struct Batiment {
     /// Travail reçu, moyenne mobile sur ~30 jours (milli pop-jours par jour).
     pub mo_lisse_milli: i64,
     pub limitant: Limitant,
+    /// Mois consécutifs sans travail reçu (une terre est abandonnée après `terre_inactive_ans`).
+    pub inactif_mois: u32,
+    /// Terre abandonnée : mois depuis l'abandon. Elle ne produit plus, puis redevient friche (docs/07 §14).
+    pub abandon_mois: Option<u32>,
+    /// Chantier : travail restant au dernier contrôle mensuel, pour détecter l'absence de progrès.
+    pub progres_ref: Qte,
 }
 
 /// Ce qu'un chantier produit une fois terminé.

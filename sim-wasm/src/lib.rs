@@ -17,6 +17,8 @@ thread_local! {
     /// Deux octets par tile : terrain, puis gabarit d'eau (bits 0-1) et sens de l'aval (bits 2-4, 0 = aucun, sinon 1 + direction / 2).
     /// Aptitude de chaque tile pour un type de terre (% de 1,0, 0 à 255), à la demande.
     static APTITUDE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// Deux octets par tile : années de vacance (0 : aucune), puis années restantes avant la forêt (255 : ne repousse pas).
+    static VACANCE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static TERRAIN: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -162,6 +164,8 @@ struct LieuVue {
     entree: Vec<f64>,
     sortie: Vec<f64>,
     chantier: Option<ChantierVue>,
+    /// Terre abandonnée : part du délai de friche écoulée (0 à 1) ; `None` si elle est en service.
+    abandon: Option<f64>,
 }
 
 #[derive(Serialize)]
@@ -178,6 +182,9 @@ struct HameauVue {
     atelier: Option<usize>,
     vital_annuel: f64,
     confort_annuel: f64,
+    /// Hameau abandonné : part du délai de ruine écoulée (0 à 1) ; `None` s'il est occupé.
+    abandon: Option<f64>,
+    detruit: bool,
 }
 
 #[derive(Serialize)]
@@ -239,7 +246,7 @@ struct Etat<'a> {
 fn version_carte(s: &Simulation) -> u64 {
     let mut v = s.monde.quartiers.len() as u64 * 1_000_003 + s.monde.batiments.len() as u64 * 10_007;
     for b in &s.monde.batiments {
-        v = v.wrapping_mul(31).wrapping_add(b.type_id as u64 + b.chantier.is_some() as u64 * 977);
+        v = v.wrapping_mul(31).wrapping_add(b.type_id as u64 + b.chantier.is_some() as u64 * 977 + b.abandon_mois.is_some() as u64 * 7919 + b.emprise.len() as u64 * 131);
     }
     for t in &s.monde.tuiles {
         if t.aretes != 0 {
@@ -247,7 +254,7 @@ fn version_carte(s: &Simulation) -> u64 {
         }
     }
     for q in &s.monde.quartiers {
-        v = v.wrapping_mul(37).wrapping_add(q.capacite_pops as u64);
+        v = v.wrapping_mul(37).wrapping_add(q.capacite_pops as u64 + q.abandon_mois.is_some() as u64 * 4001 + q.detruit as u64 * 8009);
     }
     v
 }
@@ -358,6 +365,32 @@ pub extern "C" fn sim_terrain() -> u32 {
     })
 }
 
+/// Relit la vacance des tiles (friche) et renvoie le nombre d'octets à lire à `sim_vacance_ptr`.
+#[no_mangle]
+pub extern "C" fn sim_vacance() -> u32 {
+    avec(0, |s| {
+        let v: Vec<u8> = (0..s.monde.tuiles.len())
+            .flat_map(|i| {
+                let t = &s.monde.tuiles[i];
+                if t.vacant_mois == 0 {
+                    return [0u8, 0u8];
+                }
+                let ans = (t.vacant_mois / 12).min(254) as u8;
+                let reste = s.repousse_restante_mois(i).map_or(255u8, |m| ((m + 11) / 12).min(254) as u8);
+                [ans.max(1), reste]
+            })
+            .collect();
+        let n = v.len() as u32;
+        VACANCE.with(|f| *f.borrow_mut() = v);
+        n
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sim_vacance_ptr() -> *const u8 {
+    VACANCE.with(|f| f.borrow().as_ptr())
+}
+
 #[no_mangle]
 pub extern "C" fn sim_terrain_ptr() -> *const u8 {
     TERRAIN.with(|f| f.borrow().as_ptr())
@@ -456,6 +489,8 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     couverture: h.sat_par_ressource_ppm.iter().map(|&p| f(p)).collect(),
                     stock: (0..c.ressources.len()).map(|r| unites(s.stock_hameau(q, r))).collect(),
                     atelier: h.atelier,
+                    abandon: h.abandon_mois.map(|m| (m as f64 / s.cat.abandon.hameau_ruine_mois as f64).min(1.0)),
+                    detruit: h.detruit,
                     vital_annuel: f(h.vital_annuel_ppm),
                     confort_annuel: f(h.confort_annuel_ppm),
                 }
@@ -515,6 +550,7 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     entree: bat.stock_entree.iter().map(|&m| unites(m)).collect(),
                     sortie: bat.stock_sortie.iter().map(|&m| unites(m)).collect(),
                     chantier,
+                    abandon: bat.abandon_mois.map(|m| (m as f64 / s.cat.abandon.terre_friche_mois as f64).min(1.0)),
                 }
             })
             .collect();

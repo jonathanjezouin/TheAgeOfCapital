@@ -26,7 +26,8 @@ const pops0 = etat.nb_pops;
 w.sim_avancer(365 * 120);
 etat = json(w.sim_etat_json(0));
 assert.equal(etat.jour, 365 * 120);
-assert.ok(etat.nb_pops > pops0, `croissance ${pops0} -> ${etat.nb_pops}`);
+// Le village vit encore après 120 ans (l'abandon et le déclin existent : la population n'est plus garantie de croître).
+assert.ok(etat.nb_pops > 0, `extinction : ${pops0} -> ${etat.nb_pops}`);
 assert.ok(etat.nb_evenements > 0 && etat.evenements.length === etat.nb_evenements);
 assert.equal(json(w.sim_etat_json(etat.nb_evenements)).evenements.length, 0, "seulement les nouveaux événements");
 assert.ok(json(w.sim_carte_json()).version !== carte.version, "la carte a changé (chantiers terminés)");

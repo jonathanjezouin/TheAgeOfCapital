@@ -154,7 +154,7 @@ fn villages_toujours_connexes_et_pourvus() {
         for (b, bat) in s.monde.batiments.iter().enumerate() {
             assert!(bat.emprise.contains(&bat.tuile));
             if s.cat.batiments[bat.type_id].par_tile {
-                assert!(bat.emprise.len() >= 2, "graine {graine} : terre d'une seule tile");
+                assert!(!bat.emprise.is_empty(), "graine {graine} : terre sans tile");
                 assert!(bat.emprise.len() <= s.cat.batiments[bat.type_id].emprise_max as usize);
                 assert_ne!(s.monde.masque(bat.tuile), 0, "graine {graine} : terre non desservie");
             }
@@ -233,6 +233,7 @@ fn monde_3x3() -> Monde {
                 terrain: sim::terrain::Terrain::Plaine,
                 eau: sim::terrain::Eau::Aucune,
                 aval: 255,
+                vacant_mois: 0,
             })
             .collect(),
         quartiers: Vec::new(),
@@ -357,29 +358,19 @@ fn stable_sans_extension_sur_plusieurs_siecles() {
 /// Les routes ne traversent ni terre ni chantier : une tile à arêtes est vide, habitée, ou la tile
 /// nœud (entrée) de son bâtiment (docs/02 §10.1).
 fn verifier_routes_hors_des_terres(s: &Simulation) {
-    // Un chantier est « interdit » : jamais traversé. Une terre est « couteuse » (docs/07 §13) : un chemin
-    // d'exploitation peut la traverser en dernier recours, donc rarement.
-    let (mut routes, mut dans_une_terre) = (0usize, 0usize);
+    // Une route ne traverse jamais une terre ni un chantier : elle la contourne, ou détruit les tiles traversées
+    // (qui sortent alors de l'emprise, docs/07 §14). Seule la tile nœud porte une arête.
     for (t, tuile) in s.monde.tuiles.iter().enumerate() {
         if tuile.aretes == 0 {
             continue;
         }
-        routes += 1;
         if let Contenu::Batiment(b) = tuile.contenu {
-            if s.monde.batiments[b].tuile == t {
-                continue;
-            }
-            assert!(
-                !s.cat.batiments[s.monde.batiments[b].type_id].chantier,
-                "une route traverse le chantier {b} en {t}"
+            assert_eq!(
+                s.monde.batiments[b].tuile, t,
+                "une route traverse la tile {t} de l'emprise du bâtiment {b}"
             );
-            dans_une_terre += 1;
         }
     }
-    assert!(
-        dans_une_terre * 100 <= routes * 35,
-        "{dans_une_terre} tiles de route sur {routes} traversent des terres"
-    );
 }
 
 /// Compacité moyenne des terres de 8 tiles ou plus : périmètre ÷ périmètre du carré de même aire
@@ -440,7 +431,7 @@ fn le_score_d_extension_rend_les_terres_plus_compactes() {
 }
 
 #[test]
-fn les_routes_contournent_les_chantiers_et_ne_traversent_les_terres_qu_en_dernier_recours() {
+fn les_routes_contournent_les_terres_ou_les_detruisent() {
     for graine in [1u64, 2, 3] {
         let mut s = village(graine);
         verifier_routes_hors_des_terres(&s);
@@ -474,19 +465,20 @@ fn la_production_suit_la_fertilite_de_la_tile() {
         for &t in &s.monde.tuiles.iter().enumerate().filter(|(_, tu)| tu.contenu == sim::monde::Contenu::Batiment(champ)).map(|(i, _)| i).collect::<Vec<_>>() {
             s.monde.tuiles[t].fertilite_ppm = fertilite;
         }
-        // Plein effectif et stock vide : toute la production du jour s'ajoute au stock.
-        s.monde.batiments[champ]
-            .stock_sortie
-            .iter_mut()
-            .for_each(|x| *x = 0);
+        // Stock vide : ce que la terre produit en un jour où elle reçoit du travail s'ajoute à son stock.
         let g = s.cat.res_id("grain").unwrap();
-        let avant = s.bilan.produit[g];
-        s.jour_suivant();
-        s.bilan.produit[g] - avant
+        for _ in 0..40 {
+            s.monde.batiments[champ].stock_sortie.iter_mut().for_each(|x| *x = 0);
+            s.jour_suivant();
+            if s.monde.batiments[champ].stock_sortie[g] > 0 {
+                return s.monde.batiments[champ].stock_sortie[g];
+            }
+        }
+        0
     };
     let (plein, moitie) = (produit_grain(PPM), produit_grain(PPM / 2));
     assert!(plein > 0);
-    // Les autres champs sont inchangés : seule la part du champ modifié varie.
+    // Même terre, même jour de travail : la production suit la fertilité de ses tiles.
     assert!(
         moitie < plein && moitie > plein / 4,
         "plein {plein} moitié {moitie}"
@@ -807,6 +799,8 @@ fn village_sature() -> Simulation {
         },
     )
     .unwrap();
+    // La famille reste : la valeur d'un site neuf ne justifie pas de fonder un hameau (docs/07 §4).
+    s.cat.peuplement.seuil_fondation_ppm = 1_000 * PPM;
     let seuil = s.seuil_croissance();
     // La pop qui attend vit dans un hameau où le bois de construction peut être livré.
     let bois = s.cat.res_id("bois").unwrap();
@@ -905,6 +899,7 @@ fn un_hameau_ne_depasse_jamais_la_densite_maximale() {
 fn un_chantier_consomme_du_travail_et_du_bois() {
     let mut s = village_sature();
     s.cat.extension.chantiers_max = 1; // pas d'autre chantier pendant celui-ci
+    s.cat.extension.periode_jours = 1_000_000; // et aucune nouvelle décision
     s.etendre();
     assert_eq!(s.chantiers_en_cours(), 1);
     let bois = s.cat.res_id("bois").unwrap();
@@ -958,48 +953,35 @@ fn le_village_s_etend_selon_le_besoin_sans_deborder_la_distance() {
         }
     }
     let eff = s.effectifs();
+    // Un hameau en fondation (capacité 0) loge déjà son équipe : il n'est pas encore compté.
     assert!(eff
         .iter()
         .zip(&s.monde.quartiers)
-        .all(|(e, q)| *e <= q.capacite_pops));
+        .all(|(e, q)| *e <= q.capacite_pops || q.capacite_pops == 0));
     assert!(s.ecart_conservation().iter().all(|&e| e == 0));
 }
 
 #[test]
 fn aucun_chantier_ne_reste_bloque() {
+    // Un chantier sans progrès est abandonné après `chantier_bloque_ans` (docs/07 §14) : aucun ne survit au-delà.
     let mut s = village(1);
-    // Le travail restant de chaque chantier doit diminuer au moins tous les 3 ans.
-    let mut vu: std::collections::BTreeMap<usize, (i64, u32)> = Default::default();
+    let limite = s.cat.abandon.chantier_bloque_mois;
+    let mut abandons = 0;
     for _ in 0..200 {
         s.avancer(365);
         for (b, bat) in s.monde.batiments.iter().enumerate() {
-            match &bat.chantier {
-                // Un chantier qui attend son matériau (bois) ou ses bras peut patienter longtemps dans un hameau éloigné de
-                // la forêt ou sans main-d'œuvre libre : l'abandon des chantiers orphelins est reporté (docs/05, « Déclin
-                // et abandon »). Seul un chantier qui a ce qu'il lui faut doit avancer.
-                Some(_) if matches!(bat.limitant, sim::monde::Limitant::Intrant(_) | sim::monde::Limitant::MainOeuvre) => {
-                    vu.remove(&b);
-                }
-                Some(ch) => {
-                    let e = vu.entry(b).or_insert((ch.travail_restant, 0));
-                    if ch.travail_restant < e.0 {
-                        *e = (ch.travail_restant, 0);
-                    } else {
-                        e.1 += 1;
-                        assert!(
-                            e.1 <= 3,
-                            "chantier b{b} sans progrès depuis {} ans (an {})",
-                            e.1,
-                            s.jour / 365
-                        );
-                    }
-                }
-                None => {
-                    vu.remove(&b);
-                }
+            if bat.chantier.is_some() {
+                assert!(
+                    bat.inactif_mois <= limite,
+                    "chantier b{b} sans progrès depuis {} mois (an {})",
+                    bat.inactif_mois,
+                    s.jour / 365
+                );
             }
         }
+        abandons = s.evenements.iter().filter(|e| e.texte.starts_with("Chantier abandonné")).count();
     }
+    println!("{abandons} chantiers abandonnés en 200 ans");
 }
 
 // ---------- Transport ----------

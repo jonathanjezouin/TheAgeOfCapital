@@ -144,6 +144,9 @@ fn nouveau_hameau(tuile: usize, habitat_id: usize, cat: &Catalogue) -> Quartier 
         jours_an: 0,
         vital_annuel_ppm: PPM,
         confort_annuel_ppm: PPM,
+        vide_mois: 0,
+        abandon_mois: None,
+        detruit: false,
     }
 }
 
@@ -170,6 +173,9 @@ fn nouveau_batiment(
         sur_pied_ppm: if cat.batiments[type_id].par_tile { (cat.sim.jours_stock_sortie * PPM as f64 / 2.0) as i64 } else { 0 },
         mo_lisse_milli: 0,
         limitant: Limitant::Aucun,
+        inactif_mois: 0,
+        abandon_mois: None,
+        progres_ref: 0,
     }
 }
 
@@ -242,6 +248,7 @@ fn essayer(
             terrain: carte.terrain[i],
             eau: carte.eau[i],
             aval: carte.aval[i],
+            vacant_mois: 0,
         })
         .collect();
 
