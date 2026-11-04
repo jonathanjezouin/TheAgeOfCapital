@@ -15,6 +15,8 @@ thread_local! {
     static SORTIE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static FERTILITE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     /// Deux octets par tile : terrain, puis gabarit d'eau (bits 0-1) et sens de l'aval (bits 2-4, 0 = aucun, sinon 1 + direction / 2).
+    /// Aptitude de chaque tile pour un type de terre (% de 1,0, 0 à 255), à la demande.
+    static APTITUDE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static TERRAIN: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -51,6 +53,8 @@ struct Meta<'a> {
     habitats: Vec<HabitatMeta<'a>>,
     batiments: Vec<BatimentMeta<'a>>,
     habitants_par_pop: i64,
+    /// Multiplicateur du travail des chantiers par terrain.
+    cout_terrain: Vec<f64>,
     seuil_croissance_microhab: i64,
 }
 
@@ -67,6 +71,9 @@ struct BatimentMeta<'a> {
     pops: u32,
     chantier: bool,
     fertile: bool,
+    /// Rendement et travail requis par terrain (plaine, plaine riche, rocailleuse, marécageuse, forêt), en multiples de 1,0.
+    aptitude: Vec<f64>,
+    travail_terrain: Vec<f64>,
     /// Ressources livrées en sortie finale.
     extrants: Vec<&'a str>,
     intrants: Vec<&'a str>,
@@ -249,13 +256,11 @@ fn limitant_texte(s: &Simulation, l: Limitant) -> String {
 
 /// Crée un village. Retourne 0 si tout va bien, 1 sinon (le message est écrit dans le tampon).
 #[no_mangle]
-pub extern "C" fn sim_creer(graine: u32, hameaux: u32, rayon_fertile: i32, rayon_sterile: i32, occupation_pct: u32) -> i32 {
+pub extern "C" fn sim_creer(graine: u32, hameaux: u32, occupation_pct: u32) -> i32 {
     let p = ParamsVillage {
         graine: graine as u64,
         nb_hameaux: hameaux as usize,
         occupation_initiale_pct: occupation_pct,
-        rayon_fertile: rayon_fertile as i64,
-        rayon_sterile: rayon_sterile as i64,
         ..Default::default()
     };
     match generer(Catalogue::defaut(), &p) {
@@ -313,6 +318,27 @@ pub extern "C" fn sim_fertilite_len() -> u32 {
     FERTILITE.with(|f| f.borrow().len() as u32)
 }
 
+/// Calcule l'aptitude de chaque tile pour un type de terre (fertilité locale × aptitude du terrain, en % de 1,0)
+/// et renvoie le nombre d'octets à lire à `sim_aptitude_ptr`. 0 si le type n'existe pas.
+#[no_mangle]
+pub extern "C" fn sim_aptitude(type_id: u32) -> u32 {
+    avec(0, |s| {
+        let t = type_id as usize;
+        if t >= s.cat.batiments.len() {
+            return 0;
+        }
+        let v: Vec<u8> = s.monde.tuiles.iter().map(|x| (s.cat.rendement_tile(t, x) / 10_000).clamp(0, 255) as u8).collect();
+        let n = v.len() as u32;
+        APTITUDE.with(|a| *a.borrow_mut() = v);
+        n
+    })
+}
+
+#[no_mangle]
+pub extern "C" fn sim_aptitude_ptr() -> *const u8 {
+    APTITUDE.with(|f| f.borrow().as_ptr())
+}
+
 #[no_mangle]
 pub extern "C" fn sim_terrain_ptr() -> *const u8 {
     TERRAIN.with(|f| f.borrow().as_ptr())
@@ -349,11 +375,14 @@ pub extern "C" fn sim_meta_json() -> u32 {
                     pops: b.pops,
                     chantier: b.chantier,
                     fertile: b.fertile,
+                    aptitude: b.aptitude_ppm.iter().map(|&v| v as f64 / 1e6).collect(),
+                    travail_terrain: b.travail_terrain_ppm.iter().map(|&v| v as f64 / 1e6).collect(),
                     extrants: noms(&b.extrants_finaux()),
                     intrants: noms(&b.intrants_externes()),
                 })
                 .collect(),
             habitants_par_pop: c.demo.habitants_par_pop,
+            cout_terrain: c.cout_terrain_ppm.iter().map(|&v| v as f64 / 1e6).collect(),
             seuil_croissance_microhab: s.seuil_croissance(),
         })
     })
@@ -441,7 +470,7 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     postes: if bat.chantier.is_some() {
                         bat.equipe as f64
                     } else {
-                        c.besoin_mo_milli(bat.type_id, bat.emprise.len()) as f64 / 1000.0
+                        c.besoin_mo_terre_milli(bat.type_id, &bat.emprise, &s.monde.tuiles) as f64 / 1000.0
                     },
                     recu: match bat.quartier {
                         Some(q) if t.domestique => s.libre_milli.get(q).map_or(0.0, |&m| m as f64 / 1000.0),
@@ -453,10 +482,11 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     emprise: bat.emprise.iter().map(|&i| s.monde.xy(i)).collect(),
                     prod: f(bat.prod_ppm),
                     limitant: limitant_texte(s, bat.limitant),
+                    // Rendement moyen de l'emprise : fertilité locale × aptitude du terrain pour ce type de terre.
                     fertilite: if bat.emprise.is_empty() {
-                        f(s.monde.tuiles[bat.tuile].fertilite_ppm)
+                        f(c.rendement_tile(bat.type_id, &s.monde.tuiles[bat.tuile]))
                     } else {
-                        f(bat.emprise.iter().map(|&i| s.monde.tuiles[i].fertilite_ppm).sum::<i64>() / bat.emprise.len() as i64)
+                        f(bat.emprise.iter().map(|&i| c.rendement_tile(bat.type_id, &s.monde.tuiles[i])).sum::<i64>() / bat.emprise.len() as i64)
                     },
                     entree: bat.stock_entree.iter().map(|&m| unites(m)).collect(),
                     sortie: bat.stock_sortie.iter().map(|&m| unites(m)).collect(),

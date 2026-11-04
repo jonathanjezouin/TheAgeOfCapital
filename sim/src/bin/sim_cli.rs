@@ -10,8 +10,7 @@ fn aide() -> ! {
     eprintln!(
         "sim-cli [--annees N] [--graine N] [--hameaux N] [--occupation PCT]\n\
          \x20       [--donnees fichier.toml] [--accel X] [--csv fichier.csv] [--pas JOURS]\n\
-         \x20       [--json-final fichier.json] [--carte] [--terrain] [--journal]\n\
-         \x20       [--rayon-fertile T] [--rayon-sterile T]"
+         \x20       [--json-final fichier.json] [--carte] [--terrain] [--journal]"
     );
     std::process::exit(2)
 }
@@ -39,8 +38,6 @@ fn main() {
             "--donnees" => donnees = Some(val()),
             "--csv" => csv = Some(val()),
             "--json-final" => json = Some(val()),
-            "--rayon-fertile" => pv.rayon_fertile = val().parse().unwrap_or_else(|_| aide()),
-            "--rayon-sterile" => pv.rayon_sterile = val().parse().unwrap_or_else(|_| aide()),
             "--carte" => carte = true,
             "--terrain" => terrain = true,
             "--journal" => journal = true,

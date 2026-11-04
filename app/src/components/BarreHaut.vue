@@ -11,7 +11,7 @@ const date = computed(() => {
 const habitants = computed(() => (store.etat ? store.etat.nb_pops * (store.meta?.habitants_par_pop ?? 100) : 0))
 const MODES = [
   { id: 'normal', label: 'Normal' },
-  { id: 'fertilite', label: 'Fertilité' },
+  { id: 'fertilite', label: 'Aptitude' },
   { id: 'besoins', label: 'Besoins' },
   { id: 'ressource', label: 'Flux' },
 ]

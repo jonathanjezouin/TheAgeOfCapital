@@ -25,10 +25,6 @@ pub struct ParamsVillage {
     pub occupation_initiale_pct: u32,
     pub largeur: usize,
     pub hauteur: usize,
-    /// Rayon (tiles) jusqu'où la terre garde sa pleine fertilité autour du centre.
-    pub rayon_fertile: i64,
-    /// Rayon (tiles) au-delà duquel la terre est la plus pauvre.
-    pub rayon_sterile: i64,
 }
 
 impl Default for ParamsVillage {
@@ -39,8 +35,6 @@ impl Default for ParamsVillage {
             occupation_initiale_pct: 80,
             largeur: 200,
             hauteur: 200,
-            rayon_fertile: 12,
-            rayon_sterile: 28,
         }
     }
 }
@@ -114,28 +108,14 @@ pub fn composition(cat: &Catalogue, nb_hameaux: usize) -> Composition {
     Composition { batiments: compte }
 }
 
-fn isqrt(n: u64) -> u64 {
-    if n < 2 {
-        return n;
-    }
-    let mut x = (n as f64).sqrt() as u64;
-    while x * x > n {
-        x -= 1;
-    }
-    while (x + 1) * (x + 1) <= n {
-        x += 1;
-    }
-    x
-}
 
-/// Fertilité d'une tile (ppm) : bruit de valeur lissé (0,85 à 1,3), qui s'effondre
-/// entre `rayon_fertile` et `rayon_sterile` autour du centre. Pur entier.
-fn champ_fertilite(p: &ParamsVillage, centre: (usize, usize), rng: &mut Rng) -> Vec<i64> {
+/// Qualité locale du sol (ppm de 1,0) : bruit de valeur lissé de 0,85 à 1,3, sans lien avec le village.
+/// Le terrain (docs/07) et son aptitude par type de terre s'y ajoutent : la fertilité ne décroît plus
+/// artificiellement avec la distance au centre. Pur entier.
+fn champ_fertilite(p: &ParamsVillage, rng: &mut Rng) -> Vec<i64> {
     const CELLULE: usize = 24; // ~6 km : le bruit de fertilité varie à l'échelle du terroir (tile de 250 m)
     let (gw, gh) = (p.largeur / CELLULE + 2, p.hauteur / CELLULE + 2);
     let grille: Vec<i64> = (0..gw * gh).map(|_| rng.dans(1001) as i64).collect();
-    let (cx, cy) = (centre.0 as i64, centre.1 as i64);
-    let (r0, r1) = (p.rayon_fertile * 1000, p.rayon_sterile * 1000);
     let mut f = Vec::with_capacity(p.largeur * p.hauteur);
     for y in 0..p.hauteur {
         for x in 0..p.largeur {
@@ -150,17 +130,7 @@ fn champ_fertilite(p: &ParamsVillage, centre: (usize, usize), rng: &mut Rng) -> 
             let haut = v(gx, gy) * (c - fx) + v(gx + 1, gy) * fx;
             let bas = v(gx, gy + 1) * (c - fx) + v(gx + 1, gy + 1) * fx;
             let valeur = (haut * (c - fy) + bas * fy) / (c * c); // 0..=1000
-            let base = 850_000 + valeur * 450;
-            let (dx, dy) = (x as i64 - cx, y as i64 - cy);
-            let d = isqrt(((dx * dx + dy * dy) * 1_000_000) as u64) as i64;
-            let facteur = if d <= r0 {
-                PPM
-            } else if d >= r1 {
-                150_000
-            } else {
-                PPM - (PPM - 150_000) * (d - r0) / (r1 - r0)
-            };
-            f.push(base * facteur / PPM);
+            f.push(850_000 + valeur * 450);
         }
     }
     f
@@ -311,7 +281,7 @@ fn essayer(
         quartiers: Vec::new(),
         batiments: Vec::new(),
     };
-    let fertilite = champ_fertilite(p, centre_village, rng);
+    let fertilite = champ_fertilite(p, rng);
     monde.tuiles = (0..w * h)
         .map(|i| Tuile {
             contenu: Contenu::Vide,

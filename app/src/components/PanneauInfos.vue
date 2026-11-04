@@ -29,6 +29,16 @@ const sol = computed(() => {
   const i = (s.y * m.largeur + s.x) * 2
   return { ...TERRAINS_INFO[store.terrain[i]], eau: EAUX_INFO[store.terrain[i + 1] & 3] }
 })
+// Pour une tile libre constructible : rendement de chaque type de terre (qualité du sol × aptitude du terrain)
+// et surcoût de construction.
+const rendements = computed(() => {
+  const s = store.selection, m = store.meta
+  if (!s || !m || !store.terrain || !store.fertilite) return []
+  const t = store.terrain[(s.y * m.largeur + s.x) * 2]
+  const fert = (store.fertilite[s.y * m.largeur + s.x] ?? 0) / 100
+  return m.batiments.filter((b) => b.fertile).map((b) => ({ nom: TYPES[b.nom] ?? b.nom, rendement: fert * b.aptitude[t], travail: b.travail_terrain[t] }))
+})
+const coutTerrain = computed(() => (store.meta && sol.value ? store.meta.cout_terrain[store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2]] : 1))
 const sansBatir = computed(() => !!sol.value && (sol.value.eau !== '' || ['Forêt', 'Plaine marécageuse'].includes(sol.value.nom)))
 
 const pops = computed(() => {
@@ -87,14 +97,18 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
     </div>
 
     <template v-else>
-      <small>Tile ({{ entite.x }}, {{ entite.y }}) · {{ sol?.eau || sol?.nom }} · fertilité {{ Math.round(entite.fert * 100) }} %</small>
+      <small>Tile ({{ entite.x }}, {{ entite.y }}) · {{ sol?.eau || sol?.nom }} · qualité du sol {{ Math.round(entite.fert * 100) }} %</small>
 
       <!-- Terre libre / chemin -->
       <div v-if="entite.genre === 'vide'">
         <h2>{{ sol?.eau ? sol.eau : sansBatir ? sol.nom : 'Terre libre' }}</h2>
         <p v-if="sol?.eau" class="doux">Cours d'eau : il coupe le territoire, on ne le franchit pas encore (ponts à venir). Un point d'eau attire l'habitat.</p>
         <p v-else-if="sansBatir" class="doux">{{ sol.texte }} Pas encore constructible : il faudra défricher ou drainer.</p>
-        <p v-else class="doux"><b>{{ sol?.nom }}</b>. {{ sol?.texte }} Un défrichement doit rester à portée d'un hameau ({{ store.meta.distance_max }} tiles de chemin au plus). Plus la terre est pauvre, moins elle produit.</p>
+        <template v-else>
+          <p class="doux"><b>{{ sol?.nom }}</b>. {{ sol?.texte }} Un défrichement doit rester à portée d'un hameau ({{ store.meta.distance_max }} tiles de chemin au plus).</p>
+          <div class="ligne" v-for="r in rendements" :key="r.nom"><span>{{ r.nom }}</span><span>rendement {{ Math.round(r.rendement * 100) }} % · travail ×{{ un(r.travail, 1) }}</span></div>
+          <div class="ligne"><span>Construire (maison, défrichement)</span><span>travail ×{{ un(coutTerrain, 1) }}</span></div>
+        </template>
       </div>
       <div v-else-if="entite.genre === 'chemin'">
         <h2>Chemin de terre</h2>
@@ -140,7 +154,7 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
         <div class="barre"><i :style="{ width: entite.l.prod * 100 + '%', background: couleurRatio(entite.l.prod) }"></i></div>
         <div class="ligne"><span>Limité par</span><span>{{ limitantTexte(entite.l.limitant) }}</span></div>
         <div class="ligne"><span>Surface</span><span>{{ entite.l.emprise.length }} tiles ({{ un(entite.l.emprise.length * 6.25, 0) }} ha)</span></div>
-        <div class="ligne"><span>Fertilité moyenne</span><span>{{ pct(entite.l.fertilite) }}</span></div>
+        <div class="ligne"><span>Rendement moyen</span><span>{{ pct(entite.l.fertilite) }}</span></div>
         <div class="ligne"><span>Travail reçu (moy. 30 j) / requis</span><span>{{ un(entite.l.recu, 2) }} / {{ un(entite.l.postes, 2) }} pops</span></div>
         <div class="ligne"><span>Reçu aujourd'hui · encore réclamé</span><span>{{ un(entite.l.recu_jour, 2) }} · {{ un(entite.l.demande, 2) }} pop-jour</span></div>
         <div class="note" v-if="entite.l.limitant === 'main_oeuvre'">Cette terre réclame du travail que personne n'est venu faire : les pops vont d'abord vers ce qui leur manque pour vivre.</div>

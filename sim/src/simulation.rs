@@ -854,7 +854,7 @@ impl Simulation {
                 let plafond = Catalogue::jours_x(q * n, self.cat.sim.jours_stock_sortie);
                 let libre = (plafond - bat.stock_sortie[r]).max(0);
                 let jours_de_place_ppm = (libre * PPM / (q * n).max(1)).min(bat.sur_pied_ppm);
-                self.cat.besoin_mo_milli(bat.type_id, bat.emprise.len()) * jours_de_place_ppm / PPM
+                self.cat.besoin_mo_terre_milli(bat.type_id, &bat.emprise, &self.monde.tuiles) * jours_de_place_ppm / PPM
             })
             .collect()
     }
@@ -958,18 +958,15 @@ impl Simulation {
                 Self::avancer_chantier(b, cat, &mut self.bilan);
                 continue;
             }
-            // La fertilité de la tile module la production des terres exploitées.
-            let fert = if t.fertile {
-                tuiles[b.tuile].fertilite_ppm
-            } else {
-                PPM
-            };
-            // Terre : N tiles, extrants et travail proportionnels à N ; fertilité moyenne de l'emprise.
+            // Terre : N tiles, extrants et travail proportionnels à N ; rendement moyen de l'emprise
+            // (fertilité de chaque tile × aptitude de son terrain pour ce type de terre, docs/07 §3.3).
             let n = if t.par_tile { b.emprise.len() as i64 } else { 1 };
             let fert = if t.fertile && !b.emprise.is_empty() {
-                b.emprise.iter().map(|&i| tuiles[i].fertilite_ppm).sum::<i64>() / b.emprise.len() as i64
+                b.emprise.iter().map(|&i| cat.rendement_tile(b.type_id, &tuiles[i])).sum::<i64>() / b.emprise.len() as i64
+            } else if t.fertile {
+                cat.rendement_tile(b.type_id, &tuiles[b.tuile])
             } else {
-                fert
+                PPM
             };
             let f_mo = if t.domestique {
                 // Travail domestique : temps libre du hameau / travail requis à plein régime.
@@ -978,7 +975,7 @@ impl Simulation {
             } else if t.par_tile {
                 // Le travail arrive par visites : un pop-jour peut valoir plusieurs jours de production
                 // (borné par la place restante dans le stock de sortie).
-                let besoin = cat.besoin_mo_milli(b.type_id, b.emprise.len()).max(1);
+                let besoin = cat.besoin_mo_terre_milli(b.type_id, &b.emprise, tuiles).max(1);
                 b.mo_milli * PPM / besoin
             } else {
                 b.presents as i64 * PPM / t.pops as i64
@@ -1575,7 +1572,7 @@ impl Simulation {
     /// (deux arêtes), dans 8 directions. Les coûts sont ceux des arêtes (10 / 14).
     /// Terre fertile : fertilité / distance ; sinon : le plus proche, sur la terre la plus pauvre.
     /// `requis` : groupes de ressources dont l'une au moins doit avoir un producteur à portée du site.
-    fn meilleur_site(&self, centre: usize, fertile: bool, requis: &[Vec<usize>]) -> Option<Site> {
+    fn meilleur_site(&self, centre: usize, fertile: bool, type_id: Option<usize>, requis: &[Vec<usize>]) -> Option<Site> {
         let nq = self.nq();
         let d = self
             .reseau
@@ -1612,7 +1609,7 @@ impl Simulation {
                        route: &[usize],
                        dist: i64,
                        best: &mut Option<((i64, i64, i64, usize), Site)>| {
-            let fert = self.monde.tuiles[tuile].fertilite_ppm;
+            let fert = self.fert_pour(type_id, tuile);
             let cle = if fertile {
                 (
                     -(fert * 10_000 / (dist + 10)),
@@ -1759,7 +1756,7 @@ impl Simulation {
     /// Score de chaque candidate (docs/02 §10.2, poids dans `[extension]`) : fertilité, plus un bonus par
     /// voisin déjà dans l'emprise (périmètre court : clôtures, trajets), moins la distance au hameau
     /// demandeur, moins une pénalité hors du terroir de la terre (hameau le plus proche différent).
-    fn agrandir(&self, base: &[usize], k: usize, hameau: Option<usize>) -> Vec<usize> {
+    fn agrandir(&self, base: &[usize], k: usize, hameau: Option<usize>, type_id: Option<usize>) -> Vec<usize> {
         let libre = |t: usize| {
             self.monde.tuiles[t].contenu == Contenu::Vide
                 && self.monde.tuiles[t].aretes == 0
@@ -1784,8 +1781,7 @@ impl Simulation {
                         .filter_map(|&e| self.monde.voisin(v, e))
                         .filter(|w| occupees.contains(w))
                         .count() as i64;
-                    let mut score =
-                        self.monde.tuiles[v].fertilite_ppm + voisins * ext.poids_voisins_ppm;
+                    let mut score = self.fert_pour(type_id, v) + voisins * ext.poids_voisins_ppm;
                     if let Some(h) = hameau {
                         score -= self.distance_tiles(v, self.monde.quartiers[h].tuile)
                             * ext.poids_distance_ppm;
@@ -1847,14 +1843,33 @@ impl Simulation {
         }
     }
 
-    /// Coût d'un défrichement de `n` tiles : travail et matériau par tile, équipe du chantier.
-    fn cout_defrichement(&self, type_id: usize, n: usize) -> Option<crate::donnees::CoutCreation> {
+    /// Coût d'un défrichement des tiles `tuiles` : travail (multiplié par le coût de construction du terrain
+    /// de chaque tile, docs/07 §3.3) et matériau par tile, équipe du chantier.
+    fn cout_defrichement(&self, type_id: usize, tuiles: &[usize]) -> Option<crate::donnees::CoutCreation> {
         let c = self.cat.batiments[type_id].cout_creation.clone()?;
+        let travail = tuiles
+            .iter()
+            .map(|&t| c.travail * self.cat.cout_terrain_ppm[self.monde.tuiles[t].terrain as usize] / PPM)
+            .sum();
         Some(crate::donnees::CoutCreation {
-            travail: c.travail * n as i64,
-            materiau: c.materiau * n as i64,
+            travail,
+            materiau: c.materiau * tuiles.len() as i64,
             equipe: c.equipe,
         })
+    }
+
+    /// Coût d'un chantier de logement sur la tile `tuile` : le travail suit le terrain.
+    fn cout_logement(&self, mut cout: crate::donnees::CoutCreation, tuile: usize) -> crate::donnees::CoutCreation {
+        cout.travail = cout.travail * self.cat.cout_terrain_ppm[self.monde.tuiles[tuile].terrain as usize] / PPM;
+        cout
+    }
+
+    /// Rendement d'une tile pour une terre de ce type (fertilité × aptitude du terrain), ou fertilité seule.
+    fn fert_pour(&self, type_id: Option<usize>, t: usize) -> i64 {
+        match type_id {
+            Some(ty) => self.cat.rendement_tile(ty, &self.monde.tuiles[t]),
+            None => self.monde.tuiles[t].fertilite_ppm,
+        }
     }
 
     /// Défricher pour la ressource d'un type de terre : d'abord agrandir une terre existante du même
@@ -1872,12 +1887,12 @@ impl Simulation {
             let Some(ch) = self.reseau.chemin(centre, nq + b) else {
                 continue;
             };
-            let voisines = self.agrandir(&bat.emprise, 1, Some(centre));
+            let voisines = self.agrandir(&bat.emprise, 1, Some(centre), Some(type_id));
             let Some(&v) = voisines.first() else {
                 continue;
             };
             // Meilleure fertilité d'abord, puis la plus proche.
-            candidates.push((-self.monde.tuiles[v].fertilite_ppm * 1000 / (ch.cout + 10), b));
+            candidates.push((-self.fert_pour(Some(type_id), v) * 1000 / (ch.cout + 10), b));
         }
         candidates.sort();
         for &(_, b) in &candidates {
@@ -1895,11 +1910,11 @@ impl Simulation {
         let max = self.cat.batiments[type_id].emprise_max as usize;
         let k = (self.cat.extension.tuiles_par_defrichement as usize)
             .min(max.saturating_sub(self.monde.batiments[b].emprise.len()));
-        let nouvelles = self.agrandir(&self.monde.batiments[b].emprise, k, Some(centre));
+        let nouvelles = self.agrandir(&self.monde.batiments[b].emprise, k, Some(centre), Some(type_id));
         if nouvelles.is_empty() {
             return false;
         }
-        let Some(cout) = self.cout_defrichement(type_id, nouvelles.len()) else {
+        let Some(cout) = self.cout_defrichement(type_id, &nouvelles) else {
             return false;
         };
         let node = self.monde.batiments[b].tuile;
@@ -1940,13 +1955,13 @@ impl Simulation {
         } else {
             Vec::new()
         };
-        let Some(site) = self.meilleur_site(centre, true, &requis) else {
+        let Some(site) = self.meilleur_site(centre, true, Some(type_id), &requis) else {
             return false;
         };
-        let reste = self.agrandir(&[site.tuile], k.saturating_sub(1), Some(centre));
+        let reste = self.agrandir(&[site.tuile], k.saturating_sub(1), Some(centre), Some(type_id));
         let mut emprise = vec![site.tuile];
         emprise.extend(reste);
-        let Some(cout) = self.cout_defrichement(type_id, emprise.len()) else {
+        let Some(cout) = self.cout_defrichement(type_id, &emprise) else {
             return false;
         };
         self.poser_site(&site);
@@ -2000,7 +2015,7 @@ impl Simulation {
         {
             return false;
         }
-        let cout = self.cat.habitats[habitat_id].cout_creation.clone();
+        let cout = self.cout_logement(self.cat.habitats[habitat_id].cout_creation.clone(), tuile);
         if cout.materiau > 0 {
             let mat = self.cat.extension.materiau;
             let livrable = (0..self.monde.batiments.len())
@@ -2067,9 +2082,11 @@ impl Simulation {
         if cout.materiau > 0 {
             requis.push(vec![self.cat.extension.materiau]);
         }
-        let Some(site) = self.meilleur_site(centre, false, &requis) else {
+        let Some(site) = self.meilleur_site(centre, false, None, &requis) else {
             return false;
         };
+        // Le travail de fondation suit le terrain du site (docs/07 §3.3).
+        let cout = self.cout_logement(cout, site.tuile);
         self.poser_site(&site);
         // Un hameau s'ajoute aux quartiers : les lieux « bâtiment » se décalent d'un cran.
         let nq = self.nq();

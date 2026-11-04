@@ -104,6 +104,8 @@ input[type='number'] { width: 4.2em; background: var(--panneau-2); border: 1px s
 .erreur { color: #f2a99d; max-width: 36em; white-space: pre-wrap; }
 .infobulle { position: absolute; left: 10px; bottom: 10px; background: rgba(21, 19, 14, 0.78); color: #ece6d3; padding: 3px 9px; border-radius: 6px; font-size: 12px; pointer-events: none; }
 .legende { position: absolute; right: 10px; bottom: 10px; background: rgba(21, 19, 14, 0.82); color: #ece6d3; padding: 6px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }
+.legende { pointer-events: auto; }
+.legende .choix-terre { font: inherit; background: #2b2820; color: #ece6d3; border: 1px solid #5a5340; border-radius: 4px; padding: 1px 4px; }
 .legende .degrade { height: 8px; width: 150px; border-radius: 4px; margin: 4px 0; }
 
 @media (max-width: 860px) {

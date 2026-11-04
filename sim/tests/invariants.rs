@@ -421,7 +421,9 @@ fn le_score_d_extension_rend_les_terres_plus_compactes() {
     let (compact, libre) = (mesure(true), mesure(false));
     println!("irrégularité moyenne : score {compact:.3}, fertilité seule {libre:.3}");
     assert!(compact < libre, "{compact} >= {libre}");
-    assert!(compact < 1.35, "terres trop irrégulières : {compact}");
+    // 1,35 avec un terrain unique ; les terres suivent maintenant les plaques de terrain (aptitude), un peu moins
+    // régulières (docs/07 §3.3).
+    assert!(compact < 1.45, "terres trop irrégulières : {compact}");
 }
 
 #[test]

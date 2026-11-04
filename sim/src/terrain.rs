@@ -25,6 +25,20 @@ pub enum Terrain {
 }
 
 impl Terrain {
+    /// Tous les terrains, dans l'ordre de leur index (`terrain as usize`).
+    pub const TOUS: [Terrain; 5] = [
+        Terrain::Plaine,
+        Terrain::PlaineRiche,
+        Terrain::Rocailleuse,
+        Terrain::Marecageuse,
+        Terrain::Foret,
+    ];
+
+    /// Index d'un terrain d'après son nom (`plaine_riche`…), pour les fichiers de données.
+    pub fn index_de(nom: &str) -> Option<usize> {
+        Self::TOUS.iter().position(|t| t.nom() == nom)
+    }
+
     pub fn nom(self) -> &'static str {
         match self {
             Terrain::Plaine => "plaine",
@@ -438,8 +452,13 @@ pub fn candidats_centre(c: &CarteTerrain, rayon: usize, n: usize) -> Vec<(i64, u
             for dy in (-10i64..=10).step_by(2) {
                 for dx in (-10i64..=10).step_by(2) {
                     let (nx, ny) = (x as i64 + dx, y as i64 + dy);
-                    if nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64 && c.terrain[ny as usize * w + nx as usize] == Terrain::PlaineRiche {
-                        sc += 1;
+                    if nx >= 0 && ny >= 0 && nx < w as i64 && ny < h as i64 {
+                        match c.terrain[ny as usize * w + nx as usize] {
+                            Terrain::PlaineRiche => sc += 1,
+                            // Un village s'installe d'abord sur de bonnes terres : la rocaille à portée le pénalise.
+                            Terrain::Rocailleuse => sc -= 3,
+                            _ => {}
+                        }
                     }
                 }
             }

@@ -9,6 +9,7 @@ import PanneauRessource from './components/PanneauRessource.vue'
 import { chargerSim } from './sim.js'
 import { Carte } from './carte.js'
 import { store } from './store.js'
+import { TYPES } from './libelles.js'
 
 const zone = ref(null)
 let sim = null
@@ -61,7 +62,8 @@ function nouvellePartie() {
   store.selectionPop = null
   store.carte = null
   store.fertilite = sim.fertilite()
-  carte.remplacerFertilite(store.fertilite)
+  store.aptitude = sim.aptitude(store.typeAptitude)
+  carte.remplacerFertilite(store.aptitude)
   store.terrain = sim.terrain()
   carte.construireSol(store.terrain)
   accumule = 0
@@ -117,7 +119,9 @@ onMounted(async () => {
     store.meta = markRaw(sim.meta())
     store.fertilite = sim.fertilite()
     store.terrain = sim.terrain()
-    carte = await new Carte().init(zone.value, URLS, store.meta, store.fertilite, store.terrain)
+    store.typeAptitude = store.meta.batiments.findIndex((b) => b.nom === 'champ')
+    store.aptitude = sim.aptitude(store.typeAptitude)
+    carte = await new Carte().init(zone.value, URLS, store.meta, store.aptitude, store.terrain)
     carte.sim = sim
     window.__carte = carte
     window.__sim = sim
@@ -141,6 +145,14 @@ onBeforeUnmount(() => {
   carte?.detruire()
 })
 
+// Types de terre dont le rendement dépend du terrain, proposés dans le mode « Aptitude ».
+const terres = () => store.meta.batiments.map((b, i) => ({ i, nom: TYPES[b.nom] ?? b.nom, fertile: b.fertile })).filter((t) => t.fertile)
+watch(() => store.typeAptitude, (t) => {
+  if (!sim || !carte || t == null) return
+  store.aptitude = sim.aptitude(t)
+  carte.remplacerFertilite(store.aptitude)
+})
+
 watch(() => [store.mode, store.selection, store.selectionPop, store.ressource], () => {
   if (!store.etat || !carte) return
   lireDetails()
@@ -161,7 +173,10 @@ watch(() => store.vitesse, () => carte?.majNuit())
       </div>
       <div v-if="store.pret && store.survol" class="infobulle">({{ store.survol.x }}, {{ store.survol.y }})</div>
       <div v-if="store.pret && store.mode === 'fertilite'" class="legende">
-        Fertilité de la terre
+        Aptitude du terrain pour
+        <select v-model.number="store.typeAptitude" class="choix-terre" aria-label="Type de terre">
+          <option v-for="t in terres()" :key="t.i" :value="t.i">{{ t.nom }}</option>
+        </select>
         <div class="degrade" style="background: linear-gradient(90deg, rgb(150,84,56), rgb(196,150,70), rgb(150,176,70), rgb(74,150,70), rgb(30,110,76))"></div>
         pauvre <span style="float: right">riche</span>
       </div>

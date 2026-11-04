@@ -1,7 +1,9 @@
 //! Chargement et validation des données de jeu (TOML). Tout est en entiers :
 //! quantités en milli-unités, proportions en ppm.
 
+use crate::terrain::Terrain;
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 pub type Qte = i64;
 /// Une unité de marchandise = 1000 milli-unités.
@@ -38,6 +40,20 @@ struct Brut {
     ressources: Vec<BrutRessource>,
     besoins: Vec<BrutBesoin>,
     batiments: Vec<BrutBatiment>,
+    /// Propriétés de chaque terrain (docs/07 §3), par nom de terrain.
+    #[serde(default)]
+    terrains: BTreeMap<String, BrutTerrain>,
+}
+
+#[derive(Deserialize)]
+struct BrutTerrain {
+    /// Multiplicateur du travail des chantiers (maison, hameau, défrichement) sur ce terrain.
+    #[serde(default = "un_f64")]
+    cout_construction: f64,
+}
+
+fn un_f64() -> f64 {
+    1.0
 }
 
 #[derive(Deserialize)]
@@ -202,6 +218,12 @@ struct BrutBatiment {
     emprise_max: u32,
     #[serde(default)]
     fertile: bool,
+    /// Rendement de la terre selon le terrain (1,0 par défaut) : multiplie la fertilité de la tile.
+    #[serde(default)]
+    aptitude: BTreeMap<String, f64>,
+    /// Travail requis selon le terrain (1,0 par défaut) : multiplie `jours_par_tile_an`.
+    #[serde(default)]
+    travail_terrain: BTreeMap<String, f64>,
     #[serde(default)]
     domestique: bool,
     cout_creation: Option<BrutCout>,
@@ -361,6 +383,10 @@ pub struct TypeBatiment {
     pub chantier: bool,
     /// La production est proportionnelle à la fertilité de la tile.
     pub fertile: bool,
+    /// Rendement par terrain (ppm de 1,0, indexé par `Terrain as usize`) : multiplie la fertilité de la tile.
+    pub aptitude_ppm: [i64; 5],
+    /// Travail requis par terrain (ppm de 1,0) : multiplie `jours_par_tile_an`.
+    pub travail_terrain_ppm: [i64; 5],
     /// Travail domestique (docs/02 §8.4) : pas de poste ; la main-d'œuvre vient du temps libre des
     /// pops du hameau. `pops` est alors le travail requis à plein régime, en pop-jours par jour.
     pub domestique: bool,
@@ -437,6 +463,8 @@ pub struct Catalogue {
     /// Ration normale tirée chaque jour sur le stock du hameau.
     pub besoins: Vec<Besoin>,
     pub batiments: Vec<TypeBatiment>,
+    /// Multiplicateur du travail des chantiers par terrain (ppm de 1,0, indexé par `Terrain as usize`).
+    pub cout_terrain_ppm: [i64; 5],
 }
 
 pub const DONNEES_POC: &str = include_str!("../donnees/poc.toml");
@@ -503,7 +531,21 @@ impl Catalogue {
                     extrants: conv(&e.extrants)?,
                 });
             }
+            let table = |m: &BTreeMap<String, f64>, quoi: &str| -> Result<[i64; 5], String> {
+                let mut t = [PPM; 5];
+                for (nom, v) in m {
+                    let i = Terrain::index_de(nom)
+                        .ok_or_else(|| format!("{} : terrain inconnu « {nom} » ({quoi})", x.nom))?;
+                    if *v < 0.0 {
+                        return Err(format!("{} : {quoi} négatif pour {nom}", x.nom));
+                    }
+                    t[i] = en_ppm(*v);
+                }
+                Ok(t)
+            };
             batiments.push(TypeBatiment {
+                aptitude_ppm: table(&x.aptitude, "aptitude")?,
+                travail_terrain_ppm: table(&x.travail_terrain, "travail_terrain")?,
                 traversable: x.traversable,
                 nom: x.nom.clone(),
                 asset: x.asset.clone(),
@@ -593,6 +635,17 @@ impl Catalogue {
             besoins: besoins_de(&b.besoins)?,
             ressources,
             batiments,
+            cout_terrain_ppm: {
+                let mut t = [PPM; 5];
+                for (nom, v) in &b.terrains {
+                    let i = Terrain::index_de(nom).ok_or_else(|| format!("terrain inconnu « {nom} »"))?;
+                    if v.cout_construction <= 0.0 {
+                        return Err(format!("terrain {nom} : cout_construction doit être > 0"));
+                    }
+                    t[i] = en_ppm(v.cout_construction);
+                }
+                t
+            },
         };
         cat.valider()?;
         Ok(cat)
@@ -702,6 +755,29 @@ impl Catalogue {
             n_tiles as i64 * t.jours_par_tile_an * 1000 / self.travail.jours_personne_par_pop_an
         } else {
             t.pops as i64 * 1000
+        }
+    }
+
+    /// Comme `besoin_mo_milli`, avec le travail propre à chaque terrain de l'emprise (docs/07 §3.3).
+    pub fn besoin_mo_terre_milli(&self, type_id: usize, emprise: &[usize], tuiles: &[crate::monde::Tuile]) -> i64 {
+        let t = &self.batiments[type_id];
+        if !t.par_tile {
+            return t.pops as i64 * 1000;
+        }
+        let jours: i64 = emprise
+            .iter()
+            .map(|&i| t.jours_par_tile_an * t.travail_terrain_ppm[tuiles[i].terrain as usize] / PPM)
+            .sum();
+        jours * 1000 / self.travail.jours_personne_par_pop_an
+    }
+
+    /// Rendement de la tile pour une terre de ce type (ppm de 1,0) : fertilité locale × aptitude du terrain.
+    pub fn rendement_tile(&self, type_id: usize, tuile: &crate::monde::Tuile) -> i64 {
+        let t = &self.batiments[type_id];
+        if t.fertile {
+            tuile.fertilite_ppm * t.aptitude_ppm[tuile.terrain as usize] / PPM
+        } else {
+            PPM
         }
     }
 

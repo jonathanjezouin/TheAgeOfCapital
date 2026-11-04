@@ -23,7 +23,7 @@ Prérequis : Node 20+, Rust avec la cible `wasm32-unknown-unknown` (`rustup targ
 | Vitesse | Pause, +1 jour, **Jour/nuit** (un jour dure 24 s : la nuit tombe et les pops rentrent chez elles), ×1, ×10, ×100, ×1000 jours par seconde |
 | Pop | Clic sur une pop (ou sur son nom dans la liste d'un hameau) : **inspecteur** (lieu du jour et motif, stock personnel et autonomie, terres possibles surlignées avec la raison du choix, trajet, santé) |
 | Sélection | Clic sur une tile : hameau (pops, rations, stock, croissance), terre (production, **facteur limitant**, fertilité, pops affectées), chantier (avancement, équipe, **motif**), chemin, terre libre |
-| Modes de carte | Normal, **Fertilité** (carte de chaleur), **Besoins** (hameaux et terres colorés par couverture), **Flux** (une marchandise : producteurs, stocks, expéditions du jour, hameaux consommateurs, ateliers utilisateurs) |
+| Modes de carte | Normal, **Aptitude** (carte de chaleur du rendement du terrain pour un type de terre au choix), **Besoins** (hameaux et terres colorés par couverture), **Flux** (une marchandise : producteurs, stocks, expéditions du jour, hameaux consommateurs, ateliers utilisateurs) |
 | Journal | Chantiers lancés et terminés avec leur motif ; un clic sélectionne la tile |
 | Courbes | Population par année, produit / consommé du dernier jour |
 | Caméra | Molette pour zoomer, glisser pour déplacer, espace pour la pause |

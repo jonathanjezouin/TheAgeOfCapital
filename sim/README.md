@@ -13,7 +13,6 @@ cargo test --release
 | `--annees N` | durée simulée (1 an ≈ 3 ms en release) |
 | `--graine N` | graine du village (même graine, même résultat) |
 | `--hameaux N` / `--occupation PCT` | taille du village de départ / pops initiales en % de la capacité de logement |
-| `--rayon-fertile T` / `--rayon-sterile T` | terroir : rayon (tiles) de pleine fertilité / de terre la plus pauvre |
 | `--terrain` | parts de chaque terrain et vue d'ensemble ASCII de la carte (`T` forêt, `%` marais, `^` rocailleuse, `"` plaine riche, `~ = #` ruisseau, rivière, fleuve, `V` hameau) |
 | `--carte` / `--journal` | plan ASCII du village / journal des événements (chantiers, avec leur motif) |
 | `--accel X` | facteur sur natalité et mortalité (observer l'équilibre plus vite) |
@@ -30,7 +29,7 @@ cargo test --release
 | `src/monde.rs` | tiles passives, quartiers, bâtiments, **arêtes** (demi-arêtes dans 8 directions par tile, coûts 10 / 14, pas de croisement de diagonales) |
 | `src/reseau.rs` | segments (arêtes), Dijkstra à coûts entiers borné par `distance_max`, chemins précalculés entre lieux |
 | `src/terrain.rs` | générateur de terrain (docs/07 §3, §10) : altitude, rivières par écoulement, terrains par parts, site du village |
-| `src/village.rs` | génération déterministe (croix de chemins, champ de fertilité), dimensionnée près de l'équilibre |
+| `src/village.rs` | génération déterministe (croix de chemins sur un site dégagé du terrain, qualité locale du sol), dimensionnée près de l'équilibre |
 | `src/simulation.rs` | jour : différés → contrats (pro rata) → budget de jours de travail → production → consommation → jauges de croissance → péremption ; saison : extension (chantiers de maison, de défrichement, de hameau) |
 | `tests/terrain.rs` | déterminisme du terrain, parts, cours d'eau jusqu'au bord, site du village, rien de bâti sur un terrain fermé |
 | `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, budget de jours, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, jamais bloqués), terres d'un seul tenant, extension, congestion en sommeil |
@@ -38,7 +37,7 @@ cargo test --release
 ## Terres sur N tiles et budget de jours (docs/02 §8.2, §8.3)
 La tile fait 250 m. Une **terre exploitée** est un bâtiment actif qui occupe N tiles contiguës (`emprise`) ;
 extrants (par tile et par jour, à fertilité 1) et travail (jours-personne par tile et par an) sont par tile,
-la fertilité est la moyenne de l'emprise. Elle naît à `tuiles_par_defrichement` tiles (4) et s'agrandit par
+le rendement de chaque tile est sa qualité locale × l'**aptitude de son terrain** pour ce type de terre (`aptitude` dans `poc.toml`), et le travail requis suit `travail_terrain` ; le rendement est la moyenne de l'emprise. Elle naît à `tuiles_par_defrichement` tiles (4) et s'agrandit par
 blocs de 4 tiles voisines (les plus fertiles d'abord), jusqu'à `emprise_max` ; au-delà on en fonde une autre.
 Le **travail** n'est plus un poste : chaque jour, le temps des pops (1 pop = 1 pop-jour, hors équipes de
 chantier) est réparti entre les terres à portée au prorata du temps disponible par hameau, les terres dont

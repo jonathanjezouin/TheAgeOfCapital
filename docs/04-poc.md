@@ -130,7 +130,7 @@ Sans poste : il prend le **temps libre du hameau**. 1 pop-jour par jour de trava
 
 ### Fertilité, distance et extension
 - Cible (aptitude sol/culture, fertilité dynamique) : voir `06`. Extension compacte et terroir : `02` §10.2.
-- **Fertilité** d'une tile : bruit lissé (cellule de ~6 km) entre 0,85 et 1,3, qui s'effondre autour du centre du village (pleine jusqu'à 12 tiles, puis déclin linéaire jusqu'à 0,15 à 28 tiles). La fertilité d'une terre est la moyenne de son emprise.
+- **Fertilité** d'une tile : bruit lissé (cellule de ~6 km) entre 0,85 et 1,3 (qualité locale du sol). **Depuis le 2026-11-04**, plus de déclin radial autour du village : le rendement d'une tile est sa qualité × l'**aptitude du terrain** pour le type de terre (`docs/07` §3.3, §11), et la distance joue seule par le trajet.
 - **Distance maximale** : 100 (10 tiles-équivalents, 2,5 km) entre deux lieux (travail, approvisionnement). À calibrer.
 - **Extension** : une terre naît à 4 tiles contiguës et s'agrandit par blocs de 4 jusqu'à son emprise maximale ; au-delà on en fonde une autre. Une maison s'ajoute à un hameau jusqu'à 4 ; hameau plein, ou plus de terre à portée, un hameau neuf se fonde en périphérie du réseau (route neuve de 8 tiles au plus) et des pops sans poste s'y installent. Coûts : `02` §7.
 - Avec ces valeurs, un village de 4 hameaux (6 pops au départ) plafonne vers **8 à 15 pops** (800 à 1 500 hab.) en « dents de scie » en quelques siècles : tout le terroir à portée (rayon de 10 tiles) est occupé. C'est l'ordre de grandeur d'un village de 1750 ; aller plus loin demande plusieurs groupes de hameaux.
@@ -224,7 +224,7 @@ La production reste **continue, sans saisons** dans le POC. Ordre de travail dé
 | 5 | ✅ Animation des pops sur leur chemin réel en mode Jour/nuit (ombres portées toujours à faire) | `02` §10.6 |
 | 6 | Économies d'échelle de l'emprise, après le 2 | `02` §10.3 |
 
-Fertilité : une seule valeur par tile dans le POC ; la cible (aptitude sol/culture) est notée dans `06`.
+Fertilité : qualité locale par tile × aptitude du terrain par type de terre depuis le 2026-11-04 (`07` §11) ; la fertilité dynamique reste notée dans `06`.
 
 ### Rappel : jour/nuit, ombres et saisons (idée antérieure, saisons reportées)
 Les saisons de la simulation sont reportées hors POC pour l'instant ; le jour/nuit et les ombres restent des idées de rendu :

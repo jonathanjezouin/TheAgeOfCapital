@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **design du 2026-11-04** ; **l'étape 1 (générateur de carte) est faite** (§8, §10), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte) et 2 (aptitude par terrain) sont faites** (§8, §10, §11), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -127,7 +127,7 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 ## 8. Ordre de travail
 
 1. ~~Générateur de carte~~ : **fait le 2026-11-04** (`sim/src/terrain.rs`, rendu `app/src/terrain.js`, détail §10).
-2. Table d'aptitudes et effet sur rendement, travail requis et coût de construction (§3.5) ; mode de carte « aptitude ».
+2. ~~Table d'aptitudes et effet sur rendement, travail requis et coût de construction~~ ; mode de carte « aptitude » : **fait le 2026-11-04** (§11).
 3. Défrichement (coût, bois récupéré, repousse), drainage, ponts et gués (§3.3, §3.4, §9).
 4. Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4).
 5. Outils de mesure (distribution des tailles de hameaux, §6), puis réglage des poids.
@@ -165,9 +165,43 @@ Question encore ouverte : la **forêt exploitée** (type de terre actuel, `foret
 | Visualisation | `sim-cli --terrain` | parts de chaque terrain et vue d'ensemble en ASCII |
 
 **Limites connues**
-- La **fertilité reste le champ radial** autour du village (étape 2 : aptitude par terrain). Le terrain n'a donc encore aucun effet sur le rendement.
+- ~~La fertilité reste le champ radial autour du village~~ : levé à l'étape 2 (§11).
 - Le village garde sa **disposition en croix** (remplacée à l'étape 4). Comme la fenêtre dégagée exclut l'eau, le point d'eau le plus proche est à 11–17 tiles (3 à 4 km) : à la lisière du terroir, pas au cœur du village.
 - Forêts et marais sont fermés (ni défrichement, ni drainage avant l'étape 3) ; les routes ne franchissent aucun cours d'eau (pas de pont).
 - La pente générale donne des rivières à peu près parallèles ; le relief n'est pas rendu.
 - Le sol est une image de 12 px par tile : un peu flou à fort zoom ; un rendu par chunks à plus forte résolution est possible plus tard.
 - Pas de variantes visuelles par tile (fleurs, rochers…) ; les assets de l'atlas ne servent plus pour le sol.
+
+## 11. Étape 2 réalisée : l'aptitude par terrain
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Table de données | `sim/donnees/poc.toml` | `[terrains.<nom>] cout_construction` ; par type de terre : `aptitude = {…}` (rendement par terrain) et `travail_terrain = {…}` (travail requis par terrain). Terrain absent = 1,0 ; nom inconnu = erreur de chargement |
+| Rendement | `Catalogue::rendement_tile` | qualité locale de la tile × aptitude du terrain ; la production d'une terre suit la **moyenne de son emprise** |
+| Travail requis | `Catalogue::besoin_mo_terre_milli` | somme par tile de `jours_par_tile_an × travail_terrain` : une terre sur sol difficile réclame plus de bras |
+| Coût de construction | `cout_defrichement`, `cout_logement` | le travail des chantiers (défrichement, maison, hameau) est multiplié par `cout_construction` du terrain de chaque tile |
+| Choix des tiles | `meilleur_site`, `agrandir`, `lancer_defrichement` | le score d'une tile pour une terre utilise le **rendement pour ce type** (champ ≠ élevage de laine) |
+| Fertilité locale | `village.rs` | **plus de déclin radial** autour du village : bruit de 0,85 à 1,3, la distance ne joue que par le trajet. Paramètres `rayon_fertile` / `rayon_sterile` et options CLI supprimés |
+| Site du village | `terrain::candidats_centre` | pénalise la plaine rocailleuse à portée, favorise la riche |
+| App | `app/src/App.vue`, `PanneauInfos.vue` | mode **Aptitude** avec choix du type de terre ; le panneau d'une tile libre donne le rendement de chaque type, le travail requis et le surcoût de construction |
+
+**Valeurs de départ** (hypothèses à régler à l'usage)
+
+| Terre | plaine | riche | rocailleuse | marécageuse | forêt |
+|---|---|---|---|---|---|
+| Champ de céréales | 1,0 | 1,25 | 0,6 | 0,15 | 0 |
+| Pâturage | 1,0 | 1,1 | 0,7 | 0,5 | 0,2 |
+| Verger | 1,0 | 1,1 | 1,0 | 0,1 | 0 |
+| Forêt exploitée (taillis planté) | 1,0 | 1,0 | 1,0 | 0,5 | 1,0 |
+| Champ de lin | 1,0 | 1,3 | 0,4 | 0,3 | 0 |
+| Élevage de laine | 1,0 | 0,85 | 1,2 | 0,3 | 0,1 |
+
+Travail requis par tile : rocailleuse ×1,3 (céréales, lin), marais ×1,4 à 2,0, forêt ×2,0 à 2,5. Coût de construction : plaine et riche ×1, rocailleuse ×1,3, forêt ×2, marais ×2,5.
+
+**Décisions et limites**
+- La **forêt exploitée** reste un **taillis planté sur terre ordinaire** (1,0 sur plaine) tant que les tiles de forêt de la carte ne sont pas exploitables (étape 3) : à 0,6 le village manquait de bois. Elle prendra alors sa place sur les tiles de forêt.
+- Aucun terrain n'interdit une activité : l'aptitude est un multiplicateur, donc un terrain difficile reste utilisable si le besoin presse (émergence). Forêt et marais restent fermés par `constructible()` jusqu'à l'étape 3.
+- Mesure : sur 100 ans et 8 graines, la part de plaine rocailleuse parmi les nouveaux champs (14,5 %) est inférieure à sa part parmi les tiles libres à portée (17,3 %) : l'effet est **faible** car la compacité (`poids_voisins` = 0,25) pèse autant qu'un écart d'aptitude de 0,25. À régler avec les poids de `[extension]` (étape 5).
+- Le village de départ n'est pas posé en fonction du terrain de chaque terre (la croix est rigide) ; la composition initiale reste dimensionnée sur un rendement de 1,0.
+- La compacité des terres mesurée par les tests monte à ~1,36 (1,35 avant) : elles suivent les plaques de terrain.
+- Les rendements dépendent encore uniquement du terrain et de la qualité locale : pas de fertilité dynamique (`06` §4).

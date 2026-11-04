@@ -134,10 +134,26 @@ par_pop_jour = 2.0
 ressource = "vetements"
 par_pop_jour = 0.5
 
+# Terrains (docs/07 §3) : multiplicateur du travail des chantiers (maison, hameau, défrichement) selon le terrain
+# de la tile. Forêt et marais sont fermés tant que le défrichement et le drainage n'existent pas (docs/07 §8).
+[terrains.plaine]
+cout_construction = 1.0
+[terrains.plaine_riche]
+cout_construction = 1.0
+[terrains.plaine_rocailleuse]
+cout_construction = 1.3            # cailloux à ôter, fondations plus dures
+[terrains.plaine_marecageuse]
+cout_construction = 2.5            # drainage, sol détrempé
+[terrains.foret]
+cout_construction = 2.0            # abattage et dessouchage (le défrichement proprement dit viendra à l'étape 3)
+
 # Terres exploitées (docs/02 §8.2) : un seul bâtiment actif sur N tiles contiguës de 250 m. Les extrants
 # sont par tile et par jour (à fertilité 1) et le travail par tile et par an, en jours-personne (docs/04 :
 # références de 1750, ~34 tiles de terroir par pop, dont ~13 de labours et ~6 de bois). `emprise_max` :
 # au-delà, on fonde une autre terre. `fertile` : la production suit la fertilité de chaque tile.
+# `aptitude` : rendement de chaque terrain pour ce type de terre (× la fertilité locale, 1,0 si absent).
+# `travail_terrain` : travail requis par terrain (× `jours_par_tile_an`, 1,0 si absent). Hypothèses de départ
+# (docs/07 §3.2), à régler à l'usage : plaine = référence, riche = limons, rocailleuse = cailloux, marais = détrempé.
 # `cout_creation` : défricher = travail (pop-jours) PAR TILE par une équipe, + matériau par tile.
 [[batiments]]
 nom = "champ"
@@ -146,6 +162,8 @@ par_tile = true
 jours_par_tile_an = 250.0
 emprise_max = 36
 fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.25, plaine_rocailleuse = 0.6, plaine_marecageuse = 0.15, foret = 0.0 }
+travail_terrain = { plaine_rocailleuse = 1.3, plaine_marecageuse = 2.0, foret = 2.5 }
 cout_creation = { travail_pop_jours = 10.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "grain", qte = 0.40 }] }]
 [[batiments]]
@@ -155,6 +173,8 @@ par_tile = true
 jours_par_tile_an = 80.0
 emprise_max = 30
 fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.1, plaine_rocailleuse = 0.7, plaine_marecageuse = 0.5, foret = 0.2 }
+travail_terrain = { plaine_marecageuse = 1.4, foret = 2.0 }
 cout_creation = { travail_pop_jours = 5.0, equipe = 1, bois = 1.0 }
 etapes = [{ extrants = [{ ressource = "viande", qte = 0.42 }] }]
 [[batiments]]
@@ -164,6 +184,8 @@ par_tile = true
 jours_par_tile_an = 150.0
 emprise_max = 16
 fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.1, plaine_rocailleuse = 1.0, plaine_marecageuse = 0.1, foret = 0.0 }
+travail_terrain = { plaine_rocailleuse = 1.1, plaine_marecageuse = 2.0, foret = 2.5 }
 cout_creation = { travail_pop_jours = 12.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "fruit", qte = 1.0 }] }]
 [[batiments]]
@@ -173,6 +195,9 @@ par_tile = true
 jours_par_tile_an = 60.0
 emprise_max = 36
 fertile = true
+# Taillis planté sur terre ordinaire tant que les tiles de forêt de la carte ne sont pas exploitables (étape 3 de docs/07).
+aptitude = { plaine = 1.0, plaine_riche = 1.0, plaine_rocailleuse = 1.0, plaine_marecageuse = 0.5, foret = 1.0 }
+travail_terrain = { plaine_marecageuse = 1.5 }
 cout_creation = { travail_pop_jours = 4.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "bois", qte = 0.35 }] }]
 [[batiments]]
@@ -182,6 +207,8 @@ par_tile = true
 jours_par_tile_an = 625.0
 emprise_max = 12
 fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.3, plaine_rocailleuse = 0.4, plaine_marecageuse = 0.3, foret = 0.0 }
+travail_terrain = { plaine_rocailleuse = 1.3, plaine_marecageuse = 2.0, foret = 2.5 }
 cout_creation = { travail_pop_jours = 10.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "lin", qte = 1.2 }] }]
 [[batiments]]
@@ -191,6 +218,8 @@ par_tile = true
 jours_par_tile_an = 80.0
 emprise_max = 30
 fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 0.85, plaine_rocailleuse = 1.2, plaine_marecageuse = 0.3, foret = 0.1 }
+travail_terrain = { plaine_marecageuse = 1.5, foret = 2.0 }
 cout_creation = { travail_pop_jours = 5.0, equipe = 1, bois = 1.0 }
 etapes = [{ extrants = [{ ressource = "laine", qte = 0.15 }] }]
 
