@@ -26,7 +26,7 @@ const pops0 = etat.nb_pops;
 w.sim_avancer(365 * 120);
 etat = json(w.sim_etat_json(0));
 assert.equal(etat.jour, 365 * 120);
-// Le village vit encore après 120 ans (l'abandon et le déclin existent : la population n'est plus garantie de croître).
+// Le village vit encore après 120 ans (la croissance est statistique : voir sim/tests/peuplement.rs).
 assert.ok(etat.nb_pops > 0, `extinction : ${pops0} -> ${etat.nb_pops}`);
 assert.ok(etat.nb_evenements > 0 && etat.evenements.length === etat.nb_evenements);
 assert.equal(json(w.sim_etat_json(etat.nb_evenements)).evenements.length, 0, "seulement les nouveaux événements");

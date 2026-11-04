@@ -1347,8 +1347,19 @@ impl Simulation {
         candidats.sort();
         // Les pops déjà établies sur le site (l'équipe de fondation) comptent dans la capacité du hameau neuf.
         let deja = self.pops.iter().filter(|p| p.residence == q).count() as u32;
-        for &(_, _, i) in candidats.iter().take(n.saturating_sub(deja) as usize) {
+        let mut restant: Vec<u32> = self.effectifs();
+        let mut pris = 0;
+        for &(_, _, i) in &candidats {
+            if pris >= n.saturating_sub(deja) {
+                break;
+            }
+            let o = self.pops[i].residence;
+            if restant[o] <= 1 {
+                continue; // jamais la dernière pop d'un hameau
+            }
+            restant[o] -= 1;
             self.pops[i].residence = q;
+            pris += 1;
         }
     }
 
@@ -2185,12 +2196,13 @@ impl Simulation {
     /// Nombre de pops qu'un nouveau chantier pourrait recruter : celles qui ne sont pas déjà en chantier, sans prendre plus
     /// de la moitié (au moins une) des pops d'un hameau (les terres ont besoin de bras, docs/02 §8.3).
     fn bras_recrutables(&self) -> u32 {
-        self.bras_recrutables_depuis(None)
+        self.bras_recrutables_depuis(None, false)
     }
 
     /// Comme `bras_recrutables`, mais seulement les pops des hameaux à portée de `centre` : celles qu'un chantier proche
     /// de ce hameau peut effectivement recruter.
-    fn bras_recrutables_depuis(&self, centre: Option<usize>) -> u32 {
+    /// `fondation` : une fondation de hameau ne prend jamais la dernière pop d'un hameau (voir `recruter`).
+    fn bras_recrutables_depuis(&self, centre: Option<usize>, fondation: bool) -> u32 {
         let eff = self.effectifs();
         let mut equipe = vec![0u32; self.nq()];
         for p in &self.pops {
@@ -2200,7 +2212,10 @@ impl Simulation {
         }
         (0..self.nq())
             .filter(|&q| centre.map_or(true, |c| c == q || self.reseau.chemin(c, q).is_some()))
-            .map(|q| ((eff[q] / 2).max(1)).saturating_sub(equipe[q]).min(eff[q].saturating_sub(equipe[q])))
+            .map(|q| {
+                let libres = eff[q].saturating_sub(equipe[q]).saturating_sub(u32::from(fondation));
+                ((eff[q] / 2).max(1)).saturating_sub(equipe[q]).min(libres)
+            })
             .sum()
     }
 
@@ -2233,7 +2248,7 @@ impl Simulation {
     /// Remet en état un hameau abandonné : le seigneur ordonne les réparations, moins chères qu'une fondation, de plus
     /// en plus chères avec l'usure, tant que le hameau n'est pas en ruine (docs/07 §14, §15).
     fn lancer_remise_hameau(&mut self, q: usize, motif: &str) -> bool {
-        if self.bras_recrutables_depuis(Some(q)) == 0 {
+        if self.bras_recrutables_depuis(Some(q), false) == 0 {
             return false;
         }
         let h = &self.monde.quartiers[q];
@@ -2681,7 +2696,7 @@ impl Simulation {
     /// Défricher pour la ressource d'un type de terre : d'abord agrandir une terre existante du même
     /// type (moins coûteux, sans route), sinon en fonder une nouvelle.
     fn lancer_defrichement(&mut self, centre: usize, type_id: usize, motif: &str) -> bool {
-        if self.pops.len() > 0 && self.bras_recrutables_depuis(Some(centre)) == 0 {
+        if self.pops.len() > 0 && self.bras_recrutables_depuis(Some(centre), false) == 0 {
             return false;
         }
         // Une terre abandonnée de ce type à portée se remet en service à moindre coût : d'abord elle.
@@ -2963,7 +2978,7 @@ impl Simulation {
     /// Une maison de plus (une pop) dans le hameau `q`, au plafond de son type près. Une seule à la
     /// fois par hameau ; le matériau doit pouvoir lui être livré.
     fn lancer_maison(&mut self, q: usize, motif: &str) -> bool {
-        if !self.pops.is_empty() && self.bras_recrutables_depuis(Some(q)) == 0 {
+        if !self.pops.is_empty() && self.bras_recrutables_depuis(Some(q), false) == 0 {
             return false;
         }
         let nq = self.nq();
@@ -3104,7 +3119,7 @@ impl Simulation {
     }
 
     fn lancer_hameau(&mut self, centre: usize, habitat_id: usize, motif: &str) -> bool {
-        if !self.pops.is_empty() && self.bras_recrutables_depuis(Some(centre)) == 0 {
+        if !self.pops.is_empty() && self.bras_recrutables_depuis(Some(centre), true) == 0 {
             return false;
         }
         let cout = self.cat.habitats[habitat_id].cout_creation.clone();
@@ -3221,6 +3236,11 @@ impl Simulation {
             }
             let q = self.pops[i].residence;
             if equipe[q] >= (eff[q] / 2).max(1) {
+                continue;
+            }
+            // Fonder un hameau ne doit pas vider celui d'où l'on part : on ne prend jamais la dernière pop d'un hameau
+            // (sinon la fondation déserte l'ancien hameau, qui s'use et est détruit : migration en chaîne).
+            if fondation.is_some() && eff[q].saturating_sub(equipe[q]) <= 1 {
                 continue;
             }
             equipe[q] += 1;

@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts), 4 (peuplement par la valeur du site) 4 bis (abandon, destruction, repousse) et 6 (seigneur, serfs, grenier) sont faites** (§8, §10 à §16) ; le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts), 4 (peuplement par la valeur du site) 4 bis (abandon, destruction, repousse), 6 (seigneur, serfs, grenier) et 5 (réglage) sont faites** (§8, §10 à §17) ; le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -132,7 +132,7 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 4. ~~Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4)~~ : **fait le 2026-11-04** (§13).
 4 bis. ~~Abandon, destruction, repousse~~ : **fait le 2026-11-04** (§14) ; outils de mesure : `sim-cli --mesure N`.
 6. ~~Acteurs : le seigneur local, les pops serves, le grenier seigneurial~~ : **fait le 2026-11-04** (§16).
-5. Réglage des poids de `[peuplement]` et des durées de `[abandon]` sur plusieurs graines, **après la phase 6** (le critère de décision change avec le décideur).
+5. ~~Réglage des poids de `[peuplement]` et des durées de `[abandon]`~~ : **fait le 2026-11-04** (§17), à poursuivre quand les services (banalités) existeront.
 7. Plus tard : échange entre pops, outils, saisons, services (banalités), navigation, relief (collines, montagnes), régions macro.
 
 ## 9. Décisions prises (2026-11-04)
@@ -337,3 +337,29 @@ Le principe 3 du `CLAUDE.md` est reformulé en ce sens (la Firme n'est plus « l
 - **Banalités** (moulin, four) : la force de regroupement attendue ; le champart en nature est déjà là pour les financer.
 - **Dévolution** du poste, plusieurs seigneurs et domaines, pops libres promues personnages : voir §15.3.
 - La position du **grenier** n'est pas spatiale (transport comptable, principe 5) : à reprendre avec les banalités.
+
+## 17. Étape 5 réalisée : le réglage du peuplement
+
+**Mesure** : `sim-cli --mesure N --annees A` (tailles, hameaux vides, abandonnés, détruits). Avant réglage (8 graines, 150 ans) : 47 pops, 36 hameaux de taille médiane 1, **207 hameaux détruits**, deux graines presque éteintes.
+
+**Diagnostic** : en 150 ans, chaque village fondait ~40 à 50 hameaux, presque tous abandonnés puis ruinés. Deux mécanismes :
+1. **Migration en chaîne** : l'équipe d'une fondation s'installait dans le hameau neuf, ce qui **vidait l'ancien hameau** (abandonné après 2 ans, en ruine ensuite). La décision de fonder ne comptait pas cette désertion.
+2. **Fondation trop facile** : un site neuf n'avait à valoir que 1,5 fois mieux que de rester ; avec les destructions de tiles pour poser des routes, des sites lointains devenaient atteignables en permanence.
+
+**Corrections** (moteur)
+- Une fondation de hameau **ne prend jamais la dernière pop d'un hameau** (`recruter`, `migrer_vers`) ; la décision de lancer un chantier de fondation en tient compte (`bras_recrutables_depuis(.., fondation)`), pour ne pas lancer de chantier dont l'équipe ne peut pas être formée.
+
+**Réglage** (`poc.toml` `[peuplement]`, balayage sur 8 à 16 graines et 150 à 200 ans)
+
+| Paramètre | Avant | Après | Effet |
+|---|---|---|---|
+| `poids_voisins` | 0,15 | **1,0** | +100 % de valeur par pop à 4 tiles ou moins : l'agglomération pèse |
+| `rayon_voisinage` | 3 | **4** | |
+| `seuil_fondation` | 1,5 | **4,0** | un site neuf doit valoir 4 fois mieux que de rester |
+
+**Résultat** (16 graines, 200 ans) : 198 pops, 129 hameaux de taille médiane 1 (98 de 1 pop, 13 de 2, 5 de 3, 7 de 4, 2 de 5, 1 de 6 et **2 de 7**), 1 vide, **36 détruits** (contre ~200 pour 8 graines), aucune extinction. La majorité des hameaux est isolée et petite, avec **quelques noyaux de 4 à 7 pops (400 à 700 habitants)**.
+
+**Limites**
+- **Aucun noyau de 16 pops** : la population reste modeste (6 à ~12 pops par village en 150 ans), et les forces de regroupement manquantes (§1 : services à coût fixe, entraide aux pointes de travail, sécurité) ne sont pas là. C'est l'objet des **banalités** (moulin, four) du seigneur (§16).
+- Les durées de `[abandon]` et le champart n'ont pas été touchés ; le coût d'une fondation reste celui d'une maison (150 pop-jours) : l'arbitrage « agrandir ou créer » reste à calibrer avec l'économie des échanges.
+- Le réglage porte sur 8 à 16 graines : il est **statistique**, pas garanti graine par graine. Les tests (`sim/tests/peuplement.rs`) vérifient les ordres de grandeur : fondation sans désertion, pas d'extinction, au plus 30 hameaux détruits sur 6 villages et 150 ans, 70 % de hameaux de 1 à 2 pops, au moins 2 noyaux de 4 pops ou plus sur 7 villages et 200 ans.
