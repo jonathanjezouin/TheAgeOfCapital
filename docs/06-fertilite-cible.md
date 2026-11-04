@@ -1,6 +1,6 @@
 # 06 — Fertilité : réflexions pour la cible (hors POC)
 
-> Statut : **notes de réflexion du 2026-11-03**, rien n'est implémenté. Le POC garde **une seule valeur de fertilité par tile** (`Tuile.fertilite_ppm`, voir `04` « Fertilité, distance et extension »). Les éléments historiques ci-dessous viennent de connaissances générales d'histoire agraire (Europe de l'ouest, vers 1750) : **à vérifier sur sources avant toute calibration**. Aire géographique de la carte à confirmer.
+> Statut : **notes de réflexion du 2026-11-03**, rien n'est implémenté. Le POC garde **une seule valeur de fertilité par tile** (`Tuile.fertilite_ppm`, voir `04` « Fertilité, distance et extension »). Les éléments historiques ci-dessous viennent de connaissances générales d'histoire agraire (Europe de l'ouest, vers 1750) : **à vérifier sur sources avant toute calibration**. Aire géographique de la carte : **plaine à champs ouverts** (décision du 2026-11-04) ; types de sol, couches de terrain et règles de peuplement dans `07`.
 
 ## 1. Idée centrale : l'aptitude, pas un scalaire
 La fertilité n'est pas une qualité unique : c'est une **aptitude par type de terre**, calculée à partir de quelques couches de terrain. Une même tile peut être excellente pour un pré et médiocre pour du blé.

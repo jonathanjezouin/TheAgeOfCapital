@@ -14,6 +14,8 @@ Chaque étape doit pouvoir fonctionner comme un jeu en soi.
 
 Ordre décidé dans `04` (détail `02` §10) : traversabilité et tile nœud, extension compacte, une pop = un lieu de travail par jour, inspecteur de pop et vue par ressource, puis animation. Les **saisons** (profils mensuels du travail, stocks annuels, aléa de récolte) restent **reportées** : production continue dans le POC. Jour/nuit et ombres portées : rendu seul, non prioritaire. Fertilité cible : `06`.
 
+**Ajout du 2026-11-04** : le peuplement émergent (hameaux de 1–2 pops, noyaux jusqu'à ~16 pops, carte de plaine à champs ouverts avec rivière, forêts fixes et types de sol) est décrit dans `07`. Il passe devant le reste de l'étape : sans carte réaliste ni règles de site, le POC ne peut pas produire la campagne visée.
+
 ## Explicitement reporté après le POC
 
 - **Passage à l'échelle** (centaines de milliers de bâtiments / pops, rendu sur la seule zone caméra) : principes retenus dans `03` §5b ; **banc d'essai reporté** (moteur : 500 k bâtiments + 200 k pops synthétiques, structures denses vs existant, mono-thread vs Rayon ; rendu : carte 2 000×2 000 avec chunks, culling et niveaux de détail, captures Chromium + FPS). À lancer quand le design sera prêt
@@ -110,7 +112,10 @@ Ordre décidé dans `04` (détail `02` §10) : traversabilité et tile nœud, ex
 29. **Économies d'échelle** (`02` §10.3) : forme du gain (coûts fixes, compacité, seuil d'équipe), plafonds contre les champs géants, lien avec la fusion de terres par propriété.
 29b. ~~Sécurité alimentaire et distribution~~ : **corrigé le 2026-11-03**. Un client interroge désormais tous les fournisseurs de son rayon d'approvisionnement (`nb_rondes_appel_offres = 0`, du plus proche au plus loin ; n > 0 limite aux n plus proches). Avant, 3 fournisseurs seulement : des champs à stock plein restaient inutilisés à côté de hameaux affamés. Il reste de la faim, mais elle vient de la production (bois et fruits insuffisants à 120 ans, ~0,8 de couverture) et de l'extension, pas de la distribution. Test : `un_hameau_interroge_tous_les_fournisseurs_de_son_rayon`.
 30. **Terre inaccessible ou enclavée** : une terre qu'aucune route ne peut desservir n'est pas défrichée ; que faire d'un enclavement créé après coup par une autre construction ?
-31. **Fertilité cible** : aptitude sol/culture, rivières, aire géographique de la carte (`06`).
+31. **Fertilité cible** : aptitude sol/culture, rivières (`06`). Aire géographique **tranchée le 2026-11-04** : plaine à champs ouverts ; sols et hydrographie dans `07` §3.
+32. **Peuplement émergent** (`07`) : supprimer le plafond codé `capacite_max_pops`, choix de site par score (eau, terres, bois, voisins), règle « la famille reste », mesure de la distribution des tailles de hameaux sur plusieurs graines. Forces de regroupement encore absentes : services à coût fixe, entraide aux pointes (saisons), sécurité.
+33. **Pop comme acteur économique** (`07` §7) : exploitation familiale = firme implicite (réconcilie avec le principe 3), échange au niveau de la pop (prix ou troc, monnaie), acquisition d'outils avec le surplus.
+34. **Simplification assumée** : pas de seigneur, pas de droits d'usage ni de communaux dans le POC (accès libre, extension libre) ; à reprendre avec l'économie politique.
 22. **Chantier d'une maison** (1 pop) au lieu d'un chantier de hameau (2 pops) : valeur de départ dérivée de l'existant (300 pop-jours et 200 bois pour 2 pops, soit ~150 pop-jours et ~100 bois par maison) ; à calibrer à l'alignement du POC. Les pops en attente de logement font bâtir une maison, plus un hameau.
 
 ## Incohérences relevées dans les échanges de design (à trancher)
