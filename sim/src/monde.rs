@@ -35,6 +35,27 @@ pub fn oppose(d: usize) -> usize {
     (d + 4) % 8
 }
 
+/// Statut d'une pop (docs/07 §15) : aujourd'hui toutes les pops sont serves ; `None` = libre (futur).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub enum Statut {
+    /// Pas de liberté d'installation ni de construction ; liberté du lieu de travail ; prélèvement en nature.
+    Serf,
+}
+
+/// Un personnage : le décideur politico-économique (docs/07 §15). Créé par un poste. Il possède un stock (grenier)
+/// et un domaine ; ses décisions (construire, installer, abandonner) sont prises dans `Simulation::etendre`.
+#[derive(Clone, Debug, Serialize)]
+pub struct Personnage {
+    pub id: usize,
+    pub nom: String,
+    /// Poste qui l'a fait naître (`seigneur_local`) ; la règle de dévolution est une donnée, non implémentée.
+    pub poste: String,
+    /// Grenier : stock du personnage par ressource (milli-unités), alimenté par le champart.
+    pub grenier: Vec<Qte>,
+    /// Domaine : identifiant (aujourd'hui toute la carte) ; `None` = sans domaine.
+    pub domaine: Option<usize>,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 pub enum Contenu {
     Vide,
@@ -108,6 +129,8 @@ pub struct Quartier {
     pub abandon_mois: Option<u32>,
     /// Hameau détruit : sa tile est libre, l'index reste (les lieux sont indexés par position).
     pub detruit: bool,
+    /// Capacité de logement avant l'abandon : celle que la remise en état rend.
+    pub capacite_memoire: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
@@ -167,6 +190,10 @@ pub enum Cible {
     Hameau(usize),
     /// Une maison de plus (une pop) dans le hameau d'index donné.
     Maison(usize),
+    /// Remise en état d'un hameau abandonné (moins chère qu'une fondation, de plus en plus chère avec l'usure).
+    RemiseHameau(usize),
+    /// Remise en service d'une terre abandonnée.
+    RemiseTerre(usize),
     /// Défrichement de tiles de plus pour la terre exploitée d'index donné.
     Extension(usize),
 }
@@ -180,6 +207,8 @@ pub struct Chantier {
     /// le matériau se consomme au prorata du travail accompli, sans arrondi cumulé.
     pub travail_total: Qte,
     pub materiau_total: Qte,
+    /// Maître d'ouvrage : le personnage qui décide et paie (son grenier fournit le matériau). `None` : sans maître.
+    pub maitre: Option<usize>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -189,6 +218,8 @@ pub struct Monde {
     pub tuiles: Vec<Tuile>,
     pub quartiers: Vec<Quartier>,
     pub batiments: Vec<Batiment>,
+    /// Les personnages (aujourd'hui un seul : le seigneur local).
+    pub personnages: Vec<Personnage>,
 }
 
 impl Monde {

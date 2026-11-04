@@ -61,6 +61,8 @@ pub struct Pop {
     pub sat_par_ressource_ppm: Vec<i64>,
     /// Quantités consommées lors du dernier jour, par ressource (milli-unités).
     pub conso_jour: Vec<Qte>,
+    /// Statut : serf (docs/07 §15) ; `None` = libre.
+    pub statut: Option<crate::monde::Statut>,
 }
 
 impl Pop {
@@ -78,6 +80,7 @@ impl Pop {
             confort_jour_ppm: PPM,
             sat_par_ressource_ppm: vec![PPM; nb_ressources],
             conso_jour: vec![0; nb_ressources],
+            statut: Some(crate::monde::Statut::Serf),
         }
     }
 }
@@ -463,6 +466,11 @@ impl Simulation {
                 t[r] += b.stock_entree[r] + b.stock_sortie[r];
             }
         }
+        for p in &self.monde.personnages {
+            for (r, v) in p.grenier.iter().enumerate() {
+                t[r] += v;
+            }
+        }
         for d in &self.differes {
             t[d.ressource] += d.qte;
         }
@@ -629,6 +637,7 @@ impl Simulation {
         self.terminer_chantiers();
         // 5. Consommation des pops et couverture des besoins.
         self.consommer();
+        self.train_de_vie();
         // 6. Jauges de croissance : naissances et disparitions de pops.
         self.croissance_quotidienne();
         // 7. Péremption, statistiques.
@@ -677,12 +686,13 @@ impl Simulation {
             } else {
                 let bat = &self.monde.batiments[client - nq];
                 if let Some(ch) = &bat.chantier {
-                    // Un chantier commande le matériau dont son équipe a besoin chaque jour.
-                    let par_jour = mul_div(
+                    // Un chantier commande le matériau dont son équipe a besoin chaque jour, sauf s'il a un maître
+                    // d'ouvrage : c'est alors son grenier qui le fournit (voir `produire`).
+                    let par_jour = if ch.maitre.is_some() { 0 } else { mul_div(
                         ch.materiau_total,
                         bat.equipe as i64 * 1000,
                         ch.travail_total.max(1),
-                    );
+                    ) };
                     if par_jour > 0 {
                         besoins.push((
                             self.cat.extension.materiau,
@@ -977,6 +987,20 @@ impl Simulation {
         let libre = self.libre_milli.clone();
         let cat = &self.cat;
         let tuiles = &self.monde.tuiles;
+        // Le maître d'ouvrage paie : son grenier fournit le matériau dont l'équipe présente a besoin aujourd'hui.
+        let mat = cat.extension.materiau;
+        for b in self.monde.batiments.iter_mut() {
+            let Some(ch) = b.chantier.as_ref() else { continue };
+            let Some(m) = ch.maitre else { continue };
+            let besoin = mul_div(ch.materiau_total, b.presents as i64 * 1000, ch.travail_total.max(1));
+            let manque = (besoin - b.stock_entree[mat]).max(0);
+            if let Some(p) = self.monde.personnages.get_mut(m) {
+                let don = manque.min(p.grenier[mat]);
+                p.grenier[mat] -= don;
+                b.stock_entree[mat] += don;
+            }
+        }
+        let champart_ppm = cat.seigneurie.champart_ppm;
         for (idx_b, b) in self.monde.batiments.iter_mut().enumerate() {
             let t = &cat.batiments[b.type_id];
             if t.chantier {
@@ -1053,10 +1077,18 @@ impl Simulation {
                     if t.consomme_ensuite(si, r) {
                         b.stock_entree[r] += p; // matière intermédiaire, consommée par l'étape suivante
                     } else {
-                        b.stock_sortie[r] += p;
-                        self.stats.produit[r] += p;
+                        // Champart : le seigneur prélève sa part en nature sur ce que produit une terre.
+                        let mut part = 0;
+                        if t.par_tile && cat.seigneurie.champart_ressources.contains(&r) {
+                            if let Some(pn) = self.monde.personnages.get_mut(0) {
+                                part = mul_div(p, champart_ppm, PPM);
+                                pn.grenier[r] += part;
+                            }
+                        }
+                        b.stock_sortie[r] += p - part;
+                        self.stats.produit[r] += p - part;
                         if p > 0 {
-                            self.stats.produits_par_lieu.push((idx_b, r, p));
+                            self.stats.produits_par_lieu.push((idx_b, r, p - part));
                         }
                     }
                 }
@@ -1164,6 +1196,35 @@ impl Simulation {
         self.journal(format!("Terrain converti près de ({x}, {y}) : {} ({} bois récupérés)", quoi.join(", "), bois / 1000));
     }
 
+    /// Le matériau resté sur le chantier `b` revient à son maître d'ouvrage (grenier) ; sans maître, au hameau `q`.
+    fn rendre_au_maitre_ou_hameau(&mut self, b: usize, q: usize) {
+        let mat = self.cat.extension.materiau;
+        let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
+        self.rendre_matiere(b, mat, reste, Some(q));
+    }
+
+    fn rendre_au_maitre(&mut self, b: usize) {
+        let mat = self.cat.extension.materiau;
+        let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
+        self.rendre_matiere(b, mat, reste, None);
+    }
+
+    fn rendre_matiere(&mut self, b: usize, mat: usize, reste: Qte, hameau: Option<usize>) {
+        if reste <= 0 {
+            return;
+        }
+        let maitre = self.monde.batiments[b].chantier.as_ref().and_then(|c| c.maitre);
+        // Le chantier est déjà terminé (`chantier` retiré) : on retrouve le maître par défaut, le seigneur.
+        let maitre = maitre.or_else(|| self.monde.personnages.first().map(|p| p.id));
+        if let Some(p) = maitre.and_then(|m| self.monde.personnages.get_mut(m)) {
+            p.grenier[mat] += reste;
+        } else if let Some(q) = hameau {
+            self.distribuer_hameau(q, mat, reste);
+        } else {
+            self.monde.batiments[b].stock_entree[mat] += reste;
+        }
+    }
+
     /// Met en service les chantiers dont le travail est achevé : l'équipe devient la première main-d'œuvre.
     fn terminer_chantiers(&mut self) {
         let finis: Vec<usize> = (0..self.monde.batiments.len())
@@ -1203,9 +1264,7 @@ impl Simulation {
                     self.monde.batiments[b].equipe = 0;
                     let conserve = self.cat.batiments[self.monde.batiments[terre].type_id].conserve_terrain;
                     self.convertir(&nouvelles, conserve);
-                    let mat = self.cat.extension.materiau;
-                    let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
-                    self.monde.batiments[terre].stock_entree[mat] += reste;
+                    self.rendre_au_maitre(b);
                     let nom = self.cat.batiments[self.monde.batiments[terre].type_id].nom.clone();
                     let n = self.monde.batiments[terre].emprise.len();
                     self.journal(format!(
@@ -1217,13 +1276,12 @@ impl Simulation {
                     let h = &self.cat.habitats[self.monde.quartiers[q].habitat_id];
                     let (cap, atelier, nom) = (h.capacite_fondation, h.atelier, h.nom.clone());
                     self.monde.quartiers[q].capacite_pops = cap;
+                    self.monde.quartiers[q].capacite_memoire = cap;
                     self.monde.batiments[b].equipe = 0;
                     let site = self.monde.batiments[b].tuile;
                     self.convertir(&[site], false);
-                    // Le matériau resté sur le chantier revient au hameau.
-                    let mat = self.cat.extension.materiau;
-                    let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
-                    self.distribuer_hameau(q, mat, reste);
+                    // Le matériau resté sur le chantier revient au maître d'ouvrage (ou au hameau, sans maître).
+                    self.rendre_au_maitre_ou_hameau(b, q);
                     if let Some(at) = atelier {
                         self.monde.batiments[b].type_id = at;
                         self.monde.batiments[b].quartier = Some(q);
@@ -1234,15 +1292,31 @@ impl Simulation {
                 }
                 Cible::Maison(q) => {
                     self.monde.quartiers[q].capacite_pops += 1;
+                    self.monde.quartiers[q].capacite_memoire = self.monde.quartiers[q].capacite_pops;
                     self.monde.batiments[b].equipe = 0;
-                    // Le matériau resté sur le chantier revient au hameau.
-                    let mat = self.cat.extension.materiau;
-                    let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
-                    self.distribuer_hameau(q, mat, reste);
+                    self.rendre_au_maitre_ou_hameau(b, q);
                     let cap = self.monde.quartiers[q].capacite_pops;
                     self.journal(format!(
                         "Nouvelle maison dans le hameau en ({x}, {y}) : {cap} maisons"
                     ));
+                }
+                Cible::RemiseHameau(q) => {
+                    let h = &mut self.monde.quartiers[q];
+                    h.abandon_mois = None;
+                    h.vide_mois = 0;
+                    h.capacite_pops = h.capacite_memoire.max(1);
+                    self.monde.batiments[b].equipe = 0;
+                    self.rendre_au_maitre(b);
+                    self.journal(format!("Hameau remis en état en ({x}, {y})"));
+                }
+                Cible::RemiseTerre(t) => {
+                    let bat = &mut self.monde.batiments[t];
+                    bat.abandon_mois = None;
+                    bat.inactif_mois = 0;
+                    self.monde.batiments[b].equipe = 0;
+                    self.rendre_au_maitre(b);
+                    let nom = self.cat.batiments[self.monde.batiments[t].type_id].nom.clone();
+                    self.journal(format!("Terre remise en service : {nom} en ({x}, {y})"));
                 }
             }
             // Les bras de l'équipe en surnombre redeviennent sans poste.
@@ -1279,6 +1353,17 @@ impl Simulation {
     }
 
     /// Chaque pop consomme sur son propre stock ; le hameau agrège la couverture de ses habitants.
+    /// Le seigneur vit sur son grenier : chaque jour, la ration de `train_de_vie_pops` pops (grain, bois…) y est prélevée.
+    fn train_de_vie(&mut self) {
+        let milli = self.cat.seigneurie.train_de_vie_milli;
+        let Some(p) = self.monde.personnages.get_mut(0) else { return };
+        for b in &self.cat.besoins {
+            let c = mul_div(b.par_pop, milli, 1000).min(p.grenier[b.ressource]);
+            p.grenier[b.ressource] -= c;
+            self.bilan.consomme_pops[b.ressource] += c;
+        }
+    }
+
     fn consommer(&mut self) {
         let nr = self.cat.ressources.len();
         let nq = self.nq();
@@ -1510,7 +1595,7 @@ impl Simulation {
                 .iter()
                 .any(|(x, _)| *x == r),
             Some(Chantier {
-                cible: Cible::Maison(_),
+                cible: Cible::Maison(_) | Cible::RemiseHameau(_) | Cible::RemiseTerre(_),
                 ..
             }) => false,
             None => false,
@@ -1543,6 +1628,10 @@ impl Simulation {
         if actifs >= self.cat.extension.chantiers_max {
             return;
         }
+        // Pas de chantier sans bras pour le mener : le seigneur n'ordonne que ce que les pops (corvée) peuvent faire.
+        if self.bras_recrutables() == 0 {
+            return;
+        }
         let nq = self.nq();
         let seuil = self.seuil_croissance();
         let tensions = self.tensions();
@@ -1567,6 +1656,14 @@ impl Simulation {
                 .find_map(|&r| self.habitat_producteur(r))
                 .unwrap_or(0);
             for &centre in &centres {
+                // Remettre en état un hameau abandonné à portée coûte moins qu'en fonder un : le seigneur le préfère.
+                if !hameau_en_cours {
+                    if let Some(h) = self.hameau_a_remettre(centre) {
+                        if self.lancer_remise_hameau(h, &motif) {
+                            return;
+                        }
+                    }
+                }
                 let reste = self.valeur_habitat(self.monde.quartiers[centre].tuile, 1);
                 let fonder = !hameau_en_cours && !maison_en_cours && {
                     self.site_hameau(centre, habitat).map_or(false, |site| {
@@ -2085,9 +2182,129 @@ impl Simulation {
         self.repousse_mensuelle();
     }
 
+    /// Nombre de pops qu'un nouveau chantier pourrait recruter : celles qui ne sont pas déjà en chantier, sans prendre plus
+    /// de la moitié (au moins une) des pops d'un hameau (les terres ont besoin de bras, docs/02 §8.3).
+    fn bras_recrutables(&self) -> u32 {
+        self.bras_recrutables_depuis(None)
+    }
+
+    /// Comme `bras_recrutables`, mais seulement les pops des hameaux à portée de `centre` : celles qu'un chantier proche
+    /// de ce hameau peut effectivement recruter.
+    fn bras_recrutables_depuis(&self, centre: Option<usize>) -> u32 {
+        let eff = self.effectifs();
+        let mut equipe = vec![0u32; self.nq()];
+        for p in &self.pops {
+            if p.emploi.map_or(false, |e| self.est_chantier_type(e)) {
+                equipe[p.residence] += 1;
+            }
+        }
+        (0..self.nq())
+            .filter(|&q| centre.map_or(true, |c| c == q || self.reseau.chemin(c, q).is_some()))
+            .map(|q| ((eff[q] / 2).max(1)).saturating_sub(equipe[q]).min(eff[q].saturating_sub(equipe[q])))
+            .sum()
+    }
+
+    /// Part du coût de construction que coûte la remise en état, selon l'usure (0 à 1 en ppm).
+    fn part_remise_ppm(&self, usure_ppm: i64) -> i64 {
+        let a = &self.cat.abandon;
+        a.remise_min_ppm + (a.remise_max_ppm - a.remise_min_ppm) * usure_ppm.clamp(0, PPM) / PPM
+    }
+
+    fn cout_remise(&self, plein: crate::donnees::CoutCreation, usure_ppm: i64) -> crate::donnees::CoutCreation {
+        let part = self.part_remise_ppm(usure_ppm);
+        crate::donnees::CoutCreation {
+            travail: plein.travail * part / PPM,
+            materiau: plein.materiau * part / PPM,
+            equipe: plein.equipe,
+        }
+    }
+
+    /// Hameau abandonné (pas encore détruit) le plus proche de `centre`, le moins usé d'abord : celui qu'on remet en état.
+    fn hameau_a_remettre(&self, centre: usize) -> Option<usize> {
+        let ruine = self.cat.abandon.hameau_ruine_mois as i64;
+        (0..self.nq())
+            .filter(|&h| {
+                let q = &self.monde.quartiers[h];
+                !q.detruit && q.abandon_mois.is_some() && self.reseau.chemin(centre, h).is_some()
+            })
+            .min_by_key(|&h| (self.monde.quartiers[h].abandon_mois.unwrap_or(0) as i64 * PPM / ruine, h))
+    }
+
+    /// Remet en état un hameau abandonné : le seigneur ordonne les réparations, moins chères qu'une fondation, de plus
+    /// en plus chères avec l'usure, tant que le hameau n'est pas en ruine (docs/07 §14, §15).
+    fn lancer_remise_hameau(&mut self, q: usize, motif: &str) -> bool {
+        if self.bras_recrutables_depuis(Some(q)) == 0 {
+            return false;
+        }
+        let h = &self.monde.quartiers[q];
+        let Some(abandon) = h.abandon_mois else { return false };
+        if h.detruit {
+            return false;
+        }
+        let tuile = h.tuile;
+        let maisons = h.capacite_memoire.max(1) as i64;
+        let un = self.cout_logement(self.cat.habitats[h.habitat_id].cout_creation.clone(), tuile);
+        let plein = crate::donnees::CoutCreation { travail: un.travail * maisons, materiau: un.materiau * maisons, equipe: un.equipe };
+        let usure = abandon as i64 * PPM / self.cat.abandon.hameau_ruine_mois as i64;
+        let cout = self.cout_remise(plein, usure);
+        if !self.assez_de_materiau(q, cout.materiau)
+            || self.monde.batiments.iter().any(|b| b.tuile == tuile && b.chantier.is_some())
+        {
+            return false;
+        }
+        let b = self.site_de_chantier(tuile, Cible::RemiseHameau(q), &cout);
+        let (x, y) = self.monde.xy(tuile);
+        self.journal(format!(
+            "Chantier lancé : remettre en état le hameau en ({x}, {y}) ({} % de sa construction) — {motif}",
+            self.part_remise_ppm(usure) * 100 / PPM
+        ));
+        self.reconstruire_reseau();
+        self.recruter(b, cout.equipe);
+        true
+    }
+
+    /// Remet en service une terre abandonnée (pas encore redevenue friche).
+    fn lancer_remise_terre(&mut self, centre: usize, type_id: usize, motif: &str) -> bool {
+        let nq = self.nq();
+        let friche = self.cat.abandon.terre_friche_mois as i64;
+        let Some(t) = (0..self.monde.batiments.len())
+            .filter(|&b| {
+                let bat = &self.monde.batiments[b];
+                bat.type_id == type_id && bat.abandon_mois.is_some() && bat.chantier.is_none() && self.reseau.chemin(centre, nq + b).is_some()
+            })
+            .min_by_key(|&b| (self.monde.batiments[b].abandon_mois.unwrap_or(0) as i64 * PPM / friche, b))
+        else {
+            return false;
+        };
+        let emprise = self.monde.batiments[t].emprise.clone();
+        let Some(plein) = self.cout_defrichement(type_id, &emprise) else { return false };
+        let usure = self.monde.batiments[t].abandon_mois.unwrap_or(0) as i64 * PPM / friche;
+        let cout = self.cout_remise(plein, usure);
+        if !self.assez_de_materiau(centre, cout.materiau) {
+            return false;
+        }
+        let noeud = self.monde.batiments[t].tuile;
+        let b = self.site_de_chantier(noeud, Cible::RemiseTerre(t), &cout);
+        let (x, y) = self.monde.xy(noeud);
+        let nom = self.cat.batiments[type_id].nom.clone();
+        self.journal(format!(
+            "Chantier lancé : remettre en service {nom} ({} tiles) en ({x}, {y}) ({} % du défrichement) — {motif}",
+            emprise.len(),
+            self.part_remise_ppm(usure) * 100 / PPM
+        ));
+        self.reconstruire_reseau();
+        self.recruter(b, cout.equipe);
+        true
+    }
+
     /// Abandonne le chantier `b` : l'équipe est libérée, le site redevient inerte, les tiles réservées sont libres
     /// (friche) ; un hameau en fondation est détruit et ses pops retournent dans un autre hameau.
     fn abandonner_chantier(&mut self, b: usize) {
+        let cause = match self.monde.batiments[b].limitant {
+            Limitant::Intrant(_) => "faute de bois",
+            Limitant::MainOeuvre => "faute de bras",
+            _ => "sans progrès",
+        };
         let Some(ch) = self.monde.batiments[b].chantier.take() else {
             return;
         };
@@ -2126,6 +2343,8 @@ impl Simulation {
                 "hameau"
             }
             Cible::Maison(_) => "maison",
+            Cible::RemiseHameau(_) => "remise en état d'un hameau",
+            Cible::RemiseTerre(_) => "remise en service d'une terre",
         };
         for &t in &libres {
             self.monde.tuiles[t].contenu = Contenu::Vide;
@@ -2144,7 +2363,7 @@ impl Simulation {
                 p.emploi = None;
             }
         }
-        self.journal(format!("Chantier abandonné ({quoi}) en ({x}, {y}) : sans progrès depuis trop longtemps"));
+        self.journal(format!("Chantier abandonné ({quoi}) en ({x}, {y}) : {cause}, sans progrès depuis trop longtemps"));
         self.reconstruire_reseau();
     }
 
@@ -2167,6 +2386,7 @@ impl Simulation {
             return;
         }
         h.abandon_mois = Some(0);
+        h.capacite_memoire = h.capacite_pops.max(h.capacite_memoire);
         h.capacite_pops = 0;
         let (x, y) = self.monde.xy(self.monde.quartiers[q].tuile);
         self.journal(format!("Hameau abandonné en ({x}, {y})"));
@@ -2301,6 +2521,7 @@ impl Simulation {
                 travail_restant: cout.travail,
                 travail_total: cout.travail,
                 materiau_total: cout.materiau,
+                maitre: Some(0),
             }),
             stock_entree: vec![0; nr],
             stock_sortie: vec![0; nr],
@@ -2396,11 +2617,14 @@ impl Simulation {
             Some(b) => {
                 let bat = &mut self.monde.batiments[b];
                 bat.equipe = cout.equipe;
+                bat.progres_ref = cout.travail;
+                bat.inactif_mois = 0;
                 bat.chantier = Some(Chantier {
                     cible,
                     travail_restant: cout.travail,
                     travail_total: cout.travail,
                     materiau_total: cout.materiau,
+                    maitre: Some(0),
                 });
                 b
             }
@@ -2457,6 +2681,13 @@ impl Simulation {
     /// Défricher pour la ressource d'un type de terre : d'abord agrandir une terre existante du même
     /// type (moins coûteux, sans route), sinon en fonder une nouvelle.
     fn lancer_defrichement(&mut self, centre: usize, type_id: usize, motif: &str) -> bool {
+        if self.pops.len() > 0 && self.bras_recrutables_depuis(Some(centre)) == 0 {
+            return false;
+        }
+        // Une terre abandonnée de ce type à portée se remet en service à moindre coût : d'abord elle.
+        if self.lancer_remise_terre(centre, type_id, motif) {
+            return true;
+        }
         let nq = self.nq();
         let max = self.cat.batiments[type_id].emprise_max as usize;
         // Terres de ce type à portée du hameau, avec de la place pour grandir.
@@ -2699,25 +2930,21 @@ impl Simulation {
         Ok(())
     }
 
-    /// Le matériau de construction est-il vraiment disponible autour du lieu `lieu` ? Si le hameau concerné (le plus
-    /// proche pour une terre) manque déjà de ce matériau, un chantier qui en consomme resterait des années sans bois
-    /// et finirait abandonné : on ne le lance pas. Pendant la constitution de l'état initial, rien n'est exigé.
-    fn assez_de_materiau(&self, lieu: usize, besoin: Qte) -> bool {
+    /// Le seigneur peut-il payer le matériau de ce chantier ? C'est son grenier qui le fournit : il ne lance que ce
+    /// qu'il peut payer (docs/07 §15). Pendant la constitution de l'état initial, les chantiers sont achevés d'un coup.
+    fn assez_de_materiau(&self, _lieu: usize, besoin: Qte) -> bool {
         if besoin <= 0 || self.pops.is_empty() {
             return true;
         }
-        let nq = self.nq();
         let mat = self.cat.extension.materiau;
-        let seuil = self.cat.mobilite.seuil_tension_ppm;
-        let hameau = if lieu < nq {
-            Some(lieu)
-        } else {
-            (0..nq)
-                .filter_map(|q| self.reseau.chemin(q, lieu).map(|c| (c.cout, q)))
-                .min()
-                .map(|(_, q)| q)
-        };
-        hameau.map_or(true, |q| self.monde.quartiers[q].sat_par_ressource_ppm[mat] >= seuil)
+        let engage: Qte = self
+            .monde
+            .batiments
+            .iter()
+            .filter_map(|b| b.chantier.as_ref())
+            .map(|c| c.materiau_total)
+            .sum();
+        self.monde.personnages.first().map_or(true, |p| p.grenier[mat] >= engage + besoin)
     }
 
     /// Une maison est-elle en chantier dans le hameau `q` ?
@@ -2736,6 +2963,9 @@ impl Simulation {
     /// Une maison de plus (une pop) dans le hameau `q`, au plafond de son type près. Une seule à la
     /// fois par hameau ; le matériau doit pouvoir lui être livré.
     fn lancer_maison(&mut self, q: usize, motif: &str) -> bool {
+        if !self.pops.is_empty() && self.bras_recrutables_depuis(Some(q)) == 0 {
+            return false;
+        }
         let nq = self.nq();
         let habitat_id = self.monde.quartiers[q].habitat_id;
         let cap = self.monde.quartiers[q].capacite_pops;
@@ -2776,6 +3006,7 @@ impl Simulation {
                     travail_restant: cout.travail,
                     travail_total: cout.travail,
                     materiau_total: cout.materiau,
+                    maitre: Some(0),
                 });
                 b
             }
@@ -2873,6 +3104,9 @@ impl Simulation {
     }
 
     fn lancer_hameau(&mut self, centre: usize, habitat_id: usize, motif: &str) -> bool {
+        if !self.pops.is_empty() && self.bras_recrutables_depuis(Some(centre)) == 0 {
+            return false;
+        }
         let cout = self.cat.habitats[habitat_id].cout_creation.clone();
         // Un hameau doit pouvoir être bâti (matériau réellement disponible), chauffé et nourri à portée de son site.
         if !self.assez_de_materiau(centre, cout.materiau) {
@@ -2917,6 +3151,7 @@ impl Simulation {
             vide_mois: 0,
             abandon_mois: None,
             detruit: false,
+            capacite_memoire: 0,
         });
         let b = self.monde.batiments.len();
         let chantier = self.nouveau_chantier(site.tuile, Cible::Hameau(q), &cout);

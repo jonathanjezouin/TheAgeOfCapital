@@ -238,6 +238,7 @@ fn monde_3x3() -> Monde {
             .collect(),
         quartiers: Vec::new(),
         batiments: Vec::new(),
+        personnages: Vec::new(),
     }
 }
 

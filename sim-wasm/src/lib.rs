@@ -235,12 +235,26 @@ struct Etat<'a> {
     hameaux: Vec<HameauVue>,
     lieux: Vec<LieuVue>,
     pops: Vec<PopVue>,
+    /// Le décideur du POC (docs/07 §15) : son grenier, par ressource, en unités.
+    seigneur: Option<SeigneurVue>,
+    nb_serfs: usize,
     evenements: Vec<(u64, &'a str)>,
     nb_evenements: usize,
     produit: Vec<f64>,
     consomme: Vec<f64>,
     /// [année, pops, sans poste, naissances, décès, vital moyen, confort moyen]
     annuel: Vec<(u64, usize, usize, u32, u32, f64, f64)>,
+}
+
+#[derive(Serialize)]
+struct SeigneurVue {
+    nom: String,
+    poste: String,
+    grenier: Vec<f64>,
+    /// Chantiers dont il est le maître d'ouvrage.
+    chantiers: usize,
+    /// Part de la production prélevée en nature (champart).
+    champart: f64,
 }
 
 fn version_carte(s: &Simulation) -> u64 {
@@ -510,6 +524,8 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                         Cible::Hameau(q) => ("hameau", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
                         Cible::Maison(q) => ("maison", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
                         Cible::Extension(terre) => ("extension", c.batiments[s.monde.batiments[terre].type_id].nom.clone()),
+                        Cible::RemiseHameau(q) => ("remise_hameau", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
+                        Cible::RemiseTerre(t) => ("remise_terre", c.batiments[s.monde.batiments[t].type_id].nom.clone()),
                     };
                     ChantierVue {
                         cible,
@@ -562,6 +578,14 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
             nb_pops: s.pops.len(),
             sans_poste: s.sans_poste(),
             chantiers: s.chantiers_en_cours(),
+            seigneur: s.monde.personnages.first().map(|p| SeigneurVue {
+                nom: p.nom.clone(),
+                poste: p.poste.clone(),
+                grenier: p.grenier.iter().map(|&m| unites(m)).collect(),
+                chantiers: s.monde.batiments.iter().filter(|b| b.chantier.as_ref().map_or(false, |c| c.maitre == Some(p.id))).count(),
+                champart: f(s.cat.seigneurie.champart_ppm),
+            }),
+            nb_serfs: s.pops.iter().filter(|p| p.statut == Some(sim::monde::Statut::Serf)).count(),
             hameaux,
             lieux,
             pops: s

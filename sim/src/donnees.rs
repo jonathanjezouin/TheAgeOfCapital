@@ -46,6 +46,20 @@ struct Brut {
     eau: Option<BrutEau>,
     peuplement: BrutPeuplement,
     abandon: BrutAbandon,
+    seigneurie: BrutSeigneurie,
+}
+
+/// Le seigneur local (docs/07 §15) : ses revenus en nature et son train de vie.
+#[derive(Deserialize)]
+struct BrutSeigneurie {
+    nom: String,
+    poste: String,
+    /// Part de la production des terres prélevée en nature.
+    champart: f64,
+    champart_ressources: Vec<String>,
+    /// Train de vie : ration de ce nombre de pops, prélevée chaque jour sur le grenier.
+    train_de_vie_pops: f64,
+    grenier_initial: BTreeMap<String, f64>,
 }
 
 /// Usure et abandon des lieux (docs/07 §14), durées en années.
@@ -55,6 +69,8 @@ struct BrutAbandon {
     terre_friche_ans: f64,
     hameau_vide_ans: f64,
     hameau_ruine_ans: f64,
+    remise_min: f64,
+    remise_max: f64,
     chantier_bloque_ans: f64,
     memoire_site_ans: f64,
     foret_apres_ans: f64,
@@ -529,6 +545,7 @@ pub struct Catalogue {
     pub extension: ParamsExtension,
     pub peuplement: ParamsPeuplement,
     pub abandon: ParamsAbandon,
+    pub seigneurie: ParamsSeigneurie,
     pub demo: ParamsDemo,
     pub mobilite: ParamsMobilite,
     pub vital: Vital,
@@ -574,12 +591,28 @@ pub struct ParamsAbandon {
     pub terre_friche_mois: u32,
     pub hameau_vide_mois: u32,
     pub hameau_ruine_mois: u32,
+    /// Coût de remise en état, en part du coût de construction : de `remise_min` (à peine abandonné) à `remise_max` (au bord de la ruine).
+    pub remise_min_ppm: i64,
+    pub remise_max_ppm: i64,
     pub chantier_bloque_mois: u32,
     pub memoire_site_mois: u32,
     pub foret_apres_mois: u32,
     pub lisiere_isolee_ppm: i64,
     pub lisiere_moyenne_ppm: i64,
     pub lisiere_forte_ppm: i64,
+}
+
+/// Le seigneur local : voir `[seigneurie]` de `poc.toml`.
+#[derive(Clone, Debug)]
+pub struct ParamsSeigneurie {
+    pub nom: String,
+    pub poste: String,
+    pub champart_ppm: i64,
+    /// Ressources prélevées à la production des terres.
+    pub champart_ressources: Vec<usize>,
+    /// Pops dont le seigneur consomme la ration chaque jour (milli-pops).
+    pub train_de_vie_milli: i64,
+    pub grenier_initial: Vec<(usize, Qte)>,
 }
 
 pub const DONNEES_POC: &str = include_str!("../donnees/poc.toml");
@@ -718,6 +751,14 @@ impl Catalogue {
             habitat: ParamsHabitat {
                 densite_max_pops: b.habitat.densite_max_pops,
             },
+            seigneurie: ParamsSeigneurie {
+                nom: b.seigneurie.nom.clone(),
+                poste: b.seigneurie.poste.clone(),
+                champart_ppm: en_ppm(b.seigneurie.champart),
+                champart_ressources: b.seigneurie.champart_ressources.iter().map(|n| id(n)).collect::<Result<_, _>>()?,
+                train_de_vie_milli: en_milli(b.seigneurie.train_de_vie_pops),
+                grenier_initial: b.seigneurie.grenier_initial.iter().map(|(n, q)| Ok((id(n)?, en_milli(*q)))).collect::<Result<_, String>>()?,
+            },
             abandon: {
                 let mois = |ans: f64| (ans * 12.0).round().max(1.0) as u32;
                 ParamsAbandon {
@@ -725,6 +766,8 @@ impl Catalogue {
                     terre_friche_mois: mois(b.abandon.terre_friche_ans),
                     hameau_vide_mois: mois(b.abandon.hameau_vide_ans),
                     hameau_ruine_mois: mois(b.abandon.hameau_ruine_ans),
+                    remise_min_ppm: en_ppm(b.abandon.remise_min),
+                    remise_max_ppm: en_ppm(b.abandon.remise_max),
                     chantier_bloque_mois: mois(b.abandon.chantier_bloque_ans),
                     memoire_site_mois: mois(b.abandon.memoire_site_ans),
                     foret_apres_mois: mois(b.abandon.foret_apres_ans),

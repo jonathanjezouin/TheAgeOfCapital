@@ -9,7 +9,7 @@
 //! Un village plus grand que la croix ne tient pas : il faudrait plusieurs groupes de hameaux.
 
 use crate::donnees::Catalogue;
-use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile};
+use crate::monde::{Batiment, Contenu, Limitant, Monde, Personnage, Quartier, Tuile};
 use crate::reseau::Reseau;
 use crate::rng::Rng;
 use crate::simulation::{Pop, Simulation};
@@ -147,6 +147,7 @@ fn nouveau_hameau(tuile: usize, habitat_id: usize, cat: &Catalogue) -> Quartier 
         vide_mois: 0,
         abandon_mois: None,
         detruit: false,
+        capacite_memoire: cat.habitats[habitat_id].capacite_pops,
     }
 }
 
@@ -237,6 +238,20 @@ fn essayer(
         tuiles: Vec::new(),
         quartiers: Vec::new(),
         batiments: Vec::new(),
+        // Le seigneur local, décideur du POC (docs/07 §15) : son grenier est garni de la réserve initiale.
+        personnages: {
+            let mut grenier = vec![0; cat.ressources.len()];
+            for &(r, q) in &cat.seigneurie.grenier_initial {
+                grenier[r] = q;
+            }
+            vec![Personnage {
+                id: 0,
+                nom: cat.seigneurie.nom.clone(),
+                poste: cat.seigneurie.poste.clone(),
+                grenier,
+                domaine: Some(0),
+            }]
+        },
     };
     let fertilite = champ_fertilite(p, rng);
     monde.tuiles = (0..w * h)

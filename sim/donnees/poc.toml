@@ -44,6 +44,17 @@ capacite_fondation = 1
 atelier = "atelier_domestique"
 cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
 
+# Le seigneur local (docs/07 §15) : le décideur du POC. Il prélève en nature le champart sur la production des terres,
+# prend son train de vie sur son grenier, et c'est son grenier qui fournit le matériau de ses chantiers (il est leur
+# maître d'ouvrage) ; les pops, toutes serves, fournissent la main-d'œuvre (corvée).
+[seigneurie]
+nom = "Seigneur du village"
+poste = "seigneur_local"
+champart = 0.12
+champart_ressources = ["grain", "bois"]
+train_de_vie_pops = 0.5            # il consomme la ration d'une demi-pop par jour
+grenier_initial = { grain = 300.0, bois = 400.0 }
+
 # Usure et abandon des lieux (docs/07 §14). Une terre sans travail depuis `terre_inactive_ans` est abandonnée : elle ne
 # produit plus et redevient friche après `terre_friche_ans`. Un hameau sans pop depuis `hameau_vide_ans` est abandonné :
 # plus de logement, il s'use et est détruit après `hameau_ruine_ans`. Une tile libérée redevient forêt après
@@ -51,8 +62,10 @@ cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
 [abandon]
 terre_inactive_ans = 20
 terre_friche_ans = 8
-hameau_vide_ans = 10
+hameau_vide_ans = 2                # un hameau sans pop depuis 2 ans est abandonné ; il s'use ensuite (voir hameau_ruine_ans)
 hameau_ruine_ans = 40
+remise_min = 0.10                  # remettre en état un lieu à peine abandonné coûte 10 % de sa construction…
+remise_max = 0.60                  # … et 60 % au bord de la ruine ; au-delà il est détruit et il faut reconstruire
 chantier_bloque_ans = 3            # un chantier sans progrès depuis 3 ans est abandonné (équipe libérée)
 memoire_site_ans = 10              # on ne refonde pas un hameau sur un site abandonné depuis moins de 10 ans
 foret_apres_ans = 40

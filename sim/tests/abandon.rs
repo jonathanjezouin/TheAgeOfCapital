@@ -201,15 +201,10 @@ fn un_chantier_sans_progres_est_abandonne_et_son_equipe_liberee() {
     let Some(b) = (0..s.monde.batiments.len()).find(|&b| matches!(s.monde.batiments[b].chantier.as_ref().map(|c| c.cible), Some(Cible::Maison(_)))) else {
         return; // pas de maison possible dans ce scénario : rien à tester
     };
-    for bat in &mut s.monde.batiments {
-        bat.stock_sortie[bois] = 0;
-    }
-    // On interdit tout apport de bois : plus aucun producteur ne livre.
-    for t in &mut s.cat.batiments {
-        for e in &mut t.etapes {
-            e.extrants.retain(|&(r, _)| r != bois);
-        }
-    }
+    // Le seigneur n'a plus de bois dans son grenier : il ne peut plus financer le chantier.
+    s.monde.personnages[0].grenier[bois] = 0;
+    s.cat.seigneurie.champart_ppm = 0; // et plus de champart : rien ne regarnit le grenier
+    s.monde.batiments[b].stock_entree[bois] = 0;
     s.avancer(30 * 12);
     assert!(s.monde.batiments[b].chantier.is_none(), "chantier abandonné");
     assert!(s.evenements.iter().any(|e| e.texte.starts_with("Chantier abandonné")));

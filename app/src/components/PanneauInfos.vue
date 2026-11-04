@@ -96,6 +96,13 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
   <aside class="infos" aria-label="Informations sur la tile sélectionnée">
     <div v-if="!entite" class="aide">
       <h2>Le village de 1750</h2>
+      <div v-if="store.etat?.seigneur" class="seigneur">
+        <h3>{{ store.etat.seigneur.nom }}</h3>
+        <p class="doux">Il décide des constructions, des installations et des abandons ; les {{ store.etat.nb_serfs }} pops sont serves : elles choisissent où travailler, mais ni où vivre ni quoi bâtir. Il prélève {{ pct(store.etat.seigneur.champart) }} de la production (champart) en nature.</p>
+        <div class="ligne"><span>Grenier : grain</span><span>{{ un(store.etat.seigneur.grenier[store.meta.ressources.indexOf('grain')], 0) }}</span></div>
+        <div class="ligne"><span>Grenier : bois</span><span>{{ un(store.etat.seigneur.grenier[store.meta.ressources.indexOf('bois')], 0) }}</span></div>
+        <div class="ligne"><span>Chantiers qu'il finance</span><span>{{ store.etat.seigneur.chantiers }}</span></div>
+      </div>
       <p>Cliquez une tile pour voir ce qu'elle contient : <b>hameau</b>, <b>terre exploitée</b>, <b>chantier</b>, chemin, terre libre.</p>
       <p><kbd>molette</kbd> zoom · <kbd>glisser</kbd> déplacer · <kbd>espace</kbd> pause.</p>
       <p>Chaque point est une <b>pop</b> (100 habitants) :
