@@ -72,7 +72,7 @@ export const TERRAINS_INFO = [
   { nom: 'Plaine', texte: 'Terrain de référence : exploitable sans contrainte.' },
   { nom: 'Plaine riche', texte: 'Limons profonds : les meilleures terres à céréales, mises en valeur les premières.' },
   { nom: 'Plaine rocailleuse', texte: 'Sol caillouteux : plus pauvre pour les céréales, plus rude à travailler.' },
-  { nom: 'Plaine marécageuse', texte: 'Sol détrempé : inutilisable tant qu\'il n\'est pas drainé, difficile à bâtir.' },
-  { nom: 'Forêt', texte: 'Bois sur pied : réserve foncière, à défricher plus tard.' },
+  { nom: 'Plaine marécageuse', texte: 'Sol détrempé : inutilisable tant qu\'il n\'est pas drainé ; drainé, il donne de bons limons.' },
+  { nom: 'Forêt', texte: 'Bois sur pied : on l\'exploite sur place, ou on le défriche pour cultiver.' },
 ]
 export const EAUX_INFO = ['', 'Ruisseau', 'Rivière', 'Fleuve']

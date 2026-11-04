@@ -65,9 +65,15 @@ pub struct Tuile {
 }
 
 impl Tuile {
-    /// Peut-on y bâtir ou y faire passer une route neuve ? (ni eau, ni forêt, ni marais)
+    /// Peut-on y poser un lieu (après conversion éventuelle du terrain) ? Tout sauf l'eau : forêt et marais
+    /// se convertissent par un chantier (docs/07 §12) ; une route peut franchir l'eau par un pont.
     pub fn constructible(&self) -> bool {
-        self.eau == Eau::Aucune && self.terrain.constructible()
+        self.eau == Eau::Aucune
+    }
+
+    /// Terrain ouvert, sans conversion à faire : ni eau, ni forêt, ni marais.
+    pub fn ouvert(&self) -> bool {
+        self.eau == Eau::Aucune && self.terrain.ouvert()
     }
 }
 

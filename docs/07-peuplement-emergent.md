@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte) et 2 (aptitude par terrain) sont faites** (§8, §10, §11), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain) et 3 (défrichement, drainage, ponts) sont faites** (§8, §10, §11, §12), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -128,7 +128,7 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 
 1. ~~Générateur de carte~~ : **fait le 2026-11-04** (`sim/src/terrain.rs`, rendu `app/src/terrain.js`, détail §10).
 2. ~~Table d'aptitudes et effet sur rendement, travail requis et coût de construction~~ ; mode de carte « aptitude » : **fait le 2026-11-04** (§11).
-3. Défrichement (coût, bois récupéré, repousse), drainage, ponts et gués (§3.3, §3.4, §9).
+3. ~~Défrichement (coût, bois récupéré), drainage, ponts et gués~~ : **fait le 2026-11-04** (§12). La repousse et les opportunités (pierre, tourbe) restent à faire.
 4. Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4).
 5. Outils de mesure (distribution des tailles de hameaux, §6), puis réglage des poids.
 6. Plus tard : échange entre pops, outils, saisons, services, navigation, relief (collines, montagnes), régions macro.
@@ -167,7 +167,7 @@ Question encore ouverte : la **forêt exploitée** (type de terre actuel, `foret
 **Limites connues**
 - ~~La fertilité reste le champ radial autour du village~~ : levé à l'étape 2 (§11).
 - Le village garde sa **disposition en croix** (remplacée à l'étape 4). Comme la fenêtre dégagée exclut l'eau, le point d'eau le plus proche est à 11–17 tiles (3 à 4 km) : à la lisière du terroir, pas au cœur du village.
-- Forêts et marais sont fermés (ni défrichement, ni drainage avant l'étape 3) ; les routes ne franchissent aucun cours d'eau (pas de pont).
+- ~~Forêts et marais fermés, routes sans pont~~ : levé à l'étape 3 (§12).
 - La pente générale donne des rivières à peu près parallèles ; le relief n'est pas rendu.
 - Le sol est une image de 12 px par tile : un peu flou à fort zoom ; un rendu par chunks à plus forte résolution est possible plus tard.
 - Pas de variantes visuelles par tile (fleurs, rochers…) ; les assets de l'atlas ne servent plus pour le sol.
@@ -199,9 +199,34 @@ Question encore ouverte : la **forêt exploitée** (type de terre actuel, `foret
 Travail requis par tile : rocailleuse ×1,3 (céréales, lin), marais ×1,4 à 2,0, forêt ×2,0 à 2,5. Coût de construction : plaine et riche ×1, rocailleuse ×1,3, forêt ×2, marais ×2,5.
 
 **Décisions et limites**
-- La **forêt exploitée** reste un **taillis planté sur terre ordinaire** (1,0 sur plaine) tant que les tiles de forêt de la carte ne sont pas exploitables (étape 3) : à 0,6 le village manquait de bois. Elle prendra alors sa place sur les tiles de forêt.
+- La **forêt exploitée** reste un **taillis planté sur terre ordinaire** (1,0 sur plaine) pour que le village de départ, posé en terrain ouvert, ait du bois ; depuis l'étape 3 elle s'installe aussi **sur les tiles de forêt** (1,3), sans les défricher (§12).
 - Aucun terrain n'interdit une activité : l'aptitude est un multiplicateur, donc un terrain difficile reste utilisable si le besoin presse (émergence). Forêt et marais restent fermés par `constructible()` jusqu'à l'étape 3.
 - Mesure : sur 100 ans et 8 graines, la part de plaine rocailleuse parmi les nouveaux champs (14,5 %) est inférieure à sa part parmi les tiles libres à portée (17,3 %) : l'effet est **faible** car la compacité (`poids_voisins` = 0,25) pèse autant qu'un écart d'aptitude de 0,25. À régler avec les poids de `[extension]` (étape 5).
 - Le village de départ n'est pas posé en fonction du terrain de chaque terre (la croix est rigide) ; la composition initiale reste dimensionnée sur un rendement de 1,0.
 - La compacité des terres mesurée par les tests monte à ~1,36 (1,35 avant) : elles suivent les plaques de terrain.
 - Les rendements dépendent encore uniquement du terrain et de la qualité locale : pas de fertilité dynamique (`06` §4).
+
+## 12. Étape 3 réalisée : défrichement, drainage et ponts
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Terrain ouvert / constructible | `Terrain::ouvert`, `Tuile::constructible` | **ouvert** : plaine, riche, rocailleuse (rien à convertir). **Constructible** : tout sauf l'eau. Forêt et marais se bâtissent après conversion. Le village de départ et sa croix restent sur terrain ouvert |
+| Conversion | `poc.toml` `[terrains.*] conversion_*` | **forêt → plaine** : 1 000 pop-jours et 1 750 bois par tile ; **marais → plaine riche** : 400 pop-jours (un marais drainé donne de bons limons). Le travail s'ajoute au chantier (terre, extension, hameau, maison) |
+| Fin de chantier | `Simulation::convertir` | le terrain de chaque tile change ; le bois récupéré va au hameau le plus proche ; une ligne de journal (« Terrain converti près de (x, y) : … ») |
+| Forêt exploitée | `conserve_terrain = true` | elle exploite la forêt **sur place** (rendement 1,3), sans conversion ni travail de défrichement |
+| Ponts et gués | `poc.toml` `[eau]`, `Simulation::meilleur_site` | une route neuve peut traverser l'eau ; chaque tile d'eau traversée ajoute au chantier : ruisseau 20, rivière 200, fleuve 2 000 pop-jours. Le pathfinding sépare la **distance réelle** (qui compte pour la portée) d'une **pénalité d'ordre** (1 unité de route pour 10 pop-jours) |
+| Choix des sites | `meilleur_site`, `agrandir` | le travail du site (ponts + conversion) divise le score d'une terre et allonge la clé d'un hameau ; `poids_conversion` pénalise les tiles à convertir. On ne franchit une rivière ni ne défriche une forêt qu'**à défaut de mieux à portée** |
+| Agrandir ou fonder | `lancer_defrichement` | agrandir une terre reste moins cher qu'en fonder une tant que le terrain est ouvert ; s'il faut convertir, on compare avec une terre neuve (pont compris) |
+| App | `terrain.js`, `carte.js` | le sol et les cours d'eau sont deux images ; une conversion repeint les seules tiles concernées (12 ms pour 81 tiles) ; le terrain est relu à chaque changement de carte |
+| Tests | `sim/tests/terrain.rs` | défrichement faute de terre ouverte (le bois revient, la forêt recule), forêt exploitée qui garde sa forêt, pont quand l'autre rive est la seule terre ouverte, rien d'occupé sur l'eau, table de conversion et de ponts |
+
+**Décisions et écarts**
+- Les ponts sont exprimés en **pop-jours absolus** (20 / 200 / 2 000) et non en multiplicateurs de route (×3 / ×10 / ×40 prévus au §9), car une route neuve ne coûte aujourd'hui aucun travail.
+- Sur les cartes générées, **aucun défrichement ni pont n'apparaît en 200 ans** (8 graines) : la terre ouverte est abondante à portée (200 × 200 tiles, 70 % de terrain ouvert). C'est le comportement voulu (émergence : on ne défriche qu'en cas de besoin) ; les tests forcent la rareté de terre ouverte. À revoir quand le peuplement s'accélérera (étapes 4 et 5), ou en réduisant la part de terrain ouvert.
+- Le bois récupéré est versé au hameau le plus proche (stock partagé de ses pops) ; la quantité (1 750 unités par tile, ~600 stères) couvre ~1 an de chauffage de 1 à 2 hameaux de 2 pops.
+
+**Pas encore fait**
+- **Repousse de la forêt** (§9) : elle suppose des tiles défrichées *vacantes* (ni cultivées ni bâties). Aucune n'existe tant que l'abandon des lieux est écarté (`05`, « Déclin et abandon ») ; la repousse viendra avec lui. La fonctionnalité d'affichage du temps de repousse d'une tile vide, citée par Jonathan, n'est pas dans ce dépôt.
+- **Pierre (rocailleuse) et tourbe (marais)** : nouvelles ressources, donc nouvelles chaînes de production ; reportées.
+- Pas de route à travers forêt et marais plus lente ni plus chère : le tracé les traverse comme la plaine.
+- La navigation des rivières reste hors POC.

@@ -55,6 +55,13 @@ struct Meta<'a> {
     habitants_par_pop: i64,
     /// Multiplicateur du travail des chantiers par terrain.
     cout_terrain: Vec<f64>,
+    /// Conversion par terrain (défrichement, drainage) : pop-jours par tile et bois récupéré (0 : aucune).
+    conversion_travail: Vec<f64>,
+    conversion_bois: Vec<f64>,
+    /// Terrain obtenu par la conversion (index), -1 si aucune.
+    conversion_vers: Vec<i32>,
+    /// Travail d'un pont ou d'un gué par gabarit d'eau (aucune, ruisseau, rivière, fleuve), en pop-jours.
+    pont: Vec<f64>,
     seuil_croissance_microhab: i64,
 }
 
@@ -74,6 +81,8 @@ struct BatimentMeta<'a> {
     /// Rendement et travail requis par terrain (plaine, plaine riche, rocailleuse, marécageuse, forêt), en multiples de 1,0.
     aptitude: Vec<f64>,
     travail_terrain: Vec<f64>,
+    /// La terre garde le terrain de ses tiles (pas de conversion).
+    conserve_terrain: bool,
     /// Ressources livrées en sortie finale.
     extrants: Vec<&'a str>,
     intrants: Vec<&'a str>,
@@ -267,16 +276,6 @@ pub extern "C" fn sim_creer(graine: u32, hameaux: u32, occupation_pct: u32) -> i
         Ok(s) => {
             let fert: Vec<u8> = s.monde.tuiles.iter().map(|t| (t.fertilite_ppm / 10_000).clamp(0, 255) as u8).collect();
             FERTILITE.with(|f| *f.borrow_mut() = fert);
-            let terrain: Vec<u8> = s
-                .monde
-                .tuiles
-                .iter()
-                .flat_map(|t| {
-                    let aval = if t.aval < 8 { 1 + t.aval / 2 } else { 0 };
-                    [t.terrain as u8, (t.eau as u8) | (aval << 2)]
-                })
-                .collect();
-            TERRAIN.with(|f| *f.borrow_mut() = terrain);
             SIM.with(|x| *x.borrow_mut() = Some(s));
             0
         }
@@ -339,6 +338,26 @@ pub extern "C" fn sim_aptitude_ptr() -> *const u8 {
     APTITUDE.with(|f| f.borrow().as_ptr())
 }
 
+/// Relit le terrain de chaque tile (il change quand une forêt est défrichée ou un marais drainé) et renvoie le
+/// nombre d'octets à lire à `sim_terrain_ptr`.
+#[no_mangle]
+pub extern "C" fn sim_terrain() -> u32 {
+    avec(0, |s| {
+        let terrain: Vec<u8> = s
+            .monde
+            .tuiles
+            .iter()
+            .flat_map(|t| {
+                let aval = if t.aval < 8 { 1 + t.aval / 2 } else { 0 };
+                [t.terrain as u8, (t.eau as u8) | (aval << 2)]
+            })
+            .collect();
+        let n = terrain.len() as u32;
+        TERRAIN.with(|f| *f.borrow_mut() = terrain);
+        n
+    })
+}
+
 #[no_mangle]
 pub extern "C" fn sim_terrain_ptr() -> *const u8 {
     TERRAIN.with(|f| f.borrow().as_ptr())
@@ -375,6 +394,7 @@ pub extern "C" fn sim_meta_json() -> u32 {
                     pops: b.pops,
                     chantier: b.chantier,
                     fertile: b.fertile,
+                    conserve_terrain: b.conserve_terrain,
                     aptitude: b.aptitude_ppm.iter().map(|&v| v as f64 / 1e6).collect(),
                     travail_terrain: b.travail_terrain_ppm.iter().map(|&v| v as f64 / 1e6).collect(),
                     extrants: noms(&b.extrants_finaux()),
@@ -383,6 +403,10 @@ pub extern "C" fn sim_meta_json() -> u32 {
                 .collect(),
             habitants_par_pop: c.demo.habitants_par_pop,
             cout_terrain: c.cout_terrain_ppm.iter().map(|&v| v as f64 / 1e6).collect(),
+            conversion_travail: c.conversion.iter().map(|x| x.map_or(0.0, |c| c.travail as f64 / 1000.0)).collect(),
+            conversion_vers: c.conversion.iter().map(|x| x.map_or(-1, |c| c.vers as i32)).collect(),
+            conversion_bois: c.conversion.iter().map(|x| x.map_or(0.0, |c| c.bois as f64 / 1000.0)).collect(),
+            pont: c.pont_milli.iter().map(|&v| v as f64 / 1000.0).collect(),
             seuil_croissance_microhab: s.seuil_croissance(),
         })
     })

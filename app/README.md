@@ -33,7 +33,7 @@ Prérequis : Node 20+, Rust avec la cible `wasm32-unknown-unknown` (`rustup targ
 | Fichier | Rôle |
 |---|---|
 | `src/sim.js` | Chargeur du `.wasm` et appels (`creer`, `avancer`, `meta`, `carte`, `etat`, `fertilite`) |
-| `src/terrain.js` | Rendu du terrain de toute la carte (image procédurale + rivières lissées), docs/07 §10 |
+| `src/terrain.js` | Rendu du terrain de toute la carte (sol procédural + rivières lissées en deux images ; repeint les tiles converties), docs/07 §10 et §12 |
 | `src/carte.js` | Rendu PixiJS : couches, caméra, sélection, modes, nuit |
 | `src/store.js` | État partagé (vitesse, mode, sélection, événements) |
 | `src/libelles.js` | Libellés français, date de jeu (1ᵉʳ janvier 1750), traduction du journal |

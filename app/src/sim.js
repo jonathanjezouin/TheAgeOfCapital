@@ -35,7 +35,10 @@ export async function chargerSim(urlWasm) {
     },
     /** Fertilité locale de chaque tile en % (0 à 130), ligne par ligne. */
     /** Terrain de chaque tile : 2 octets (terrain ; gabarit d'eau bits 0-1 et sens de l'aval bits 2-4), ligne par ligne. */
-    terrain: () => new Uint8Array(w.memory.buffer, w.sim_terrain_ptr(), w.sim_terrain_len()).slice(),
+    terrain() {
+      const n = w.sim_terrain()
+      return new Uint8Array(w.memory.buffer, w.sim_terrain_ptr(), n).slice()
+    },
     fertilite: () => new Uint8Array(w.memory.buffer, w.sim_fertilite_ptr(), w.sim_fertilite_len()).slice(),
   }
 }

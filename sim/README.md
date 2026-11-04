@@ -28,7 +28,7 @@ cargo test --release
 | `src/donnees.rs` | chargement et validation ; quantités en milli-unités, proportions en ppm (entiers) |
 | `src/monde.rs` | tiles passives, quartiers, bâtiments, **arêtes** (demi-arêtes dans 8 directions par tile, coûts 10 / 14, pas de croisement de diagonales) |
 | `src/reseau.rs` | segments (arêtes), Dijkstra à coûts entiers borné par `distance_max`, chemins précalculés entre lieux |
-| `src/terrain.rs` | générateur de terrain (docs/07 §3, §10) : altitude, rivières par écoulement, terrains par parts, site du village |
+| `src/terrain.rs` | générateur de terrain (docs/07 §3, §10) : altitude, rivières par écoulement, terrains par parts, site du village. Conversion (défrichement, drainage) et ponts : `simulation.rs`, `poc.toml` `[terrains]` et `[eau]` (docs/07 §12) |
 | `src/village.rs` | génération déterministe (croix de chemins sur un site dégagé du terrain, qualité locale du sol), dimensionnée près de l'équilibre |
 | `src/simulation.rs` | jour : différés → contrats (pro rata) → budget de jours de travail → production → consommation → jauges de croissance → péremption ; saison : extension (chantiers de maison, de défrichement, de hameau) |
 | `tests/terrain.rs` | déterminisme du terrain, parts, cours d'eau jusqu'au bord, site du village, rien de bâti sur un terrain fermé |

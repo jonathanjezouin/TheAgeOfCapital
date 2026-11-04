@@ -314,7 +314,7 @@ fn essayer(
         }
     }
     let libre = |m: &Monde, t: usize| {
-        m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0 && m.tuiles[t].constructible()
+        m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0 && m.tuiles[t].ouvert()
     };
 
     // Hameaux : au plus près du centre, de part et d'autre des bras (k = 1 puis 2).

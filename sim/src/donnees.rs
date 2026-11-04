@@ -43,6 +43,7 @@ struct Brut {
     /// Propriétés de chaque terrain (docs/07 §3), par nom de terrain.
     #[serde(default)]
     terrains: BTreeMap<String, BrutTerrain>,
+    eau: Option<BrutEau>,
 }
 
 #[derive(Deserialize)]
@@ -50,6 +51,21 @@ struct BrutTerrain {
     /// Multiplicateur du travail des chantiers (maison, hameau, défrichement) sur ce terrain.
     #[serde(default = "un_f64")]
     cout_construction: f64,
+    /// Conversion du terrain par un chantier (défrichement, drainage) : terrain obtenu, travail par tile
+    /// (pop-jours) et matériau (bois) récupéré par tile.
+    conversion_vers: Option<String>,
+    #[serde(default)]
+    conversion_pop_jours: f64,
+    #[serde(default)]
+    conversion_bois: f64,
+}
+
+/// Franchissement des cours d'eau : travail ajouté au chantier de la route, en pop-jours par tile d'eau.
+#[derive(Deserialize)]
+struct BrutEau {
+    pont_ruisseau: f64,
+    pont_riviere: f64,
+    pont_fleuve: f64,
 }
 
 fn un_f64() -> f64 {
@@ -126,8 +142,21 @@ struct BrutExtension {
     /// Pénalité d'une tile hors du terroir de la terre.
     #[serde(default = "penalite_terroir_defaut")]
     penalite_terroir: f64,
+    /// Malus (en part de la fertilité) par pop-jour de conversion d'une tile (défrichement, drainage) : on ne
+    /// défriche une forêt que faute de terre ouverte à portée.
+    #[serde(default = "poids_conversion_defaut")]
+    poids_conversion: f64,
+    /// Travail (pop-jours) qui vaut une unité de distance de route dans le choix d'un site (pont, conversion).
+    #[serde(default = "pop_jours_par_unite_defaut")]
+    pop_jours_par_unite_route: f64,
 }
 
+fn poids_conversion_defaut() -> f64 {
+    0.0025
+}
+fn pop_jours_par_unite_defaut() -> f64 {
+    10.0
+}
 fn poids_voisins_defaut() -> f64 {
     0.15
 }
@@ -224,6 +253,9 @@ struct BrutBatiment {
     /// Travail requis selon le terrain (1,0 par défaut) : multiplie `jours_par_tile_an`.
     #[serde(default)]
     travail_terrain: BTreeMap<String, f64>,
+    /// La terre garde le terrain de ses tiles (forêt exploitée sur forêt) : pas de conversion ni de défrichement.
+    #[serde(default)]
+    conserve_terrain: bool,
     #[serde(default)]
     domestique: bool,
     cout_creation: Option<BrutCout>,
@@ -318,6 +350,10 @@ pub struct ParamsExtension {
     pub poids_distance_ppm: i64,
     /// Malus d'une tile hors du terroir de la terre (hameau le plus proche différent).
     pub penalite_terroir_ppm: i64,
+    /// Malus par pop-jour de conversion d'une tile (ppm de fertilité).
+    pub poids_conversion_ppm: i64,
+    /// Milli pop-jours de travail (pont, conversion) qui valent une unité de coût de route dans le choix d'un site.
+    pub travail_par_unite_route_milli: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -387,6 +423,8 @@ pub struct TypeBatiment {
     pub aptitude_ppm: [i64; 5],
     /// Travail requis par terrain (ppm de 1,0) : multiplie `jours_par_tile_an`.
     pub travail_terrain_ppm: [i64; 5],
+    /// La terre garde le terrain de ses tiles : pas de conversion (forêt exploitée sur forêt).
+    pub conserve_terrain: bool,
     /// Travail domestique (docs/02 §8.4) : pas de poste ; la main-d'œuvre vient du temps libre des
     /// pops du hameau. `pops` est alors le travail requis à plein régime, en pop-jours par jour.
     pub domestique: bool,
@@ -465,6 +503,21 @@ pub struct Catalogue {
     pub batiments: Vec<TypeBatiment>,
     /// Multiplicateur du travail des chantiers par terrain (ppm de 1,0, indexé par `Terrain as usize`).
     pub cout_terrain_ppm: [i64; 5],
+    /// Conversion d'un terrain par un chantier (défrichement d'une forêt, drainage d'un marais), par terrain.
+    pub conversion: [Option<Conversion>; 5],
+    /// Travail d'un pont ou d'un gué (milli pop-jours) par tile d'eau traversée, indexé par `Eau as usize`.
+    pub pont_milli: [Qte; 4],
+}
+
+/// Conversion d'un terrain par un chantier (docs/07 §12).
+#[derive(Clone, Copy, Debug)]
+pub struct Conversion {
+    /// Index du terrain obtenu (`Terrain as usize`).
+    pub vers: usize,
+    /// Travail par tile (milli pop-jours).
+    pub travail: Qte,
+    /// Bois récupéré par tile (milli-unités).
+    pub bois: Qte,
 }
 
 pub const DONNEES_POC: &str = include_str!("../donnees/poc.toml");
@@ -544,6 +597,7 @@ impl Catalogue {
                 Ok(t)
             };
             batiments.push(TypeBatiment {
+                conserve_terrain: x.conserve_terrain,
                 aptitude_ppm: table(&x.aptitude, "aptitude")?,
                 travail_terrain_ppm: table(&x.travail_terrain, "travail_terrain")?,
                 traversable: x.traversable,
@@ -609,6 +663,8 @@ impl Catalogue {
                 tuiles_par_defrichement: b.extension.tuiles_par_defrichement,
                 poids_voisins_ppm: (b.extension.poids_voisins * PPM as f64).round() as i64,
                 poids_distance_ppm: (b.extension.poids_distance * PPM as f64).round() as i64,
+                poids_conversion_ppm: (b.extension.poids_conversion * PPM as f64).round() as i64,
+                travail_par_unite_route_milli: en_milli(b.extension.pop_jours_par_unite_route).max(1),
                 penalite_terroir_ppm: (b.extension.penalite_terroir * PPM as f64).round() as i64,
             },
             habitats,
@@ -635,6 +691,24 @@ impl Catalogue {
             besoins: besoins_de(&b.besoins)?,
             ressources,
             batiments,
+            conversion: {
+                let mut t: [Option<Conversion>; 5] = [None; 5];
+                for (nom, v) in &b.terrains {
+                    let i = Terrain::index_de(nom).ok_or_else(|| format!("terrain inconnu « {nom} »"))?;
+                    if let Some(vers) = &v.conversion_vers {
+                        let j = Terrain::index_de(vers).ok_or_else(|| format!("terrain {nom} : conversion vers « {vers} » inconnue"))?;
+                        if !Terrain::TOUS[j].ouvert() || v.conversion_pop_jours <= 0.0 || v.conversion_bois < 0.0 {
+                            return Err(format!("terrain {nom} : la conversion doit viser un terrain ouvert, avec un travail > 0"));
+                        }
+                        t[i] = Some(Conversion { vers: j, travail: en_milli(v.conversion_pop_jours), bois: en_milli(v.conversion_bois) });
+                    }
+                }
+                t
+            },
+            pont_milli: match &b.eau {
+                Some(e) => [0, en_milli(e.pont_ruisseau), en_milli(e.pont_riviere), en_milli(e.pont_fleuve)],
+                None => [0, 0, 0, 0],
+            },
             cout_terrain_ppm: {
                 let mut t = [PPM; 5];
                 for (nom, v) in &b.terrains {
@@ -769,6 +843,24 @@ impl Catalogue {
             .map(|&i| t.jours_par_tile_an * t.travail_terrain_ppm[tuiles[i].terrain as usize] / PPM)
             .sum();
         jours * 1000 / self.travail.jours_personne_par_pop_an
+    }
+
+    /// Terrain d'une tile une fois la terre de ce type installée : la conversion (défrichement, drainage) s'applique
+    /// sauf si la terre garde son terrain (forêt exploitée).
+    pub fn terrain_apres(&self, type_id: usize, terrain: Terrain) -> Terrain {
+        if self.batiments[type_id].conserve_terrain {
+            return terrain;
+        }
+        self.conversion[terrain as usize].map_or(terrain, |c| Terrain::TOUS[c.vers])
+    }
+
+    /// Travail de conversion (milli pop-jours) des tiles `tuiles` pour une terre de ce type ; `None` : habitat,
+    /// qui convertit toujours.
+    pub fn travail_conversion(&self, type_id: Option<usize>, tuiles: &[usize], t: &[crate::monde::Tuile]) -> Qte {
+        if type_id.map_or(false, |ty| self.batiments[ty].conserve_terrain) {
+            return 0;
+        }
+        tuiles.iter().map(|&i| self.conversion[t[i].terrain as usize].map_or(0, |c| c.travail)).sum()
     }
 
     /// Rendement de la tile pour une terre de ce type (ppm de 1,0) : fertilité locale × aptitude du terrain.

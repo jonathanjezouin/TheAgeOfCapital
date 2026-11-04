@@ -31,15 +31,19 @@ const sol = computed(() => {
 })
 // Pour une tile libre constructible : rendement de chaque type de terre (qualité du sol × aptitude du terrain)
 // et surcoût de construction.
+// Terrain une fois la conversion faite (défrichement, drainage), sauf pour une terre qui garde son terrain.
+const apres = (b, t) => (b.conserve_terrain || store.meta.conversion_vers[t] < 0 ? t : store.meta.conversion_vers[t])
 const rendements = computed(() => {
   const s = store.selection, m = store.meta
   if (!s || !m || !store.terrain || !store.fertilite) return []
   const t = store.terrain[(s.y * m.largeur + s.x) * 2]
   const fert = (store.fertilite[s.y * m.largeur + s.x] ?? 0) / 100
-  return m.batiments.filter((b) => b.fertile).map((b) => ({ nom: TYPES[b.nom] ?? b.nom, rendement: fert * b.aptitude[t], travail: b.travail_terrain[t] }))
+  return m.batiments.filter((b) => b.fertile).map((b) => ({ nom: TYPES[b.nom] ?? b.nom, rendement: fert * b.aptitude[apres(b, t)], travail: b.travail_terrain[apres(b, t)] }))
 })
 const coutTerrain = computed(() => (store.meta && sol.value ? store.meta.cout_terrain[store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2]] : 1))
-const sansBatir = computed(() => !!sol.value && (sol.value.eau !== '' || ['Forêt', 'Plaine marécageuse'].includes(sol.value.nom)))
+const sansBatir = computed(() => !!sol.value && sol.value.eau !== '')
+const typeTerrain = computed(() => (store.selection && store.terrain && store.meta ? store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2] : 0))
+const eauTile = computed(() => (store.selection && store.terrain && store.meta ? store.terrain[(store.selection.y * store.meta.largeur + store.selection.x) * 2 + 1] & 3 : 0))
 
 const pops = computed(() => {
   const en = entite.value, e = store.etat
@@ -102,12 +106,15 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
       <!-- Terre libre / chemin -->
       <div v-if="entite.genre === 'vide'">
         <h2>{{ sol?.eau ? sol.eau : sansBatir ? sol.nom : 'Terre libre' }}</h2>
-        <p v-if="sol?.eau" class="doux">Cours d'eau : il coupe le territoire, on ne le franchit pas encore (ponts à venir). Un point d'eau attire l'habitat.</p>
-        <p v-else-if="sansBatir" class="doux">{{ sol.texte }} Pas encore constructible : il faudra défricher ou drainer.</p>
+        <template v-if="sol?.eau">
+          <p class="doux">Cours d'eau : il coupe le territoire. Une route ne le franchit que par un pont ou un gué, au prix d'un travail ajouté au chantier. Un point d'eau attire l'habitat.</p>
+          <div class="ligne"><span>Pont ou gué</span><span>{{ un(store.meta.pont[eauTile], 0) }} pop-jours</span></div>
+        </template>
         <template v-else>
           <p class="doux"><b>{{ sol?.nom }}</b>. {{ sol?.texte }} Un défrichement doit rester à portée d'un hameau ({{ store.meta.distance_max }} tiles de chemin au plus).</p>
           <div class="ligne" v-for="r in rendements" :key="r.nom"><span>{{ r.nom }}</span><span>rendement {{ Math.round(r.rendement * 100) }} % · travail ×{{ un(r.travail, 1) }}</span></div>
           <div class="ligne"><span>Construire (maison, défrichement)</span><span>travail ×{{ un(coutTerrain, 1) }}</span></div>
+          <div class="ligne" v-if="store.meta.conversion_travail[typeTerrain] > 0"><span>{{ sol.nom === 'Forêt' ? 'Défricher' : 'Drainer' }} (rendements ci-dessus : après conversion)</span><span>{{ un(store.meta.conversion_travail[typeTerrain], 0) }} pop-jours · {{ un(store.meta.conversion_bois[typeTerrain], 0) }} bois récupérés</span></div>
         </template>
       </div>
       <div v-else-if="entite.genre === 'chemin'">

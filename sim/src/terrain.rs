@@ -49,10 +49,9 @@ impl Terrain {
         }
     }
 
-    /// Peut-on bâtir (hameau, terre exploitée, route) sur ce terrain dans l'état actuel du jeu ?
-    /// Forêts (défrichement) et marais (drainage) restent fermés jusqu'à ce que ces chantiers existent
-    /// (docs/07 §8, étape 3).
-    pub fn constructible(self) -> bool {
+    /// Terrain **ouvert** : on peut y bâtir ou y cultiver sans travail de conversion. Forêt et marais exigent
+    /// d'abord un défrichement ou un drainage (docs/07 §3.4, §12).
+    pub fn ouvert(self) -> bool {
         matches!(self, Terrain::Plaine | Terrain::PlaineRiche | Terrain::Rocailleuse)
     }
 }
@@ -120,8 +119,9 @@ pub struct CarteTerrain {
 }
 
 impl CarteTerrain {
-    pub fn constructible(&self, i: usize) -> bool {
-        self.eau[i] == Eau::Aucune && self.terrain[i].constructible()
+    /// Tile ouverte : ni eau, ni forêt, ni marais (sans travail préalable).
+    pub fn ouvert(&self, i: usize) -> bool {
+        self.eau[i] == Eau::Aucune && self.terrain[i].ouvert()
     }
 }
 
@@ -422,12 +422,12 @@ pub fn candidats_centre(c: &CarteTerrain, rayon: usize, n: usize) -> Vec<(i64, u
     if w < 2 * rayon + 4 || h < 2 * rayon + 4 {
         return Vec::new();
     }
-    // Image intégrale des tiles non constructibles.
+    // Image intégrale des tiles non ouvertes.
     let stride = w + 1;
     let mut somme = vec![0i32; (w + 1) * (h + 1)];
     for y in 0..h {
         for x in 0..w {
-            let bloque = i32::from(!c.constructible(y * w + x));
+            let bloque = i32::from(!c.ouvert(y * w + x));
             somme[(y + 1) * stride + x + 1] = bloque + somme[y * stride + x + 1] + somme[(y + 1) * stride + x] - somme[y * stride + x];
         }
     }

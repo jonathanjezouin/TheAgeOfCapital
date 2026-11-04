@@ -75,7 +75,7 @@ fn le_site_du_village_est_degage_et_a_de_l_eau_a_portee() {
         for dy in -r..=r {
             for dx in -r..=r {
                 let i = (y as i64 + dy) as usize * 200 + (x as i64 + dx) as usize;
-                assert!(c.constructible(i), "graine {graine} : tile non constructible dans la fenêtre du village");
+                assert!(c.ouvert(i), "graine {graine} : tile non ouverte dans la fenêtre du village");
             }
         }
         let d = sim::terrain::distance_eau(200, 200, &c.eau)[y * 200 + x];
@@ -84,7 +84,7 @@ fn le_site_du_village_est_degage_et_a_de_l_eau_a_portee() {
 }
 
 #[test]
-fn rien_n_est_bati_ni_trace_sur_l_eau_la_foret_ou_le_marais() {
+fn rien_n_est_bati_sur_l_eau_et_les_routes_ne_la_franchissent_qu_en_pont() {
     for graine in [1u64, 2, 3] {
         let mut sim = generer(
             Catalogue::defaut(),
@@ -97,9 +97,13 @@ fn rien_n_est_bati_ni_trace_sur_l_eau_la_foret_ou_le_marais() {
         let m = &sim.monde;
         let mut bati = 0;
         for t in &m.tuiles {
-            if t.contenu != Contenu::Vide || t.aretes != 0 {
+            if t.contenu != Contenu::Vide {
                 bati += 1;
-                assert!(t.constructible(), "graine {graine} : bâti ou chemin sur un terrain fermé ({:?}, {:?})", t.terrain, t.eau);
+                assert!(t.constructible(), "graine {graine} : un lieu sur l'eau ({:?})", t.eau);
+            }
+            if t.aretes != 0 && t.eau != Eau::Aucune {
+                // Un pont : la tile d'eau n'est traversée que par des arêtes, jamais occupée.
+                assert_eq!(t.contenu, Contenu::Vide);
             }
         }
         assert!(bati > 60, "le village doit exister");
@@ -148,9 +152,15 @@ fn le_travail_requis_et_le_cout_de_construction_suivent_le_terrain() {
     assert_eq!(ty.travail_terrain_ppm[Terrain::Plaine as usize], PPM);
     assert!(ty.travail_terrain_ppm[Terrain::Marecageuse as usize] > ty.travail_terrain_ppm[Terrain::Rocailleuse as usize]);
     assert!(ty.travail_terrain_ppm[Terrain::Rocailleuse as usize] > PPM);
-    // Bâtir coûte plus cher sur terrain difficile.
+    // Bâtir coûte plus cher sur sol caillouteux ; forêt et marais demandent en plus une conversion (§12).
     assert_eq!(c.cout_terrain_ppm[Terrain::Plaine as usize], PPM);
-    assert!(c.cout_terrain_ppm[Terrain::Marecageuse as usize] > c.cout_terrain_ppm[Terrain::Rocailleuse as usize]);
+    assert!(c.cout_terrain_ppm[Terrain::Rocailleuse as usize] > PPM);
+    let (foret, marais) = (c.conversion[Terrain::Foret as usize].unwrap(), c.conversion[Terrain::Marecageuse as usize].unwrap());
+    assert!(foret.travail > marais.travail && marais.travail > 0);
+    assert!(foret.bois > 0 && marais.bois == 0);
+    assert_eq!(Terrain::TOUS[marais.vers], Terrain::PlaineRiche);
+    assert_eq!(Terrain::TOUS[foret.vers], Terrain::Plaine);
+    assert!(c.conversion[Terrain::Plaine as usize].is_none());
     // Le besoin de travail d'une terre de 4 tiles croît avec la part de tiles rocailleuses.
     let mut s = generer(Catalogue::defaut(), &ParamsVillage { graine: 1, ..Default::default() }).unwrap();
     let emprise: Vec<usize> = s.monde.batiments.iter().find(|b| b.type_id == champ).unwrap().emprise.iter().copied().take(4).collect();
@@ -184,7 +194,7 @@ fn les_nouveaux_champs_evitent_la_rocaille() {
         let mut s = generer(Catalogue::defaut(), &ParamsVillage { graine, ..Default::default() }).unwrap();
         let champ = s.cat.bat_id("champ").unwrap();
         let libres0: Vec<usize> = (0..s.monde.tuiles.len())
-            .filter(|&i| s.monde.tuiles[i].contenu == Contenu::Vide && s.monde.tuiles[i].aretes == 0 && s.monde.tuiles[i].constructible())
+            .filter(|&i| s.monde.tuiles[i].contenu == Contenu::Vide && s.monde.tuiles[i].aretes == 0 && s.monde.tuiles[i].ouvert())
             .collect();
         let ham = s.monde.quartiers[0].tuile;
         let (hx, hy) = s.monde.xy(ham);
@@ -209,4 +219,109 @@ fn les_nouveaux_champs_evitent_la_rocaille() {
     let (rc, rl) = (roc_champs as f64 / n_champs as f64, roc_libres as f64 / n_libres as f64);
     println!("part de rocailleuse : champs défrichés {rc:.3}, tiles libres à portée {rl:.3}");
     assert!(rc < rl, "champs {rc:.3} >= libres {rl:.3}");
+}
+
+// ---------- Défrichement, drainage et ponts (docs/07 §12) ----------
+
+fn village_graine(graine: u64) -> sim::Simulation {
+    generer(Catalogue::defaut(), &ParamsVillage { graine, ..Default::default() }).unwrap()
+}
+
+/// Centre du village : première tile de hameau.
+fn centre(s: &sim::Simulation) -> (usize, usize) {
+    s.monde.xy(s.monde.quartiers[0].tuile)
+}
+
+#[test]
+fn faute_de_terre_ouverte_on_defriche_la_foret_et_le_bois_revient_au_hameau() {
+    let mut s = village_graine(1);
+    let (hx, hy) = centre(&s);
+    // Toute la terre libre alentour est en forêt : plus aucune terre ouverte à portée.
+    for i in 0..s.monde.tuiles.len() {
+        let (x, y) = s.monde.xy(i);
+        let t = &mut s.monde.tuiles[i];
+        if x.abs_diff(hx).max(y.abs_diff(hy)) <= 30 && t.contenu == Contenu::Vide && t.aretes == 0 && t.eau == Eau::Aucune {
+            t.terrain = Terrain::Foret;
+        }
+    }
+    let forets_avant = s.monde.tuiles.iter().filter(|t| t.terrain == Terrain::Foret).count();
+    for _ in 0..150 {
+        s.avancer(365);
+    }
+    let converties = s.evenements.iter().filter(|e| e.texte.starts_with("Terrain converti")).count();
+    assert!(converties > 0, "aucun défrichement en 150 ans");
+    let forets_apres = s.monde.tuiles.iter().filter(|t| t.terrain == Terrain::Foret).count();
+    assert!(forets_apres < forets_avant, "{forets_apres} >= {forets_avant}");
+    // Les tiles défrichées sont devenues de la plaine, bâties ou cultivées.
+    let defrichees = s.monde.tuiles.iter().filter(|t| t.terrain == Terrain::Plaine && t.contenu != Contenu::Vide).count();
+    assert!(defrichees > 0);
+}
+
+#[test]
+fn la_foret_exploitee_garde_sa_foret() {
+    let c = Catalogue::defaut();
+    let fe = c.bat_id("foret_exploitee").unwrap();
+    assert!(c.batiments[fe].conserve_terrain);
+    assert_eq!(c.terrain_apres(fe, Terrain::Foret), Terrain::Foret);
+    // Un champ, lui, convertit la forêt en plaine et le marais en plaine riche.
+    let champ = c.bat_id("champ").unwrap();
+    assert_eq!(c.terrain_apres(champ, Terrain::Foret), Terrain::Plaine);
+    assert_eq!(c.terrain_apres(champ, Terrain::Marecageuse), Terrain::PlaineRiche);
+    assert_eq!(c.terrain_apres(champ, Terrain::Rocailleuse), Terrain::Rocailleuse);
+    // Pas de travail de conversion pour la forêt exploitée sur forêt.
+    let s = village_graine(1);
+    let t: Vec<usize> = vec![0];
+    assert_eq!(c.travail_conversion(Some(fe), &t, &s.monde.tuiles), 0);
+}
+
+#[test]
+fn une_route_franchit_une_riviere_par_un_pont_quand_la_terre_manque_de_ce_cote() {
+    let mut s = village_graine(1);
+    let (hx, hy) = centre(&s);
+    // Portée élargie : l'extrémité du village est déjà loin des hameaux.
+    s.cat.infra.distance_max = 200;
+    // Ouest : forêt (1 000 pop-jours par tile à défricher). Une rivière juste au-delà du village, à l'est, et de
+    // la plaine de l'autre côté.
+    let xr = (0..s.monde.tuiles.len())
+        .filter(|&i| s.monde.tuiles[i].contenu != Contenu::Vide || s.monde.tuiles[i].aretes != 0)
+        .map(|i| s.monde.xy(i).0)
+        .max()
+        .unwrap()
+        + 2;
+    for i in 0..s.monde.tuiles.len() {
+        let (x, y) = s.monde.xy(i);
+        if y.abs_diff(hy) > 30 || x.abs_diff(hx) > 30 {
+            continue;
+        }
+        let t = &mut s.monde.tuiles[i];
+        if t.contenu != Contenu::Vide || t.aretes != 0 {
+            continue;
+        }
+        t.eau = Eau::Aucune;
+        t.aval = 255;
+        if x == xr {
+            t.eau = Eau::Riviere;
+        } else if x > xr {
+            t.terrain = Terrain::Plaine;
+        } else {
+            t.terrain = Terrain::Foret;
+        }
+    }
+    for _ in 0..100 {
+        s.avancer(365);
+    }
+    let pont = s.monde.tuiles.iter().enumerate().any(|(i, t)| t.eau == Eau::Riviere && t.aretes != 0 && s.monde.xy(i).0 == xr);
+    assert!(pont, "aucun pont sur la rivière");
+    assert!(s.evenements.iter().any(|e| e.texte.contains("franchissement de cours d'eau")), "journal sans pont");
+    // Rien n'est jamais bâti sur la rivière elle-même.
+    assert!(s.monde.tuiles.iter().all(|t| t.eau == Eau::Aucune || t.contenu == Contenu::Vide));
+}
+
+#[test]
+fn le_travail_des_ponts_suit_le_gabarit() {
+    let c = Catalogue::defaut();
+    assert_eq!(c.pont_milli[Eau::Aucune as usize], 0);
+    assert!(c.pont_milli[Eau::Ruisseau as usize] > 0);
+    assert!(c.pont_milli[Eau::Riviere as usize] > c.pont_milli[Eau::Ruisseau as usize]);
+    assert!(c.pont_milli[Eau::Fleuve as usize] > c.pont_milli[Eau::Riviere as usize]);
 }

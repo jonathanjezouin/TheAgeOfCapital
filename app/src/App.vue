@@ -46,6 +46,9 @@ function lireCarte(etat) {
   const W = store.meta.largeur
   const grille = new Map(c.tuiles.map((t) => [t.y * W + t.x, t]))
   store.carte = markRaw({ version: c.version, tuiles: c.tuiles, grille })
+  // Un défrichement ou un drainage change le terrain : on le relit et on repeint les tiles concernées.
+  store.terrain = sim.terrain()
+  carte.majSol(store.terrain)
   carte.appliquerCarte(c, etat)
 }
 

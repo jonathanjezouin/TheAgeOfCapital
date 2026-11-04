@@ -2,7 +2,8 @@
 //! et réorientation de la main-d'œuvre selon le besoin (docs/02 §3).
 
 use crate::donnees::{mul_div, Catalogue, ParamsDemo, Qte, Traversabilite, PPM};
-use crate::monde::{cout_dir, Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier};
+use crate::terrain::Eau;
+use crate::monde::{Tuile, cout_dir, Batiment, Chantier, Cible, Contenu, Limitant, Monde, Quartier};
 use crate::reseau::Reseau;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -1093,6 +1094,44 @@ impl Simulation {
         };
     }
 
+    /// Convertit le terrain des tiles `tuiles` à la fin d'un chantier (défrichement d'une forêt, drainage d'un
+    /// marais, docs/07 §12) : le terrain devient celui de la conversion, et le bois récupéré va au hameau le plus
+    /// proche. `conserve` : la terre garde son terrain (forêt exploitée) ; rien à faire.
+    fn convertir(&mut self, tuiles: &[usize], conserve: bool) {
+        if conserve {
+            return;
+        }
+        let (mut bois, mut forets, mut marais) = (0, 0, 0);
+        for &t in tuiles {
+            let Some(c) = self.cat.conversion[self.monde.tuiles[t].terrain as usize] else {
+                continue;
+            };
+            match self.monde.tuiles[t].terrain {
+                crate::terrain::Terrain::Foret => forets += 1,
+                _ => marais += 1,
+            }
+            self.monde.tuiles[t].terrain = crate::terrain::Terrain::TOUS[c.vers];
+            bois += c.bois;
+        }
+        if forets + marais == 0 {
+            return;
+        }
+        let Some(&t0) = tuiles.first() else { return };
+        let (x, y) = self.monde.xy(t0);
+        if let Some(q) = self.terroir(t0) {
+            let mat = self.cat.extension.materiau;
+            self.distribuer_hameau(q, mat, bois);
+        }
+        let mut quoi = Vec::new();
+        if forets > 0 {
+            quoi.push(format!("{forets} tiles de forêt défrichées"));
+        }
+        if marais > 0 {
+            quoi.push(format!("{marais} tiles de marais drainées"));
+        }
+        self.journal(format!("Terrain converti près de ({x}, {y}) : {} ({} bois récupérés)", quoi.join(", "), bois / 1000));
+    }
+
     /// Met en service les chantiers dont le travail est achevé : l'équipe devient la première main-d'œuvre.
     fn terminer_chantiers(&mut self) {
         let finis: Vec<usize> = (0..self.monde.batiments.len())
@@ -1113,6 +1152,8 @@ impl Simulation {
                 Cible::Terre(t) => {
                     self.monde.batiments[b].type_id = t;
                     self.monde.batiments[b].equipe = 0;
+                    let emprise = self.monde.batiments[b].emprise.clone();
+                    self.convertir(&emprise, self.cat.batiments[t].conserve_terrain);
                     let nom = self.cat.batiments[t].nom.clone();
                     let n = self.monde.batiments[b].emprise.len();
                     self.journal(format!(
@@ -1128,6 +1169,8 @@ impl Simulation {
                     }
                     self.monde.batiments[terre].emprise.extend(nouvelles.iter().copied());
                     self.monde.batiments[b].equipe = 0;
+                    let conserve = self.cat.batiments[self.monde.batiments[terre].type_id].conserve_terrain;
+                    self.convertir(&nouvelles, conserve);
                     let mat = self.cat.extension.materiau;
                     let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
                     self.monde.batiments[terre].stock_entree[mat] += reste;
@@ -1143,6 +1186,8 @@ impl Simulation {
                     let (cap, atelier, nom) = (h.capacite_fondation, h.atelier, h.nom.clone());
                     self.monde.quartiers[q].capacite_pops = cap;
                     self.monde.batiments[b].equipe = 0;
+                    let site = self.monde.batiments[b].tuile;
+                    self.convertir(&[site], false);
                     // Le matériau resté sur le chantier revient au hameau.
                     let mat = self.cat.extension.materiau;
                     let reste = std::mem::take(&mut self.monde.batiments[b].stock_entree[mat]);
@@ -1610,15 +1655,25 @@ impl Simulation {
                        dist: i64,
                        best: &mut Option<((i64, i64, i64, usize), Site)>| {
             let fert = self.fert_pour(type_id, tuile);
+            // Travaux propres au site : ponts et gués de la route neuve, conversion du terrain (défrichement,
+            // drainage). Ils pèsent dans le choix, sans l'interdire : on ne franchit une rivière ou ne défriche
+            // une forêt que faute de mieux à portée.
+            let travaux = self.travail_ponts(route)
+                + self.cat.travail_conversion(type_id, &[tuile], &self.monde.tuiles);
             let cle = if fertile {
                 (
-                    -(fert * 10_000 / (dist + 10)),
+                    -(fert * 10_000 / (dist + 10) * 100_000 / (100_000 + travaux)),
                     dist,
                     route.len() as i64,
                     tuile,
                 )
             } else {
-                (dist, route.len() as i64, fert, tuile)
+                (
+                    dist + travaux / self.cat.extension.travail_par_unite_route_milli,
+                    route.len() as i64,
+                    fert,
+                    tuile,
+                )
             };
             if best.as_ref().map_or(true, |(k, _)| cle < *k) {
                 *best = Some((
@@ -1635,7 +1690,8 @@ impl Simulation {
         // type est traversable (habitat) ; elle contourne terres et chantiers (docs/02 §10.1) et ne rejoint
         // pas une autre arête ; le site lui-même doit être libre.
         let n = self.monde.tuiles.len();
-        let mut cout = vec![i64::MAX; n];
+        let mut cout = vec![i64::MAX; n]; // coût d'ordre (distance + pénalité des ponts)
+        let mut reel = vec![i64::MAX; n]; // distance réelle (arêtes) : celle qui compte pour la portée
         let mut prec = vec![usize::MAX; n];
         let mut racine = vec![usize::MAX; n];
         let mut tas: std::collections::BinaryHeap<std::cmp::Reverse<(i64, usize)>> =
@@ -1647,6 +1703,7 @@ impl Simulation {
         for p in 0..n {
             if d[p] != i64::MAX {
                 cout[p] = d[p];
+                reel[p] = d[p];
                 racine[p] = p;
                 tas.push(std::cmp::Reverse((d[p], p)));
             }
@@ -1662,16 +1719,25 @@ impl Simulation {
                 if self.monde.tuiles[v].aretes != 0 || !self.monde.peut_relier(t, v) {
                     continue;
                 }
-                // Traversabilité (docs/02 §10.1) : une route neuve contourne les terres et les chantiers.
-                let surcout = match self.traversabilite(v) {
-                    Traversabilite::Libre => 0,
-                    Traversabilite::Couteuse => SURCOUT_TRAVERSEE,
-                    Traversabilite::Interdite => continue,
+                // Une route neuve franchit un cours d'eau par un pont (travail ajouté au chantier, pénalité d'ordre
+                // pour préférer un détour raisonnable) ; sinon elle contourne les terres et les chantiers
+                // (traversabilité, docs/02 §10.1).
+                let eau = self.monde.tuiles[v].eau;
+                let (surcout, penalite) = if eau != Eau::Aucune {
+                    (0, self.cat.pont_milli[eau as usize] / self.cat.extension.travail_par_unite_route_milli)
+                } else {
+                    match self.traversabilite(v) {
+                        Traversabilite::Libre => (0, 0),
+                        Traversabilite::Couteuse => (SURCOUT_TRAVERSEE, 0),
+                        Traversabilite::Interdite => continue,
+                    }
                 };
-                let nc = c + cout_dir(dir) + surcout;
-                let ok = if fertile { nc <= dmax } else { nc - d[racine[t]] <= limite_route };
+                let nr = reel[t] + cout_dir(dir) + surcout;
+                let nc = c + cout_dir(dir) + surcout + penalite;
+                let ok = if fertile { nr <= dmax } else { nr - d[racine[t]] <= limite_route };
                 if ok && nc < cout[v] {
                     cout[v] = nc;
+                    reel[v] = nr;
                     prec[v] = t;
                     racine[v] = racine[t];
                     tas.push(std::cmp::Reverse((nc, v)));
@@ -1683,7 +1749,7 @@ impl Simulation {
                 continue;
             }
             let r = racine[v];
-            if !desservi(r, cout[v] - d[r]) {
+            if !desservi(r, reel[v] - d[r]) {
                 continue;
             }
             let mut route: Vec<usize> = Vec::new();
@@ -1693,17 +1759,14 @@ impl Simulation {
                 t = prec[t];
             }
             route.reverse();
-            essayer(v, r, &route, cout[v], &mut best);
+            essayer(v, r, &route, reel[v], &mut best);
         }
         best.map(|(_, s)| s)
     }
 
     /// Traversabilité d'une tile par une route neuve, selon son contenu (docs/02 §10.1).
     pub fn traversabilite(&self, t: usize) -> Traversabilite {
-        // Eau, forêt et marais ne se traversent pas (pas de pont ni de défrichement dans cette étape, docs/07 §3).
-        if !self.monde.tuiles[t].constructible() {
-            return Traversabilite::Interdite;
-        }
+        // L'eau se franchit par un pont (voir `meilleur_site`) ; forêt et marais, par un chemin comme le reste.
         match self.monde.tuiles[t].contenu {
             Contenu::Vide | Contenu::Quartier(_) => Traversabilite::Libre,
             Contenu::Batiment(b) => self.cat.batiments[self.monde.batiments[b].type_id].traversable,
@@ -1781,7 +1844,9 @@ impl Simulation {
                         .filter_map(|&e| self.monde.voisin(v, e))
                         .filter(|w| occupees.contains(w))
                         .count() as i64;
-                    let mut score = self.fert_pour(type_id, v) + voisins * ext.poids_voisins_ppm;
+                    let mut score = self.fert_pour(type_id, v) + voisins * ext.poids_voisins_ppm
+                        - self.cat.travail_conversion(type_id, &[v], &self.monde.tuiles) / 1000
+                            * ext.poids_conversion_ppm;
                     if let Some(h) = hameau {
                         score -= self.distance_tiles(v, self.monde.quartiers[h].tuile)
                             * ext.poids_distance_ppm;
@@ -1847,10 +1912,11 @@ impl Simulation {
     /// de chaque tile, docs/07 §3.3) et matériau par tile, équipe du chantier.
     fn cout_defrichement(&self, type_id: usize, tuiles: &[usize]) -> Option<crate::donnees::CoutCreation> {
         let c = self.cat.batiments[type_id].cout_creation.clone()?;
-        let travail = tuiles
+        let travail: Qte = tuiles
             .iter()
             .map(|&t| c.travail * self.cat.cout_terrain_ppm[self.monde.tuiles[t].terrain as usize] / PPM)
             .sum();
+        let travail = travail + self.cat.travail_conversion(Some(type_id), tuiles, &self.monde.tuiles);
         Some(crate::donnees::CoutCreation {
             travail,
             materiau: c.materiau * tuiles.len() as i64,
@@ -1860,16 +1926,27 @@ impl Simulation {
 
     /// Coût d'un chantier de logement sur la tile `tuile` : le travail suit le terrain.
     fn cout_logement(&self, mut cout: crate::donnees::CoutCreation, tuile: usize) -> crate::donnees::CoutCreation {
-        cout.travail = cout.travail * self.cat.cout_terrain_ppm[self.monde.tuiles[tuile].terrain as usize] / PPM;
+        cout.travail = cout.travail * self.cat.cout_terrain_ppm[self.monde.tuiles[tuile].terrain as usize] / PPM
+            + self.cat.travail_conversion(None, &[tuile], &self.monde.tuiles);
         cout
     }
 
-    /// Rendement d'une tile pour une terre de ce type (fertilité × aptitude du terrain), ou fertilité seule.
+    /// Rendement d'une tile pour une terre de ce type, une fois le terrain converti (défrichement, drainage),
+    /// ou fertilité seule.
     fn fert_pour(&self, type_id: Option<usize>, t: usize) -> i64 {
+        let tu = self.monde.tuiles[t];
         match type_id {
-            Some(ty) => self.cat.rendement_tile(ty, &self.monde.tuiles[t]),
-            None => self.monde.tuiles[t].fertilite_ppm,
+            Some(ty) => {
+                let apres = Tuile { terrain: self.cat.terrain_apres(ty, tu.terrain), ..tu };
+                self.cat.rendement_tile(ty, &apres)
+            }
+            None => tu.fertilite_ppm,
         }
+    }
+
+    /// Travail des ponts et gués d'une route neuve : une somme par tile d'eau traversée (milli pop-jours).
+    fn travail_ponts(&self, route: &[usize]) -> Qte {
+        route.iter().map(|&t| self.cat.pont_milli[self.monde.tuiles[t].eau as usize]).sum()
     }
 
     /// Défricher pour la ressource d'un type de terre : d'abord agrandir une terre existante du même
@@ -1895,9 +1972,32 @@ impl Simulation {
             candidates.push((-self.fert_pour(Some(type_id), v) * 1000 / (ch.cout + 10), b));
         }
         candidates.sort();
-        for &(_, b) in &candidates {
-            if self.lancer_extension(centre, b, motif) {
-                return true;
+        // Agrandir une terre est moins cher qu'en fonder une (pas de route) tant que le terrain est ouvert ; si
+        // l'agrandissement exige de défricher ou de drainer, on compare avec une terre neuve (pont compris).
+        let mut etendre = !candidates.is_empty();
+        if let Some(&(_, b0)) = candidates.first() {
+            let tuiles = self.agrandir(
+                &self.monde.batiments[b0].emprise,
+                (self.cat.extension.tuiles_par_defrichement as usize)
+                    .min(self.cat.batiments[type_id].emprise_max as usize - self.monde.batiments[b0].emprise.len().min(self.cat.batiments[type_id].emprise_max as usize)),
+                Some(centre),
+                Some(type_id),
+            );
+            let conversion = self.cat.travail_conversion(Some(type_id), &tuiles, &self.monde.tuiles);
+            if conversion > 0 {
+                if let (Some(c_ext), Some((_, _, c_terre, _))) =
+                    (self.cout_defrichement(type_id, &tuiles), self.plan_terre(centre, type_id))
+                {
+                    etendre = c_ext.travail <= c_terre.travail * tuiles.len().max(1) as i64
+                        / self.cat.extension.tuiles_par_defrichement as i64;
+                }
+            }
+        }
+        if etendre {
+            for &(_, b) in &candidates {
+                if self.lancer_extension(centre, b, motif) {
+                    return true;
+                }
             }
         }
         self.lancer_terre(centre, type_id, motif)
@@ -1946,22 +2046,7 @@ impl Simulation {
     /// Fonde une terre : un bloc de `tuiles_par_defrichement` tiles contiguës, dont la tile « nœud »
     /// est reliée au réseau.
     fn lancer_terre(&mut self, centre: usize, type_id: usize, motif: &str) -> bool {
-        let k = self.cat.extension.tuiles_par_defrichement as usize;
-        let Some(cout_tile) = self.cat.batiments[type_id].cout_creation.clone() else {
-            return false;
-        };
-        let requis: Vec<Vec<usize>> = if cout_tile.materiau > 0 {
-            vec![vec![self.cat.extension.materiau]]
-        } else {
-            Vec::new()
-        };
-        let Some(site) = self.meilleur_site(centre, true, Some(type_id), &requis) else {
-            return false;
-        };
-        let reste = self.agrandir(&[site.tuile], k.saturating_sub(1), Some(centre), Some(type_id));
-        let mut emprise = vec![site.tuile];
-        emprise.extend(reste);
-        let Some(cout) = self.cout_defrichement(type_id, &emprise) else {
+        let Some((site, emprise, cout, ponts)) = self.plan_terre(centre, type_id) else {
             return false;
         };
         self.poser_site(&site);
@@ -1976,12 +2061,33 @@ impl Simulation {
         let (x, y) = self.monde.xy(site.tuile);
         let nom = self.cat.batiments[type_id].nom.clone();
         self.journal(format!(
-            "Chantier lancé : défricher {nom} ({} tiles) en ({x}, {y}) — {motif}",
-            emprise.len()
+            "Chantier lancé : défricher {nom} ({} tiles) en ({x}, {y}){} — {motif}",
+            emprise.len(),
+            if ponts > 0 { format!(", avec franchissement de cours d'eau ({} pop-jours de pont)", ponts / 1000) } else { String::new() }
         ));
         self.reconstruire_reseau();
         self.recruter(b, cout.equipe);
         true
+    }
+
+    /// Projet de fondation d'une terre : site, tiles, coût complet (défrichement, conversion du terrain,
+    /// ponts) et travail de pont. Ne modifie rien.
+    fn plan_terre(&self, centre: usize, type_id: usize) -> Option<(Site, Vec<usize>, crate::donnees::CoutCreation, Qte)> {
+        let k = self.cat.extension.tuiles_par_defrichement as usize;
+        let cout_tile = self.cat.batiments[type_id].cout_creation.clone()?;
+        let requis: Vec<Vec<usize>> = if cout_tile.materiau > 0 {
+            vec![vec![self.cat.extension.materiau]]
+        } else {
+            Vec::new()
+        };
+        let site = self.meilleur_site(centre, true, Some(type_id), &requis)?;
+        let reste = self.agrandir(&[site.tuile], k.saturating_sub(1), Some(centre), Some(type_id));
+        let mut emprise = vec![site.tuile];
+        emprise.extend(reste);
+        let mut cout = self.cout_defrichement(type_id, &emprise)?;
+        let ponts = self.travail_ponts(&site.route);
+        cout.travail += ponts;
+        Some((site, emprise, cout, ponts))
     }
 
     /// Une maison est-elle en chantier dans le hameau `q` ?
@@ -2086,7 +2192,9 @@ impl Simulation {
             return false;
         };
         // Le travail de fondation suit le terrain du site (docs/07 §3.3).
-        let cout = self.cout_logement(cout, site.tuile);
+        let mut cout = self.cout_logement(cout, site.tuile);
+        let ponts = self.travail_ponts(&site.route);
+        cout.travail += ponts;
         self.poser_site(&site);
         // Un hameau s'ajoute aux quartiers : les lieux « bâtiment » se décalent d'un cran.
         let nq = self.nq();
@@ -2123,7 +2231,8 @@ impl Simulation {
         let (x, y) = self.monde.xy(site.tuile);
         let nom = self.cat.habitats[habitat_id].nom.clone();
         self.journal(format!(
-            "Chantier lancé : bâtir un {nom} en ({x}, {y}) — {motif}"
+            "Chantier lancé : bâtir un {nom} en ({x}, {y}){} — {motif}",
+            if ponts > 0 { format!(", avec franchissement de cours d'eau ({} pop-jours de pont)", ponts / 1000) } else { String::new() }
         ));
         self.reconstruire_reseau();
         self.recruter(b, cout.equipe);

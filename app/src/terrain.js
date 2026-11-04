@@ -71,34 +71,64 @@ function couleurTerrain(t, px, py) {
   return [c[0] + grain * k + lent * 14, c[1] + grain * k + lent * 14, c[2] + grain * k + lent * 12]
 }
 
-/**
- * Construit l'image (canvas) du terrain de toute la carte.
- * @param {Uint8Array} donnees 2 octets par tile : terrain, puis eau (bits 0-1) et sens de l'aval (bits 2-4)
- */
-export function construireTerrain(donnees, largeur, hauteur) {
-  const W = largeur * PX, H = hauteur * PX
-  const canvas = document.createElement('canvas')
-  canvas.width = W
-  canvas.height = H
-  const ctx = canvas.getContext('2d', { willReadFrequently: false })
-  const img = ctx.createImageData(W, H)
+/** Peint le rectangle de pixels [px0, px1) × [py0, py1) du sol (sans les cours d'eau). */
+function peindreRect(ctx, donnees, largeur, hauteur, px0, py0, px1, py1) {
+  const w = px1 - px0, h = py1 - py0
+  const img = ctx.createImageData(w, h)
   const d = img.data
   const terrainDe = (x, y) => donnees[(Math.min(hauteur - 1, Math.max(0, y)) * largeur + Math.min(largeur - 1, Math.max(0, x))) * 2]
-  for (let py = 0; py < H; py++) {
-    for (let px = 0; px < W; px++) {
+  for (let py = py0; py < py1; py++) {
+    for (let px = px0; px < px1; px++) {
       // Bordure organique : on lit la tile à une position déformée par un bruit à deux échelles.
       const u = px / PX, v = py / PX
       const wu = u + (bruit(u * 2.1, v * 2.1, 21) - 0.5) * 0.9 + (bruit(u * 6, v * 6, 22) - 0.5) * 0.25
       const wv = v + (bruit(u * 2.1, v * 2.1, 23) - 0.5) * 0.9 + (bruit(u * 6, v * 6, 24) - 0.5) * 0.25
       const t = terrainDe(Math.floor(wu), Math.floor(wv))
       const [r, g, b] = couleurTerrain(t, px, py)
-      const k = (py * W + px) * 4
+      const k = ((py - py0) * w + (px - px0)) * 4
       d[k] = r; d[k + 1] = g; d[k + 2] = b; d[k + 3] = 255
     }
   }
-  ctx.putImageData(img, 0, 0)
-  tracerEau(ctx, donnees, largeur, hauteur)
-  return canvas
+  ctx.putImageData(img, px0, py0)
+}
+
+/**
+ * Construit les images du terrain de toute la carte : le sol (canvas opaque) et les cours d'eau (canvas transparent,
+ * posé au-dessus). Séparés pour que le sol puisse être repeint tile par tile quand un terrain est converti.
+ * @param {Uint8Array} donnees 2 octets par tile : terrain, puis eau (bits 0-1) et sens de l'aval (bits 2-4)
+ */
+export function construireTerrain(donnees, largeur, hauteur) {
+  const W = largeur * PX, H = hauteur * PX
+  const sol = document.createElement('canvas')
+  sol.width = W
+  sol.height = H
+  const ctx = sol.getContext('2d')
+  peindreRect(ctx, donnees, largeur, hauteur, 0, 0, W, H)
+  const eau = document.createElement('canvas')
+  eau.width = W
+  eau.height = H
+  tracerEau(eau.getContext('2d'), donnees, largeur, hauteur)
+  return { sol, eau }
+}
+
+/** Repeint le sol autour des tiles dont le terrain a changé (défrichement, drainage). Renvoie leur nombre. */
+export function repeindreTuiles(sol, anciennes, donnees, largeur, hauteur) {
+  const ctx = sol.getContext('2d')
+  const faits = new Set()
+  let n = 0
+  for (let i = 0; i < largeur * hauteur; i++) {
+    if (anciennes[i * 2] === donnees[i * 2]) continue
+    n++
+    const x = i % largeur, y = Math.floor(i / largeur)
+    // Marge d'une tile : la bordure déformée déborde de la tile.
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) faits.add((y + dy) * 100000 + (x + dx))
+  }
+  for (const c of faits) {
+    const y = Math.floor(c / 100000), x = c % 100000
+    if (x < 0 || y < 0 || x >= largeur || y >= hauteur) continue
+    peindreRect(ctx, donnees, largeur, hauteur, x * PX, y * PX, (x + 1) * PX, (y + 1) * PX)
+  }
+  return n
 }
 
 /** Cours d'eau : pour chaque tile, une courbe lissée du milieu de l'arête amont au milieu de l'arête aval. */

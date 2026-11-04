@@ -4,7 +4,7 @@
 import 'pixi.js/unsafe-eval' // aucune génération de code à l'exécution : compatible avec une CSP stricte
 import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture, Point } from 'pixi.js'
 import { store } from './store.js'
-import { construireTerrain } from './terrain.js'
+import { construireTerrain, repeindreTuiles } from './terrain.js'
 
 export const T = 256 // pixels d'une tile dans l'atlas (unités du monde)
 
@@ -112,16 +112,30 @@ export class Carte {
 
   // ---------- Couches ----------
 
-  /** Sol de toute la carte : terrains, forêts et cours d'eau, peints dans une seule image (docs/07 §3). */
+  /** Sol de toute la carte : terrains, forêts et cours d'eau, peints dans deux images (docs/07 §3). */
   construireSol(terrain) {
     this.sol.removeChildren().forEach((c) => c.destroy({ texture: true }))
-    const canvas = construireTerrain(terrain, this.meta.largeur, this.meta.hauteur)
-    const tex = Texture.from(canvas)
-    try { tex.source.autoGenerateMipmaps = true; tex.source.style.mipmapFilter = 'linear' } catch { /* facultatif */ }
-    const s = new Sprite(tex)
-    s.width = this.meta.largeur * T
-    s.height = this.meta.hauteur * T
-    this.sol.addChild(s)
+    const { sol, eau } = construireTerrain(terrain, this.meta.largeur, this.meta.hauteur)
+    const sprite = (canvas) => {
+      const tex = Texture.from(canvas)
+      try { tex.source.autoGenerateMipmaps = true; tex.source.style.mipmapFilter = 'linear' } catch { /* facultatif */ }
+      const s = new Sprite(tex)
+      s.width = this.meta.largeur * T
+      s.height = this.meta.hauteur * T
+      return s
+    }
+    this.canvasSol = sol
+    this.spriteSol = sprite(sol)
+    this.terrainPeint = terrain
+    this.sol.addChild(this.spriteSol, sprite(eau))
+  }
+
+  /** Repeint les tiles dont le terrain a changé (défrichement, drainage). */
+  majSol(terrain) {
+    if (!this.canvasSol || !this.terrainPeint) return
+    const n = repeindreTuiles(this.canvasSol, this.terrainPeint, terrain, this.meta.largeur, this.meta.hauteur)
+    this.terrainPeint = terrain
+    if (n > 0) this.spriteSol.texture.source.update()
   }
 
   /** Carte de chaleur de la fertilité (mode « fertilité »), une image d'un pixel par tile. */

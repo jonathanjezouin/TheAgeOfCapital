@@ -134,8 +134,10 @@ par_pop_jour = 2.0
 ressource = "vetements"
 par_pop_jour = 0.5
 
-# Terrains (docs/07 §3) : multiplicateur du travail des chantiers (maison, hameau, défrichement) selon le terrain
-# de la tile. Forêt et marais sont fermés tant que le défrichement et le drainage n'existent pas (docs/07 §8).
+# Terrains (docs/07 §3, §12). `cout_construction` : multiplicateur du travail des chantiers (maison, hameau,
+# défrichement) sur ce terrain. `conversion_*` : un chantier sur une tile de forêt ou de marais la convertit
+# (défrichement, drainage) ; travail en pop-jours par tile, bois récupéré par tile (unités du jeu : une pop brûle
+# 2 unités par jour, soit ~250 stères par an : 1 stère ≈ 2,9 unités). Valeurs : docs/07 §9.
 [terrains.plaine]
 cout_construction = 1.0
 [terrains.plaine_riche]
@@ -143,9 +145,22 @@ cout_construction = 1.0
 [terrains.plaine_rocailleuse]
 cout_construction = 1.3            # cailloux à ôter, fondations plus dures
 [terrains.plaine_marecageuse]
-cout_construction = 2.5            # drainage, sol détrempé
+cout_construction = 1.0
+conversion_vers = "plaine_riche"   # un marais drainé donne de bons limons
+conversion_pop_jours = 400.0       # fossés et assèchement : 60 jours-homme par hectare
+conversion_bois = 0.0
 [terrains.foret]
-cout_construction = 2.0            # abattage et dessouchage (le défrichement proprement dit viendra à l'étape 3)
+cout_construction = 1.0
+conversion_vers = "plaine"
+conversion_pop_jours = 1000.0      # 150 à 250 jours-homme par hectare × 6,25 ha
+conversion_bois = 1750.0           # ~600 stères par tile
+
+# Franchissement des cours d'eau (docs/07 §9) : une route neuve peut traverser l'eau, au prix d'un travail de
+# pont ou de gué ajouté au chantier, en pop-jours par tile d'eau traversée.
+[eau]
+pont_ruisseau = 20.0               # gué ou passerelle
+pont_riviere = 200.0               # pont de bois
+pont_fleuve = 2000.0               # grand pont de pierre
 
 # Terres exploitées (docs/02 §8.2) : un seul bâtiment actif sur N tiles contiguës de 250 m. Les extrants
 # sont par tile et par jour (à fertilité 1) et le travail par tile et par an, en jours-personne (docs/04 :
@@ -191,12 +206,14 @@ etapes = [{ extrants = [{ ressource = "fruit", qte = 1.0 }] }]
 [[batiments]]
 nom = "foret_exploitee"
 asset = "bat_foret_exploitee"
+conserve_terrain = true            # exploite la forêt sur place, sans la défricher
 par_tile = true
 jours_par_tile_an = 60.0
 emprise_max = 36
 fertile = true
-# Taillis planté sur terre ordinaire tant que les tiles de forêt de la carte ne sont pas exploitables (étape 3 de docs/07).
-aptitude = { plaine = 1.0, plaine_riche = 1.0, plaine_rocailleuse = 1.0, plaine_marecageuse = 0.5, foret = 1.0 }
+# Forêt exploitée sur place (1,3) ; taillis planté sur terre ordinaire (1,0), pour que le village de départ, posé en
+# terrain ouvert, ait du bois.
+aptitude = { plaine = 1.0, plaine_riche = 1.0, plaine_rocailleuse = 1.0, plaine_marecageuse = 0.5, foret = 1.3 }
 travail_terrain = { plaine_marecageuse = 1.5 }
 cout_creation = { travail_pop_jours = 4.0, equipe = 2, bois = 0.0 }
 etapes = [{ extrants = [{ ressource = "bois", qte = 0.35 }] }]
