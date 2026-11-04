@@ -39,14 +39,6 @@ impl Default for ParamsVillage {
     }
 }
 
-#[derive(Clone, Copy)]
-enum Item {
-    /// Index dans `Catalogue::habitats`.
-    Hameau(usize),
-    /// Type de terre et nombre de tiles.
-    Terre(usize, usize),
-}
-
 /// Combien de bâtiments de chaque type : des tiles pour les terres, un atelier par hameau.
 #[derive(Clone, Debug)]
 pub struct Composition {
@@ -224,12 +216,6 @@ pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> 
     ))
 }
 
-/// Découpe `tiles` tiles de terre en blocs d'au plus `max` tiles, de tailles voisines.
-fn blocs(tiles: usize, max: usize) -> Vec<usize> {
-    let n = tiles.div_ceil(max.max(1)).max(1);
-    (0..n).map(|i| tiles / n + usize::from(i < tiles % n)).collect()
-}
-
 fn essayer(
     cat: &Catalogue,
     p: &ParamsVillage,
@@ -237,43 +223,8 @@ fn essayer(
     carte: &CarteTerrain,
     centre_village: (usize, usize),
 ) -> Result<Simulation, String> {
-    // --- Éléments à placer ---
-    let compo = composition(cat, p.nb_hameaux);
-    let hameaux: Vec<Item> = (0..p.nb_hameaux).map(|_| Item::Hameau(0)).collect();
-    // Terres : un bloc de chaque type d'abord (pour que chaque ressource ait un producteur près du
-    // centre), puis les autres blocs.
-    let mut par_type: Vec<Vec<usize>> = Vec::new();
-    for (t, &n) in compo.batiments.iter().enumerate() {
-        let ty = &cat.batiments[t];
-        if ty.par_tile && n > 0 {
-            par_type.push(blocs(n, ty.emprise_max as usize).into_iter().map(|taille| t * 1000 + taille).collect());
-        }
-    }
-    rng.melanger(&mut par_type);
-    let mut terres: Vec<Item> = Vec::new();
-    let mut rang = 0;
-    loop {
-        let mut vu = false;
-        for liste in &par_type {
-            if let Some(&c) = liste.get(rang) {
-                terres.push(Item::Terre(c / 1000, c % 1000));
-                vu = true;
-            }
-        }
-        if !vu {
-            break;
-        }
-        rang += 1;
-    }
-
-    // --- Disposition en croix ---
     let (w, h) = (p.largeur, p.hauteur);
     let (cx, cy) = centre_village;
-    // Longueur des bras : le fond d'un bras reste à portée de tous les hameaux (coût 10 par tile).
-    let longueur = ((cat.infra.distance_max / 10) as usize).saturating_sub(3).clamp(3, 8);
-    if cx < longueur + 2 || cy < longueur + 2 || cx + longueur + 2 >= w || cy + longueur + 2 >= h {
-        return Err("carte trop petite pour ce village".into());
-    }
     let mut monde = Monde {
         largeur: w,
         hauteur: h,
@@ -293,119 +244,24 @@ fn essayer(
             aval: carte.aval[i],
         })
         .collect();
-    let dirs: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+
+    // --- État initial (docs/07 §5) : un premier hameau au site choisi, puis le village se constitue avec les
+    // mêmes règles de site que le jeu (terres, hameaux), chantiers achevés d'un coup. Plus de disposition codée.
+    let compo = composition(cat, p.nb_hameaux);
     let centre = monde.idx(cx, cy);
-    let tuile_a = |m: &Monde, d: usize, k: i32, lat: i32| -> Option<usize> {
-        let (dx, dy) = dirs[d];
-        let (px, py) = (-dy, dx);
-        let (x, y) = (cx as i32 + dx * k + px * lat, cy as i32 + dy * k + py * lat);
-        if x < 1 || y < 1 || x >= w as i32 - 1 || y >= h as i32 - 1 {
-            None
-        } else {
-            Some(m.idx(x as usize, y as usize))
-        }
-    };
-    for d in 0..4 {
-        let mut prec = centre;
-        for k in 1..=longueur as i32 {
-            let t = tuile_a(&monde, d, k, 0).ok_or("bras hors de la carte")?;
-            monde.relier(prec, t);
-            prec = t;
-        }
+    poser_hameau(&mut monde, cat, 0, centre, rng);
+    let mut amorce = Simulation::nouvelle(cat.clone(), monde, Vec::new());
+    amorce.peupler_initial(&compo.batiments, p.nb_hameaux)?;
+    let mut monde = amorce.monde;
+    for t in &mut monde.tuiles {
+        t.variante = (t.variante % 12) as u8;
     }
-    let libre = |m: &Monde, t: usize| {
-        m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0 && m.tuiles[t].ouvert()
-    };
-
-    // Hameaux : au plus près du centre, de part et d'autre des bras (k = 1 puis 2).
-    let mut slots: Vec<(usize, usize)> = Vec::new(); // (tile du hameau, tile du bras)
-    for k in 1..=2 {
-        for d in 0..4 {
-            for lat in [1, -1] {
-                if let (Some(t), Some(arm)) = (tuile_a(&monde, d, k, lat), tuile_a(&monde, d, k, 0)) {
-                    // Le coin entre deux bras est un emplacement commun aux deux : une seule fois.
-                    if !slots.iter().any(|&(u, _)| u == t) {
-                        slots.push((t, arm));
-                    }
-                }
-            }
-        }
-    }
-    // On remplit d'abord les emplacements de k = 1, dans un ordre tiré au sort.
-    let k1 = slots.iter().filter(|&&(_, arm)| {
-        // les emplacements de k = 1 sont ceux dont la tile de bras est voisine du centre
-        let (ax, ay) = monde.xy(arm);
-        ax.abs_diff(cx) + ay.abs_diff(cy) == 1
-    }).count();
-    let (proches, loin) = slots.split_at(k1.min(slots.len()));
-    let mut proches = proches.to_vec();
-    let mut loin = loin.to_vec();
-    rng.melanger(&mut proches);
-    rng.melanger(&mut loin);
-    proches.extend(loin);
-    if hameaux.len() > proches.len() {
-        return Err("plus d'emplacement pour les hameaux".into());
-    }
-    for (item, &(t, arm)) in hameaux.iter().zip(&proches) {
-        if let Item::Hameau(hh) = *item {
-            poser_hameau(&mut monde, cat, hh, t, rng);
-            monde.relier(arm, t);
-        }
-    }
-
-    // Terres : blocs de largeur 3 (le long du bras) et de profondeur suffisante, au plus près du centre.
-    let mut ordre_bras: Vec<usize> = (0..4).collect();
-    for item in &terres {
-        let Item::Terre(type_id, taille) = *item else {
-            continue;
-        };
-        rng.melanger(&mut ordre_bras);
-        let mut place = false;
-        'recherche: for k in 3..=(longueur as i32) {
-            for &d in &ordre_bras {
-                for lat in [1i32, -1] {
-                    for largeur in [3i32, 4, 2] {
-                        if k + largeur - 1 > longueur as i32 {
-                            continue;
-                        }
-                        let profondeur = (taille as i32 + largeur - 1) / largeur;
-                        let mut tuiles: Vec<usize> = Vec::new();
-                        let mut valide = true;
-                        'bloc: for j in 0..profondeur {
-                            for i in 0..largeur {
-                                if tuiles.len() == taille {
-                                    break 'bloc;
-                                }
-                                match tuile_a(&monde, d, k + i, lat * (1 + j)) {
-                                    Some(t) if libre(&monde, t) => tuiles.push(t),
-                                    _ => {
-                                        valide = false;
-                                        break 'bloc;
-                                    }
-                                }
-                            }
-                        }
-                        if !valide || tuiles.len() != taille {
-                            continue;
-                        }
-                        let arm = tuile_a(&monde, d, k, 0).unwrap();
-                        let b = monde.batiments.len();
-                        let mut bat = nouveau_batiment(type_id, tuiles[0], None, cat);
-                        bat.emprise = tuiles.clone();
-                        monde.batiments.push(bat);
-                        for &t in &tuiles {
-                            monde.tuiles[t].contenu = Contenu::Batiment(b);
-                            monde.tuiles[t].variante = rng.dans(4) as u8;
-                        }
-                        monde.relier(arm, tuiles[0]);
-                        place = true;
-                        break 'recherche;
-                    }
-                }
-            }
-        }
-        if !place {
-            return Err("plus d'emplacement le long de la croix".into());
+    // Les terres posées par chantier démarrent comme celles d'un village en régime.
+    for b in &mut monde.batiments {
+        let ty = &cat.batiments[b.type_id];
+        if ty.par_tile {
+            b.prod_ppm = PPM;
+            b.sur_pied_ppm = (cat.sim.jours_stock_sortie * PPM as f64 / 2.0) as i64;
         }
     }
 
@@ -468,6 +324,10 @@ fn essayer(
         }
     }
     for b in 0..nb {
+        // Les sites de chantier laissés inertes par la constitution du village ne sont pas des lieux de travail.
+        if cat.batiments[monde.batiments[b].type_id].chantier {
+            continue;
+        }
         for (r, _) in cat.batiments[monde.batiments[b].type_id].intrants_externes() {
             if !(0..nb).any(|f| produit(f, r) && reseau.chemin(nq + b, nq + f).is_some()) {
                 return Err(format!("lieu {b} sans accès à {}", cat.ressources[r].nom));

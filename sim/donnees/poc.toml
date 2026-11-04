@@ -2,7 +2,9 @@
 # Quantités en unités/jour (converties en milli-unités au chargement).
 # Aucune valeur de gameplay n'est codée en dur dans le moteur.
 # `traversable` (par bâtiment) : "libre" | "couteuse" | "interdite" (défaut) — une route neuve contourne
-# les tiles d'un bâtiment « interdite » (terres, chantiers) ; on s'y raccorde par la tile nœud (docs/02 §10.1).
+# les tiles d'un bâtiment « interdite » (chantiers) ; on s'y raccorde par la tile nœud (docs/02 §10.1). Les terres sont
+# « couteuse » : un chemin d'exploitation peut les traverser moyennant un surcoût (docs/07 §13), sans quoi des terres
+# jointives enferment le réseau et le village ne peut plus s'étendre.
 
 [simulation]
 jours_par_an = 365
@@ -29,8 +31,9 @@ poids_trajet_pop = 10.0
 densite_max_pops = 10
 
 # Hameau : des maisons, une par pop (docs/02 §9.4). Le générateur pose des hameaux de `capacite_pops`
-# maisons ; un hameau neuf n'a que sa première maison (`capacite_fondation`) et en gagne une à une,
-# jusqu'à `capacite_max_pops`, puis les pops qui attendent un logement fondent un autre hameau.
+# maisons ; un hameau neuf n'a que sa première maison (`capacite_fondation`) et en gagne une à une. Il n'y a
+# plus de plafond propre au hameau : seule la densité maximale par tile (`densite_max_pops`) borne sa taille, et
+# c'est la valeur du site (`[peuplement]`) qui décide d'ajouter une maison ou de fonder ailleurs (docs/07 §4).
 # `cout_creation` est le coût d'UNE maison (≈ la moitié de l'ancien hameau de 2 pops).
 # Le textile (tissage, couture) est un travail domestique d'hiver, fait à la maison avec le temps libre
 # des pops (docs/02 §8.4) : tout hameau embarque donc un atelier domestique, sans poste.
@@ -39,9 +42,20 @@ nom = "hameau"
 asset = "bat_hameau"
 capacite_pops = 2
 capacite_fondation = 1
-capacite_max_pops = 4
 atelier = "atelier_domestique"
 cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
+
+# Où s'installer (docs/07 §4). La valeur d'un site de vie est la terre libre à portée (aptitude, décroissante avec
+# la distance), partagée entre les pops du voisinage, corrigée par l'eau et par la présence de voisins. Quand des pops
+# attendent un logement, on bâtit une maison là où l'on est, ou on fonde un hameau ailleurs s'il vaut
+# `seuil_fondation` fois mieux (la famille reste, sauf gain net).
+[peuplement]
+rayon_terroir = 10                 # tiles : 2,5 km, le rayon de travail d'un hameau
+eau_proche = 6                     # tiles : puits ou source à 1,5 km ou moins, sans gêne
+eau_portee = 30                    # tiles : au-delà, l'eau ne vaut plus rien (puits profond, corvée d'eau)
+poids_voisins = 0.15               # bonus par pop installée à moins de `rayon_voisinage` (entraide, services)
+rayon_voisinage = 3                # tiles
+seuil_fondation = 1.5              # un site neuf doit valoir 1,5 fois mieux que de rester
 
 # Budget de jours de travail (docs/02 §8.3, étape 1 : lissé sur l'année, sans saisons). Une pop fournit
 # 12 500 jours-personne par an (~50 travailleurs × 250 jours). Chaque jour, les pops de chaque hameau
@@ -173,6 +187,7 @@ pont_fleuve = 2000.0               # grand pont de pierre
 [[batiments]]
 nom = "champ"
 asset = "bat_champ"
+traversable = "couteuse"
 par_tile = true
 jours_par_tile_an = 250.0
 emprise_max = 36
@@ -184,6 +199,7 @@ etapes = [{ extrants = [{ ressource = "grain", qte = 0.40 }] }]
 [[batiments]]
 nom = "paturage"
 asset = "bat_paturage"
+traversable = "couteuse"
 par_tile = true
 jours_par_tile_an = 80.0
 emprise_max = 30
@@ -195,6 +211,7 @@ etapes = [{ extrants = [{ ressource = "viande", qte = 0.42 }] }]
 [[batiments]]
 nom = "verger"
 asset = "bat_verger"
+traversable = "couteuse"
 par_tile = true
 jours_par_tile_an = 150.0
 emprise_max = 16
@@ -206,6 +223,7 @@ etapes = [{ extrants = [{ ressource = "fruit", qte = 1.0 }] }]
 [[batiments]]
 nom = "foret_exploitee"
 asset = "bat_foret_exploitee"
+traversable = "couteuse"
 conserve_terrain = true            # exploite la forêt sur place, sans la défricher
 par_tile = true
 jours_par_tile_an = 60.0
@@ -220,6 +238,7 @@ etapes = [{ extrants = [{ ressource = "bois", qte = 0.35 }] }]
 [[batiments]]
 nom = "champ_lin"
 asset = "bat_champ_lin"
+traversable = "couteuse"
 par_tile = true
 jours_par_tile_an = 625.0
 emprise_max = 12
@@ -231,6 +250,7 @@ etapes = [{ extrants = [{ ressource = "lin", qte = 1.2 }] }]
 [[batiments]]
 nom = "elevage_laine"
 asset = "bat_elevage_laine"
+traversable = "couteuse"
 par_tile = true
 jours_par_tile_an = 80.0
 emprise_max = 30

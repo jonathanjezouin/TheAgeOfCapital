@@ -44,6 +44,22 @@ struct Brut {
     #[serde(default)]
     terrains: BTreeMap<String, BrutTerrain>,
     eau: Option<BrutEau>,
+    peuplement: BrutPeuplement,
+}
+
+/// Où s'installer (docs/07 §4) : valeur d'un site pour des pops qui s'ajoutent.
+#[derive(Deserialize)]
+struct BrutPeuplement {
+    /// Rayon (tiles) du terroir d'un hameau : la terre libre qui s'y trouve est partagée entre les pops du voisinage.
+    rayon_terroir: i64,
+    /// Distance (tiles) à l'eau jusqu'à laquelle un site a de l'eau à portée, et distance où elle ne vaut plus rien.
+    eau_proche: i64,
+    eau_portee: i64,
+    /// Bonus par pop installée à moins de `rayon_voisinage` tiles (entraide, services, sécurité).
+    poids_voisins: f64,
+    rayon_voisinage: i64,
+    /// Un site neuf doit valoir au moins ce multiple de la valeur de rester où l'on est (la famille reste).
+    seuil_fondation: f64,
 }
 
 #[derive(Deserialize)]
@@ -110,7 +126,6 @@ struct BrutTypeHabitat {
     asset: String,
     capacite_pops: u32,
     capacite_fondation: u32,
-    capacite_max_pops: u32,
     atelier: Option<String>,
     cout_creation: BrutCout,
 }
@@ -319,8 +334,6 @@ pub struct TypeHabitat {
     pub capacite_pops: u32,
     /// Capacité d'un hameau neuf : la première maison.
     pub capacite_fondation: u32,
-    /// Plafond du hameau : on y ajoute des maisons une à une jusque-là (docs/02 §9.4).
-    pub capacite_max_pops: u32,
     /// Type de bâtiment embarqué sur la même tile : travail sur place (atelier domestique, ou 1 poste).
     pub atelier: Option<usize>,
     /// Coût d'**une maison** (une pop) : fonder un hameau en bâtit la première.
@@ -493,6 +506,7 @@ pub struct Catalogue {
     pub habitats: Vec<TypeHabitat>,
     pub travail: ParamsTravail,
     pub extension: ParamsExtension,
+    pub peuplement: ParamsPeuplement,
     pub demo: ParamsDemo,
     pub mobilite: ParamsMobilite,
     pub vital: Vital,
@@ -518,6 +532,17 @@ pub struct Conversion {
     pub travail: Qte,
     /// Bois récupéré par tile (milli-unités).
     pub bois: Qte,
+}
+
+/// Paramètres du choix du lieu de vie (docs/07 §4).
+#[derive(Clone, Debug)]
+pub struct ParamsPeuplement {
+    pub rayon_terroir: i64,
+    pub eau_proche: i64,
+    pub eau_portee: i64,
+    pub poids_voisins_ppm: i64,
+    pub rayon_voisinage: i64,
+    pub seuil_fondation_ppm: i64,
 }
 
 pub const DONNEES_POC: &str = include_str!("../donnees/poc.toml");
@@ -630,7 +655,6 @@ impl Catalogue {
                 asset: h.asset.clone(),
                 capacite_pops: h.capacite_pops,
                 capacite_fondation: h.capacite_fondation,
-                capacite_max_pops: h.capacite_max_pops,
                 atelier,
                 cout_creation: cout_de(&h.cout_creation),
             });
@@ -655,6 +679,14 @@ impl Catalogue {
             },
             habitat: ParamsHabitat {
                 densite_max_pops: b.habitat.densite_max_pops,
+            },
+            peuplement: ParamsPeuplement {
+                rayon_terroir: b.peuplement.rayon_terroir,
+                eau_proche: b.peuplement.eau_proche,
+                eau_portee: b.peuplement.eau_portee.max(b.peuplement.eau_proche + 1),
+                poids_voisins_ppm: en_ppm(b.peuplement.poids_voisins),
+                rayon_voisinage: b.peuplement.rayon_voisinage,
+                seuil_fondation_ppm: en_ppm(b.peuplement.seuil_fondation),
             },
             extension: ParamsExtension {
                 periode_jours: b.extension.periode_jours,
@@ -739,13 +771,9 @@ impl Catalogue {
                     h.nom, self.habitat.densite_max_pops
                 ));
             }
-            if h.capacite_fondation == 0
-                || h.capacite_fondation > h.capacite_max_pops
-                || h.capacite_pops > h.capacite_max_pops
-                || h.capacite_max_pops > self.habitat.densite_max_pops
-            {
+            if h.capacite_fondation == 0 || h.capacite_fondation > self.habitat.densite_max_pops {
                 return Err(format!(
-                    "{} : il faut 1 <= fondation <= max <= {} et capacité de départ <= max",
+                    "{} : il faut 1 <= fondation <= {} (densité maximale par tile)",
                     h.nom, self.habitat.densite_max_pops
                 ));
             }

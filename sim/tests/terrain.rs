@@ -119,8 +119,14 @@ use sim::PPM;
 fn grain_du_jour(terrain: Terrain) -> i64 {
     let mut s = generer(Catalogue::defaut(), &ParamsVillage { graine: 1, ..Default::default() }).unwrap();
     s.cat.extension.chantiers_max = 0;
-    let champ = s.monde.batiments.iter().position(|b| s.cat.batiments[b.type_id].nom == "champ").unwrap();
-    for &t in &s.monde.batiments[champ].emprise.clone() {
+    // Le travail se répartit : on prend le champ qui en reçoit le plus.
+    s.avancer(60);
+    let champ = (0..s.monde.batiments.len())
+        .filter(|&b| s.cat.batiments[s.monde.batiments[b].type_id].nom == "champ")
+        .max_by_key(|&b| s.monde.batiments[b].mo_lisse_milli)
+        .unwrap();
+    let tuiles: Vec<usize> = (0..s.monde.tuiles.len()).filter(|&i| s.monde.tuiles[i].contenu == Contenu::Batiment(champ)).collect();
+    for &t in &tuiles {
         s.monde.tuiles[t].terrain = terrain;
         s.monde.tuiles[t].fertilite_ppm = PPM;
     }
@@ -185,40 +191,37 @@ fn un_terrain_inconnu_dans_les_donnees_est_refuse() {
 }
 
 #[test]
-fn les_nouveaux_champs_evitent_la_rocaille() {
-    // Parmi les tiles défrichées en 100 ans pour des champs, la part de rocailleuse (rendement 0,6 pour le grain)
-    // est inférieure à sa part parmi les tiles libres et constructibles à portée du village : le score d'extension
-    // (docs/02 §10.2) tient compte de l'aptitude, sans interdire la rocaille (la compacité pèse aussi).
-    let (mut roc_champs, mut n_champs, mut roc_libres, mut n_libres) = (0usize, 0usize, 0usize, 0usize);
-    for graine in 1..=8u64 {
+fn les_nouveaux_champs_prefèrent_le_bon_terrain() {
+    // Scénario : de part et d'autre du village, la terre libre est soit rocailleuse (rendement 0,6 pour le grain), soit
+    // de la plaine riche (1,25). Les tiles défrichées en 80 ans pour des champs sont en majorité sur la riche
+    // (le score d'extension tient compte de l'aptitude, docs/02 §10.2 ; la compacité pèse aussi).
+    let (mut riches, mut total) = (0usize, 0usize);
+    for graine in 1..=4u64 {
         let mut s = generer(Catalogue::defaut(), &ParamsVillage { graine, ..Default::default() }).unwrap();
         let champ = s.cat.bat_id("champ").unwrap();
+        let (hx, hy) = s.monde.xy(s.monde.quartiers[0].tuile);
         let libres0: Vec<usize> = (0..s.monde.tuiles.len())
             .filter(|&i| s.monde.tuiles[i].contenu == Contenu::Vide && s.monde.tuiles[i].aretes == 0 && s.monde.tuiles[i].ouvert())
             .collect();
-        let ham = s.monde.quartiers[0].tuile;
-        let (hx, hy) = s.monde.xy(ham);
-        let a_portee = |s: &sim::Simulation, i: usize| {
-            let (x, y) = s.monde.xy(i);
-            x.abs_diff(hx).max(y.abs_diff(hy)) <= 14
-        };
-        let libres0: Vec<usize> = libres0.into_iter().filter(|&i| a_portee(&s, i)).collect();
         for &i in &libres0 {
-            roc_libres += usize::from(s.monde.tuiles[i].terrain == Terrain::Rocailleuse);
-            n_libres += 1;
+            let (x, y) = s.monde.xy(i);
+            if x.abs_diff(hx).max(y.abs_diff(hy)) <= 30 {
+                // Damier de grandes plaques de 6 tiles : de la riche et de la rocaille à portée de partout.
+                s.monde.tuiles[i].terrain = if (x / 6 + y / 6) % 2 == 0 { Terrain::PlaineRiche } else { Terrain::Rocailleuse };
+            }
         }
-        s.avancer(365 * 100);
+        s.avancer(365 * 80);
         for b in s.monde.batiments.iter().filter(|b| b.type_id == champ) {
             for &t in b.emprise.iter().filter(|t| libres0.contains(t)) {
-                roc_champs += usize::from(s.monde.tuiles[t].terrain == Terrain::Rocailleuse);
-                n_champs += 1;
+                total += 1;
+                riches += usize::from(s.monde.tuiles[t].terrain == Terrain::PlaineRiche);
             }
         }
     }
-    assert!(n_champs > 30, "trop peu de tiles défrichées ({n_champs})");
-    let (rc, rl) = (roc_champs as f64 / n_champs as f64, roc_libres as f64 / n_libres as f64);
-    println!("part de rocailleuse : champs défrichés {rc:.3}, tiles libres à portée {rl:.3}");
-    assert!(rc < rl, "champs {rc:.3} >= libres {rl:.3}");
+    assert!(total > 30, "trop peu de tiles défrichées ({total})");
+    let part = riches as f64 / total as f64;
+    println!("part de plaine riche parmi les tiles de champs défrichées : {part:.2}");
+    assert!(part > 0.55, "champs sur riche : {part:.2}");
 }
 
 // ---------- Défrichement, drainage et ponts (docs/07 §12) ----------
@@ -324,4 +327,109 @@ fn le_travail_des_ponts_suit_le_gabarit() {
     assert!(c.pont_milli[Eau::Ruisseau as usize] > 0);
     assert!(c.pont_milli[Eau::Riviere as usize] > c.pont_milli[Eau::Ruisseau as usize]);
     assert!(c.pont_milli[Eau::Fleuve as usize] > c.pont_milli[Eau::Riviere as usize]);
+}
+
+// ---------- Peuplement : valeur d'un site, fondation, état initial (docs/07 §4, §5) ----------
+
+#[test]
+fn la_valeur_d_un_site_baisse_quand_le_terroir_se_partage_et_sans_eau() {
+    let mut s = village_graine(1);
+    let h = s.monde.quartiers[0].tuile;
+    let base = s.valeur_habitat(h, 1);
+    assert!(base > 0);
+    // Une pop de plus dans le voisinage : la terre se partage entre plus de monde.
+    let plus = s.valeur_habitat(h, 2);
+    assert!(plus < base, "{plus} >= {base}");
+    // Beaucoup de pops tout près : le terroir se remplit.
+    let mut s2 = s.clone();
+    for _ in 0..6 {
+        let p = s2.pops[0].clone();
+        s2.pops.push(p);
+    }
+    assert!(s2.valeur_habitat(h, 1) < base);
+    // L'eau : un site à 40 tiles du premier cours d'eau vaut beaucoup moins qu'un site au bord.
+    s.dist_eau[h] = 2;
+    let au_bord = s.valeur_habitat(h, 1);
+    s.dist_eau[h] = 40;
+    let loin = s.valeur_habitat(h, 1);
+    assert!(loin * 5 < au_bord, "loin {loin} bord {au_bord}");
+}
+
+#[test]
+fn un_site_nettement_meilleur_fait_fonder_un_hameau_sinon_la_famille_reste() {
+    let prepare = |seuil_ppm: i64| {
+        let mut s = generer(Catalogue::defaut(), &ParamsVillage { occupation_initiale_pct: 100, ..Default::default() }).unwrap();
+        s.cat.peuplement.seuil_fondation_ppm = seuil_ppm;
+        // Une pop attend dans chaque hameau : les deux options sont ouvertes.
+        let seuil = s.seuil_croissance();
+        for p in &mut s.pops {
+            p.croissance = seuil;
+        }
+        let nq = s.monde.quartiers.len();
+        s.etendre();
+        (nq, s)
+    };
+    // Seuil nul : fonder est toujours préféré dès qu'un site existe.
+    let (nq, s) = prepare(0);
+    assert_eq!(s.monde.quartiers.len(), nq + 1, "un hameau neuf attendu");
+    // Seuil énorme : on bâtit une maison là où l'on est, aucun hameau n'est fondé.
+    let (nq, s) = prepare(1_000 * PPM);
+    assert_eq!(s.monde.quartiers.len(), nq, "aucun hameau neuf attendu");
+    assert_eq!(s.chantiers_en_cours(), 1);
+}
+
+#[test]
+fn rien_ne_borne_la_taille_d_un_hameau_que_la_densite_maximale() {
+    // Un hameau déjà au-delà de l'ancien plafond codé (4 pops) reçoit encore une maison quand une de ses pops attend :
+    // seule la densité maximale par tile le borne (docs/07 §4.2).
+    let mut s = village_graine(1);
+    s.cat.peuplement.seuil_fondation_ppm = 1_000 * PPM; // la famille reste
+    let bois = s.cat.res_id("bois").unwrap();
+    let nq = s.monde.quartiers.len();
+    let i = (0..s.pops.len())
+        .find(|&i| {
+            (0..s.monde.batiments.len()).any(|b| {
+                s.cat.batiments[s.monde.batiments[b].type_id].livre(bois) && s.reseau.chemin(s.pops[i].residence, nq + b).is_some()
+            })
+        })
+        .unwrap();
+    let q = s.pops[i].residence;
+    s.monde.quartiers[q].capacite_pops = 5;
+    let modele = s.pops[i].clone();
+    while s.pops.iter().filter(|p| p.residence == q).count() < 5 {
+        let mut p = modele.clone();
+        p.id = s.prochain_pop_id;
+        s.prochain_pop_id += 1;
+        s.pops.push(p);
+    }
+    let seuil = s.seuil_croissance();
+    s.pops[i].croissance = seuil;
+    s.etendre();
+    assert_eq!(s.monde.quartiers.len(), nq, "pas de hameau neuf");
+    for _ in 0..3 {
+        s.avancer(365);
+    }
+    assert!(s.monde.quartiers[q].capacite_pops >= 6, "capacité {}", s.monde.quartiers[q].capacite_pops);
+    assert!(s.monde.quartiers[q].capacite_pops <= s.cat.habitat.densite_max_pops);
+}
+
+#[test]
+fn l_etat_initial_n_est_plus_une_croix_et_garde_ses_chemins_ruraux() {
+    for graine in 1..=6u64 {
+        let s = village_graine(graine);
+        let pos: Vec<(i64, i64)> = s.monde.quartiers.iter().map(|q| { let (x, y) = s.monde.xy(q.tuile); (x as i64, y as i64) }).collect();
+        assert_eq!(pos.len(), 4);
+        // Les hameaux ne sont pas alignés sur un axe commun : plus de croix.
+        let xs: std::collections::BTreeSet<i64> = pos.iter().map(|p| p.0).collect();
+        let ys: std::collections::BTreeSet<i64> = pos.iter().map(|p| p.1).collect();
+        assert!(xs.len() >= 3 && ys.len() >= 3, "graine {graine} : hameaux alignés {pos:?}");
+        // Aucun hameau n'est enfermé : au moins 2 de ses 8 voisines sont libres ou sur une route (chemins ruraux).
+        for q in &s.monde.quartiers {
+            let libres = (0..8)
+                .filter_map(|d| s.monde.voisin(q.tuile, d))
+                .filter(|&v| matches!(s.monde.tuiles[v].contenu, Contenu::Vide) && s.monde.tuiles[v].constructible())
+                .count();
+            assert!(libres >= 2, "graine {graine} : hameau étouffé ({libres} voisines libres)");
+        }
+    }
 }

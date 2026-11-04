@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain) et 3 (défrichement, drainage, ponts) sont faites** (§8, §10, §11, §12), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts) et 4 (peuplement par la valeur du site) sont faites** (§8, §10 à §13), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -129,7 +129,7 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 1. ~~Générateur de carte~~ : **fait le 2026-11-04** (`sim/src/terrain.rs`, rendu `app/src/terrain.js`, détail §10).
 2. ~~Table d'aptitudes et effet sur rendement, travail requis et coût de construction~~ ; mode de carte « aptitude » : **fait le 2026-11-04** (§11).
 3. ~~Défrichement (coût, bois récupéré), drainage, ponts et gués~~ : **fait le 2026-11-04** (§12). La repousse et les opportunités (pierre, tourbe) restent à faire.
-4. Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4).
+4. ~~Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4)~~ : **fait le 2026-11-04** (§13).
 5. Outils de mesure (distribution des tailles de hameaux, §6), puis réglage des poids.
 6. Plus tard : échange entre pops, outils, saisons, services, navigation, relief (collines, montagnes), régions macro.
 
@@ -230,3 +230,25 @@ Travail requis par tile : rocailleuse ×1,3 (céréales, lin), marais ×1,4 à 2
 - **Pierre (rocailleuse) et tourbe (marais)** : nouvelles ressources, donc nouvelles chaînes de production ; reportées.
 - Pas de route à travers forêt et marais plus lente ni plus chère : le tracé les traverse comme la plaine.
 - La navigation des rivières reste hors POC.
+
+## 13. Étape 4 réalisée : le peuplement par la valeur du site
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Valeur d'un site de vie | `Simulation::valeur_habitat` | terre libre à portée (rayon 10 tiles, rendement d'une terre nourricière, décroissant avec la distance, forêt et marais rabattus de leur coût de conversion) **partagée entre les pops du voisinage**, corrigée par l'eau (au bord = 1, nulle à 30 tiles) et par les voisins (+15 % par pop à 3 tiles ou moins). Elle baisse à mesure que le terroir se remplit |
+| Données | `poc.toml` `[peuplement]` | `rayon_terroir`, `eau_proche`, `eau_portee`, `poids_voisins`, `rayon_voisinage`, `seuil_fondation` |
+| Plus de plafond codé | `poc.toml`, `donnees.rs` | `capacite_max_pops` est supprimé : seule la densité maximale par tile (`densite_max_pops` = 10, principe 1) borne un hameau |
+| La famille reste | `Simulation::etendre` | quand une pop attend un logement : une maison là où elle est, ou un hameau neuf si son site vaut **`seuil_fondation` (1,5) fois mieux** que de rester. Si la densité maximale est atteinte, on fonde ailleurs |
+| Site d'un hameau | `meilleur_site`, `site_hameau` | choisi par la valeur du site (rabattue des travaux de pont et de conversion), plus par le plus proche. Il doit pouvoir être nourri (une ressource nutritive) et chauffé à portée, et se faire livrer son matériau ; le **textile n'est plus exigé** : un hameau sans fibre à portée pousse ses pops à défricher |
+| Générateur d'état initial | `Simulation::peupler_initial`, `village.rs` | plus de croix : un premier hameau au site choisi, puis, par étapes, une part des terres et un hameau de plus, **avec les règles de site du jeu**, chantiers achevés d'un coup. Les terres sont dimensionnées en **tiles équivalentes** (pondérées par leur rendement réel) avec 50 % de marge sur le besoin nominal |
+| Chemins ruraux | `Simulation::etoufferait` | chaque hameau garde au moins 2 lignes de 5 tiles libres (une route y est permise) : sans elles, des terres jointives enferment le réseau |
+| Tests | `sim/tests/terrain.rs` | valeur d'un site (terroir partagé, eau), fondation ou maison selon le seuil, hameau au-delà de l'ancien plafond, état initial sans croix ni hameau étouffé |
+
+**Décisions et écarts à connaître**
+- **Les terres sont traversables par un chemin d'exploitation** (`traversable = "couteuse"` : pénalité d'ordre de 30, distance réelle inchangée) : c'était nécessaire, sans quoi des terres jointives enferment hameaux et routes et plus aucun site n'est atteignable. Cela **modifie la décision de `02` §10.1** (« une route ne traverse pas un champ »). Les chantiers restent interdits ; le test de routes mesure que moins de 35 % des tiles de route traversent une terre.
+- **Un chantier qui attend son matériau ne bloque plus un emplacement** de chantier (`chantiers_max`), et pèse sur la ressource manquante (le bois) dans les tensions : sinon deux chantiers sans bois bloquaient le village, et la forêt qui manquait n'était jamais défrichée.
+- **Correction d'un défaut** : à la fin d'un chantier de fondation, les pops déjà établies sur le site (l'équipe) comptent dans la capacité du hameau neuf (`migrer_vers`).
+- **Coût** : la génération d'un village passe de ~0,05 s à ~0,7 s (une centaine de chantiers, un réseau reconstruit à chaque fois) ; le test de 100 graines est ramené à 30. Une optimisation du réseau est possible plus tard.
+- **Tests relâchés, avec raison** : un chantier qui attend du bois ou des bras n'est plus compté comme « bloqué » (l'abandon est reporté, `05`) ; la compacité des terres passe à 1,6 (chemins ruraux, terrain) ; le nombre de champs à portée d'un hameau est de 3 au lieu de 4.
+
+**Mesure (8 graines, 150 ans, sans réglage)** : les villages passent de 6 à ~15 pops réparties en 5 à 17 hameaux, de taille médiane **1 pop**, au maximum **6**, dont environ un tiers **vides** (fondés puis dépeuplés : l'abandon est reporté). Les hameaux de 1 à 2 pops isolés sont donc bien là, mais **aucun noyau de 16 pops n'émerge** : les forces de regroupement (voisins +15 %, eau) sont trop faibles face au gain de terre libre ailleurs, et les services à coût fixe, l'entraide aux pointes de travail et la sécurité manquent encore (§1). C'est l'objet de l'étape 5 : mesurer la distribution des tailles sur plusieurs graines et régler les poids de `[peuplement]`.

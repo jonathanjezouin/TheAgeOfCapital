@@ -194,6 +194,9 @@ const SURCOUT_TRAVERSEE: i64 = 30;
 
 /// Longueur maximale (coût) de la route neuve qui relie un hameau fondé au réseau existant.
 const ROUTE_FONDATION_MAX: i64 = 80;
+/// Part (en %) du besoin nominal que le générateur d'état initial couvre, en tiles *équivalentes* (tiles pondérées
+/// par leur rendement réel : qualité du sol × aptitude du terrain).
+const MARGE_TERRES_PCT: usize = 150;
 
 /// Emplacement choisi pour un nouveau lieu : tile libre, tile du réseau où l'on s'accroche,
 /// et les tiles intermédiaires d'une route neuve entre les deux (dans l'ordre, éventuellement aucune).
@@ -227,6 +230,8 @@ pub struct Simulation {
     pub libre_milli: Vec<i64>,
     /// Temps libre de chaque hameau, moyenne mobile sur ~30 jours (milli pop-jours) : sert à compter les bras sans emploi.
     pub libre_lisse_milli: Vec<i64>,
+    /// Distance (en côtés de tile) de chaque tile au cours d'eau le plus proche : fixe, elle sert à valoriser les sites.
+    pub dist_eau: Vec<u16>,
 }
 
 /// Résultat de l'évaluation des besoins d'un hameau sur une journée.
@@ -327,6 +332,8 @@ impl Simulation {
     pub fn nouvelle(cat: Catalogue, monde: Monde, pops: Vec<Pop>) -> Simulation {
         let reseau = Reseau::construire(&monde, &cat);
         let nr = cat.ressources.len();
+        let eaux: Vec<crate::terrain::Eau> = monde.tuiles.iter().map(|t| t.eau).collect();
+        let dist_eau = crate::terrain::distance_eau(monde.largeur, monde.hauteur, &eaux);
         let prochain_pop_id = pops.iter().map(|p| p.id + 1).max().unwrap_or(0);
         let mut sim = Simulation {
             cat,
@@ -355,6 +362,7 @@ impl Simulation {
             fournisseurs: Vec::new(),
             libre_milli: Vec::new(),
             libre_lisse_milli: Vec::new(),
+            dist_eau,
         };
         sim.calculer_fournisseurs();
         sim.bilan.initial = sim.stock_total();
@@ -1121,6 +1129,8 @@ impl Simulation {
         if let Some(q) = self.terroir(t0) {
             let mat = self.cat.extension.materiau;
             self.distribuer_hameau(q, mat, bois);
+            // Le bois du défrichement est une production : le bilan de matière reste juste.
+            self.bilan.produit[mat] += bois;
         }
         let mut quoi = Vec::new();
         if forets > 0 {
@@ -1239,7 +1249,9 @@ impl Simulation {
             .filter(|&(c, _, _)| c != i64::MAX)
             .collect();
         candidats.sort();
-        for &(_, _, i) in candidats.iter().take(n as usize) {
+        // Les pops déjà établies sur le site (l'équipe de fondation) comptent dans la capacité du hameau neuf.
+        let deja = self.pops.iter().filter(|p| p.residence == q).count() as u32;
+        for &(_, _, i) in candidats.iter().take(n.saturating_sub(deja) as usize) {
             self.pops[i].residence = q;
         }
     }
@@ -1377,6 +1389,10 @@ impl Simulation {
         for bat in &self.monde.batiments {
             if let Limitant::Intrant(r) = bat.limitant {
                 let t = &self.cat.batiments[bat.type_id];
+                // Un chantier privé de matériau pèse sur la ressource qui lui manque : le village doit en produire plus.
+                if t.chantier {
+                    poids[r] += PPM;
+                }
                 if t.extrants_finaux().iter().any(|&(x, _)| rations[x] > 0) {
                     poids[r] += PPM - bat.prod_ppm;
                 }
@@ -1494,7 +1510,15 @@ impl Simulation {
                 self.recruter(b, equipe - present);
             }
         }
-        if self.chantiers_en_cours() >= self.cat.extension.chantiers_max {
+        // Un chantier qui attend son matériau ne bloque pas la place d'un autre : c'est justement l'autre qui doit
+        // produire ce matériau (la forêt qui manque), sinon le village reste bloqué.
+        let actifs = self
+            .monde
+            .batiments
+            .iter()
+            .filter(|b| b.chantier.is_some() && !matches!(b.limitant, Limitant::Intrant(_)))
+            .count();
+        if actifs >= self.cat.extension.chantiers_max {
             return;
         }
         let nq = self.nq();
@@ -1509,21 +1533,30 @@ impl Simulation {
         if !attente.is_empty() {
             let motif = format!("{} pops attendent un logement", attente.len());
             let centres = self.centres(attente.iter().map(|&i| self.pops[i].residence));
-            // 1a. Une maison de plus dans le hameau d'une pop qui attend, tant qu'il a de la place.
+            // Pour chaque hameau d'une pop qui attend : une maison de plus là où l'on est, ou un hameau neuf
+            // ailleurs s'il vaut `seuil_fondation` fois mieux (la famille reste, sauf gain net, docs/07 §4.3-4.4).
+            let maison_en_cours = centres.iter().any(|&c| self.maison_en_cours(c));
+            let habitat = tensions
+                .iter()
+                .filter(|&&r| !self.producteurs_bloques_par_intrant(r))
+                .find_map(|&r| self.habitat_producteur(r))
+                .unwrap_or(0);
             for &centre in &centres {
+                let reste = self.valeur_habitat(self.monde.quartiers[centre].tuile, 1);
+                let fonder = !hameau_en_cours && !maison_en_cours && {
+                    self.site_hameau(centre, habitat).map_or(false, |site| {
+                        self.valeur_habitat(site.tuile, 1) * PPM >= reste * self.cat.peuplement.seuil_fondation_ppm
+                    })
+                };
+                if fonder && self.lancer_hameau(centre, habitat, &motif) {
+                    return;
+                }
                 if self.lancer_maison(centre, &motif) {
                     return;
                 }
             }
-            // 1b. Sinon, un nouveau hameau (une seule fondation à la fois), sauf si une maison déjà
-            // en chantier va loger ces pops.
-            let maison_en_cours = centres.iter().any(|&c| self.maison_en_cours(c));
+            // Plus de place où l'on est (densité maximale) : fonder ailleurs, quelle qu'en soit la valeur relative.
             if !hameau_en_cours && !maison_en_cours {
-                let habitat = tensions
-                    .iter()
-                    .filter(|&&r| !self.producteurs_bloques_par_intrant(r))
-                    .find_map(|&r| self.habitat_producteur(r))
-                    .unwrap_or(0);
                 for &centre in &centres {
                     if self.lancer_hameau(centre, habitat, &motif) {
                         return;
@@ -1641,6 +1674,7 @@ impl Simulation {
             self.monde.tuiles[t].contenu == Contenu::Vide
                 && self.monde.tuiles[t].aretes == 0
                 && self.monde.tuiles[t].constructible()
+                && !self.etoufferait(t, &[])
         };
         // Le lieu posé à `supplement` d'arêtes de `attache` est-il desservi ?
         let desservi = |attache: usize, supplement: i64| {
@@ -1668,10 +1702,13 @@ impl Simulation {
                     tuile,
                 )
             } else {
+                // Hameau : le site vaut par la terre libre qu'il partage, l'eau et les voisins (docs/07 §4.1) ;
+                // les travaux (pont, conversion) en rabattent la valeur.
+                let valeur = self.valeur_habitat(tuile, 1);
                 (
+                    -(valeur * 100_000 / (100_000 + travaux)),
                     dist + travaux / self.cat.extension.travail_par_unite_route_milli,
                     route.len() as i64,
-                    fert,
                     tuile,
                 )
             };
@@ -1728,7 +1765,9 @@ impl Simulation {
                 } else {
                     match self.traversabilite(v) {
                         Traversabilite::Libre => (0, 0),
-                        Traversabilite::Couteuse => (SURCOUT_TRAVERSEE, 0),
+                        // Un chemin d'exploitation à travers une terre : pénalité d'ordre seulement (on préfère
+                        // contourner), la distance réelle ne change pas.
+                        Traversabilite::Couteuse => (0, SURCOUT_TRAVERSEE),
                         Traversabilite::Interdite => continue,
                     }
                 };
@@ -1813,6 +1852,60 @@ impl Simulation {
         }
     }
 
+    /// Prendre la tile `v` (avec `deja`, les tiles du même projet) étoufferait-elle un hameau voisin ? Chaque hameau
+    /// garde au moins 2 « chemins ruraux » : une ligne de 5 tiles, dans l'une des 8 directions, qu'aucune terre ni
+    /// aucun lieu n'occupe (une route y est permise). Sans eux, les terres qui grossissent enferment le hameau,
+    /// les routes ne passent plus et le village ne peut plus s'étendre : dans la réalité, des chemins courent
+    /// entre les parcelles.
+    fn etoufferait(&self, v: usize, deja: &[usize]) -> bool {
+        const LONGUEUR: i64 = 5;
+        const MIN_CHEMINS: usize = 2;
+        let (vx, vy) = self.monde.xy(v);
+        for h in 0..self.nq() {
+            let ht = self.monde.quartiers[h].tuile;
+            let (hx, hy) = self.monde.xy(ht);
+            if hx.abs_diff(vx).max(hy.abs_diff(vy)) as i64 > LONGUEUR {
+                continue;
+            }
+            let chemins = crate::monde::DIRS
+                .iter()
+                .filter(|&&(_, dx, dy, _)| {
+                    (1..=LONGUEUR).all(|k| {
+                        let (x, y) = (hx as i64 + dx as i64 * k, hy as i64 + dy as i64 * k);
+                        if x < 0 || y < 0 || x >= self.monde.largeur as i64 || y >= self.monde.hauteur as i64 {
+                            return false;
+                        }
+                        let u = y as usize * self.monde.largeur + x as usize;
+                        let tu = &self.monde.tuiles[u];
+                        u != v && !deja.contains(&u) && tu.contenu == Contenu::Vide && tu.constructible()
+                    })
+                })
+                .count();
+            // Un hameau qui n'a déjà plus assez de chemins n'est pas pénalisé par les tiles qu'il ne touche pas.
+            if chemins < MIN_CHEMINS {
+                let avant = crate::monde::DIRS
+                    .iter()
+                    .filter(|&&(_, dx, dy, _)| {
+                        (1..=LONGUEUR).all(|k| {
+                            let (x, y) = (hx as i64 + dx as i64 * k, hy as i64 + dy as i64 * k);
+                            if x < 0 || y < 0 || x >= self.monde.largeur as i64 || y >= self.monde.hauteur as i64 {
+                                return false;
+                            }
+                            let u = y as usize * self.monde.largeur + x as usize;
+                            let tu = &self.monde.tuiles[u];
+                            tu.contenu == Contenu::Vide && tu.constructible()
+                        })
+                    })
+                    .count();
+                // On refuse si v ôte un chemin à un hameau qui n'en a que juste assez.
+                if avant >= MIN_CHEMINS || chemins < avant {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
     /// Choisit jusqu'à `k` tiles libres contiguës (voisines par un côté) à `base`, de proche en proche,
     /// les plus fertiles d'abord. Une tile libre est vide et traversée par aucune arête.
     ///
@@ -1836,7 +1929,7 @@ impl Simulation {
                     let Some(v) = self.monde.voisin(t, d) else {
                         continue;
                     };
-                    if !libre(v) || occupees.contains(&v) {
+                    if !libre(v) || occupees.contains(&v) || self.etoufferait(v, &occupees) {
                         continue;
                     }
                     let voisins = [0usize, 2, 4, 6]
@@ -2084,10 +2177,107 @@ impl Simulation {
         let reste = self.agrandir(&[site.tuile], k.saturating_sub(1), Some(centre), Some(type_id));
         let mut emprise = vec![site.tuile];
         emprise.extend(reste);
+        // Une terre d'une seule tile n'en est pas une : si la place manque autour du site, on renonce.
+        if emprise.len() < 2 && k >= 2 {
+            return None;
+        }
         let mut cout = self.cout_defrichement(type_id, &emprise)?;
         let ponts = self.travail_ponts(&site.route);
         cout.travail += ponts;
         Some((site, emprise, cout, ponts))
+    }
+
+    /// Achève d'un coup tous les chantiers en cours (génération de l'état initial : le village se constitue sans durée).
+    fn achever_chantiers(&mut self) {
+        for b in &mut self.monde.batiments {
+            if let Some(ch) = b.chantier.as_mut() {
+                ch.travail_restant = 0;
+            }
+        }
+        self.terminer_chantiers();
+    }
+
+    /// État initial (docs/07 §5) : à partir du premier hameau, constitue le village avec les règles de site du jeu.
+    /// `besoins[t]` : tiles de terre exploitée à fournir par type de bâtiment (voir `village::composition`).
+    /// D'abord un bloc de chaque type de terre, puis les hameaux (qui exigent des producteurs à portée), puis le
+    /// reste des terres, en tournant entre les hameaux. Les chantiers sont achevés aussitôt.
+    pub(crate) fn peupler_initial(&mut self, besoins: &[usize], nb_hameaux: usize) -> Result<(), String> {
+        // Tiles équivalentes (en ppm de tile) : chaque tile compte pour son rendement réel, de sorte qu'un village sur
+        // sol pauvre pose plus de terre qu'un village sur limon (docs/07 §4).
+        let tuiles_de = |s: &Self, t: usize| -> usize {
+            s.monde
+                .batiments
+                .iter()
+                .filter(|b| b.type_id == t && b.chantier.is_none())
+                .flat_map(|b| b.emprise.iter())
+                .map(|&i| s.cat.rendement_tile(t, &s.monde.tuiles[i]) as usize)
+                .sum()
+        };
+        // Les terres qui n'ont pas besoin de bois d'abord : le bois est le matériau des autres chantiers.
+        let mut ordre: Vec<usize> = (0..self.cat.batiments.len())
+            .filter(|&t| self.cat.batiments[t].par_tile && besoins.get(t).copied().unwrap_or(0) > 0)
+            .collect();
+        ordre.sort_by_key(|&t| (self.cat.batiments[t].cout_creation.as_ref().map_or(false, |c| c.materiau > 0), t));
+        let cap = self.cat.habitats[0].capacite_pops;
+        let mut tour = 0usize;
+        let lancer_terre_de = |s: &mut Self, t: usize, tour: &mut usize, motif: &str| -> bool {
+            let nq = s.nq();
+            for k in 0..nq {
+                let c = (*tour + k) % nq;
+                if s.lancer_defrichement(c, t, motif) {
+                    s.achever_chantiers();
+                    *tour += 1;
+                    return true;
+                }
+            }
+            false
+        };
+        // Le village se constitue par étapes : à chaque étape, une part des terres, puis un hameau de plus. Le
+        // terroir déjà occupé rabat la valeur des sites proches : les hameaux s'écartent d'eux-mêmes (docs/07 §4).
+        for etape in 1..=nb_hameaux.max(1) {
+            for &t in &ordre {
+                // Une marge sur le besoin nominal : le rendement réel des tiles (rocaille, qualité du sol) est inférieur à 1,0.
+                let cible = (besoins[t] * PPM as usize * MARGE_TERRES_PCT / 100 * etape).div_ceil(nb_hameaux.max(1)).max(1);
+                // Au moins un bloc de chaque type dès la première étape (les hameaux exigent des producteurs).
+                for _ in 0..2000 {
+                    if tuiles_de(self, t) >= cible {
+                        break;
+                    }
+                    if !lancer_terre_de(self, t, &mut tour, "état initial") {
+                        if tuiles_de(self, t) == 0 {
+                            return Err(format!("aucune place pour {}", self.cat.batiments[t].nom));
+                        }
+                        break;
+                    }
+                }
+            }
+            if etape < nb_hameaux {
+                let nq = self.nq();
+                let mut fait = false;
+                for k in 0..nq {
+                    if self.lancer_hameau((tour + k) % nq, 0, "état initial") {
+                        self.achever_chantiers();
+                        fait = true;
+                        break;
+                    }
+                }
+                if !fait {
+                    if false { eprintln!("étape {etape} nq {} types {:?} besoins {:?}", self.nq(), (0..self.cat.batiments.len()).map(|t| tuiles_de(self, t)).collect::<Vec<_>>(), besoins); let h = self.monde.quartiers[0].tuile; let libres = (0..self.monde.tuiles.len()).filter(|&i| { let tu = &self.monde.tuiles[i]; tu.contenu == Contenu::Vide && tu.aretes == 0 && tu.constructible() && self.distance_tiles(i, h) <= 14 }).count(); eprintln!("libres à 14 : {libres} ; hameaux {:?}", (0..self.nq()).map(|q| self.monde.xy(self.monde.quartiers[q].tuile)).collect::<Vec<_>>()); }
+                    return Err("aucun site pour un hameau de plus".into());
+                }
+                let q = self.nq() - 1;
+                self.monde.quartiers[q].capacite_pops = cap;
+                tour += 1;
+            }
+        }
+        self.monde.quartiers[0].capacite_pops = cap;
+        for &t in &ordre {
+            if tuiles_de(self, t) * 2 < besoins[t] * PPM as usize * MARGE_TERRES_PCT / 100 {
+                return Err(format!("trop peu de terre pour {} : {} sur {}", self.cat.batiments[t].nom, tuiles_de(self, t) / PPM as usize, besoins[t]));
+            }
+        }
+        self.evenements.clear();
+        Ok(())
     }
 
     /// Une maison est-elle en chantier dans le hameau `q` ?
@@ -2109,7 +2299,8 @@ impl Simulation {
         let nq = self.nq();
         let habitat_id = self.monde.quartiers[q].habitat_id;
         let cap = self.monde.quartiers[q].capacite_pops;
-        if cap == 0 || cap >= self.cat.habitats[habitat_id].capacite_max_pops {
+        // Seule la densité maximale par tile borne un hameau (docs/07 §4.2) ; c'est la valeur du site qui décide.
+        if cap == 0 || cap >= self.cat.habitat.densite_max_pops {
             return false;
         }
         let tuile = self.monde.quartiers[q].tuile;
@@ -2164,31 +2355,87 @@ impl Simulation {
         true
     }
 
-    fn lancer_hameau(&mut self, centre: usize, habitat_id: usize, motif: &str) -> bool {
-        let cout = self.cat.habitats[habitat_id].cout_creation.clone();
-        // Un hameau doit pouvoir être bâti (matériau), chauffé et nourri à portée de son site.
-        // Le hameau neuf doit trouver à portée de son site de quoi satisfaire chaque ration, hors ce que son
-        // atelier domestique produit lui-même, ainsi que la fibre de cet atelier.
-        let atelier = self.cat.habitats[habitat_id].atelier;
-        let propres: Vec<usize> = atelier
-            .map(|a| self.cat.batiments[a].extrants_finaux().iter().map(|&(r, _)| r).collect())
-            .unwrap_or_default();
-        let mut requis: Vec<Vec<usize>> = self
-            .cat
-            .besoins
-            .iter()
-            .filter(|b| !propres.contains(&b.ressource))
-            .map(|b| vec![b.ressource])
-            .collect();
-        if let Some(a) = atelier {
-            for (r, _) in self.cat.batiments[a].intrants_externes() {
-                requis.push(vec![r]);
+    /// Valeur d'un site de vie pour `nouveaux` pops de plus (docs/07 §4.1, §4.2) : la terre libre à portée
+    /// (rendement d'une terre nourricière, décroissant avec la distance, forêt et marais comptés après leur
+    /// coût de conversion), **partagée entre les pops du voisinage**, corrigée par l'eau à portée et par la
+    /// présence de voisins. Elle baisse à mesure que le terroir se remplit : c'est ce qui limite un noyau et
+    /// pousse à fonder ailleurs. Aucune taille n'est codée.
+    pub fn valeur_habitat(&self, tuile: usize, nouveaux: i64) -> i64 {
+        let pe = &self.cat.peuplement;
+        let (cx, cy) = self.monde.xy(tuile);
+        let r = pe.rayon_terroir;
+        let type_nourricier = self.type_nourricier();
+        let mut terroir: i64 = 0;
+        for dy in -r..=r {
+            for dx in -r..=r {
+                if dx * dx + dy * dy > r * r {
+                    continue;
+                }
+                let (x, y) = (cx as i64 + dx, cy as i64 + dy);
+                if x < 0 || y < 0 || x >= self.monde.largeur as i64 || y >= self.monde.hauteur as i64 {
+                    continue;
+                }
+                let t = y as usize * self.monde.largeur + x as usize;
+                let tu = &self.monde.tuiles[t];
+                if tu.contenu != Contenu::Vide || tu.aretes != 0 || !tu.constructible() {
+                    continue;
+                }
+                // Une tile à convertir vaut moins : on rabat sa valeur du travail de conversion.
+                let travaux = self.cat.travail_conversion(type_nourricier, &[t], &self.monde.tuiles);
+                let f = self.fert_pour(type_nourricier, t) * 100_000 / (100_000 + travaux);
+                terroir += f / (dx.abs().max(dy.abs()) + 3);
             }
         }
+        // Pops du voisinage (terroir partagé) et pops tout près (voisins).
+        let (mut pops, mut proches) = (0i64, 0i64);
+        for p in &self.pops {
+            let t = self.monde.quartiers[p.residence].tuile;
+            let d = self.distance_tiles(tuile, t);
+            if d <= r {
+                pops += 1;
+            }
+            if d <= pe.rayon_voisinage {
+                proches += 1;
+            }
+        }
+        let d_eau = self.dist_eau[tuile] as i64;
+        let eau = if d_eau <= pe.eau_proche {
+            PPM
+        } else {
+            (PPM * (pe.eau_portee - d_eau).max(0) / (pe.eau_portee - pe.eau_proche)).max(PPM / 10)
+        };
+        let voisins = PPM + proches * pe.poids_voisins_ppm;
+        terroir * eau / PPM * voisins / PPM / (pops + nouveaux).max(1)
+    }
+
+    /// Type de terre qui nourrit : la première terre fertile qui livre une ressource nutritive.
+    fn type_nourricier(&self) -> Option<usize> {
+        (0..self.cat.batiments.len()).find(|&t| {
+            let ty = &self.cat.batiments[t];
+            ty.fertile && ty.par_tile && ty.extrants_finaux().iter().any(|&(r, _)| self.cat.ressources[r].nutritive_milli > 0)
+        })
+    }
+
+    /// Site et ressources requises pour fonder un hameau de ce type depuis `centre` (sans rien modifier).
+    fn site_hameau(&self, centre: usize, habitat_id: usize) -> Option<Site> {
+        let cout = &self.cat.habitats[habitat_id].cout_creation;
+        // Un hameau doit pouvoir être nourri (n'importe quelle ressource nutritive) et chauffé à portée de son site, et
+        // se faire livrer son matériau de construction. Le textile (lin, laine) n'est pas exigé : un hameau
+        // sans fibre à portée verra ses pops pousser à défricher la terre qui lui manque (docs/07 §4.1).
+        let nourriture: Vec<usize> = (0..self.cat.ressources.len())
+            .filter(|&r| self.cat.ressources[r].nutritive_milli > 0 && !self.cat.producteurs(r).is_empty())
+            .collect();
+        let mut requis: Vec<Vec<usize>> = vec![nourriture, vec![self.cat.vital.chauffage_ressource]];
         if cout.materiau > 0 {
             requis.push(vec![self.cat.extension.materiau]);
         }
-        let Some(site) = self.meilleur_site(centre, false, None, &requis) else {
+        self.meilleur_site(centre, false, None, &requis)
+    }
+
+    fn lancer_hameau(&mut self, centre: usize, habitat_id: usize, motif: &str) -> bool {
+        let cout = self.cat.habitats[habitat_id].cout_creation.clone();
+        // Un hameau doit pouvoir être bâti (matériau), chauffé et nourri à portée de son site (`site_hameau`).
+        let Some(site) = self.site_hameau(centre, habitat_id) else {
             return false;
         };
         // Le travail de fondation suit le terrain du site (docs/07 §3.3).
