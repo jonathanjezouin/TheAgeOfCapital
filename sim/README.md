@@ -32,6 +32,7 @@ cargo test --release
 | `src/terrain.rs` | générateur de terrain (docs/07 §3, §10) : altitude, rivières par écoulement, terrains par parts, site du village. Conversion (défrichement, drainage) et ponts : `simulation.rs`, `poc.toml` `[terrains]` et `[eau]` (docs/07 §12) |
 | `src/village.rs` | génération déterministe (état initial : premier hameau sur un site dégagé, puis terres et hameaux posés par les règles de site du jeu, `Simulation::peupler_initial`, docs/07 §13), dimensionnée près de l'équilibre |
 | `src/simulation.rs` | jour : différés → contrats (pro rata) → budget de jours de travail → production → consommation → jauges de croissance → péremption ; saison : extension (chantiers de maison, de défrichement, de hameau) |
+| `tests/seigneur.rs` | seigneur, serfs, champart et grenier, maître d'ouvrage, remise en état et usure (docs/07 §16) |
 | `tests/abandon.rs` | scission d'une terre, route à travers un champ, abandon puis friche puis forêt, repousse selon la lisière, hameau vide détruit, chantier abandonné (docs/07 §14) |
 | `tests/terrain.rs` | déterminisme du terrain, parts, cours d'eau jusqu'au bord, site du village, rien de bâti sur un terrain fermé |
 | `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, budget de jours, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, jamais bloqués), terres d'un seul tenant, extension, congestion en sommeil |

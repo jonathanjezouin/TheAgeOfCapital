@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts), 4 (peuplement par la valeur du site) et 4 bis (abandon, destruction, repousse) sont faites** (§8, §10 à §14) ; l'étape 6 (acteurs : pops et seigneur) est conçue au §15, le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts), 4 (peuplement par la valeur du site) 4 bis (abandon, destruction, repousse) et 6 (seigneur, serfs, grenier) sont faites** (§8, §10 à §16) ; le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -131,7 +131,7 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 3. ~~Défrichement (coût, bois récupéré), drainage, ponts et gués~~ : **fait le 2026-11-04** (§12). La repousse et les opportunités (pierre, tourbe) restent à faire.
 4. ~~Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4)~~ : **fait le 2026-11-04** (§13).
 4 bis. ~~Abandon, destruction, repousse~~ : **fait le 2026-11-04** (§14) ; outils de mesure : `sim-cli --mesure N`.
-6. **Acteurs : le seigneur local, les pops serves, le grenier seigneurial** (§15). Les décisions d'aménagement quittent `etendre` pour le seigneur.
+6. ~~Acteurs : le seigneur local, les pops serves, le grenier seigneurial~~ : **fait le 2026-11-04** (§16).
 5. Réglage des poids de `[peuplement]` et des durées de `[abandon]` sur plusieurs graines, **après la phase 6** (le critère de décision change avec le décideur).
 7. Plus tard : échange entre pops, outils, saisons, services (banalités), navigation, relief (collines, montagnes), régions macro.
 
@@ -264,7 +264,8 @@ Décidé le 2026-11-04 avec Jonathan, en remplacement des deux rustines de l'ét
 | Routes et terres | `meilleur_site`, `poser_site` | une route **ne traverse plus** une terre ; si elle doit y passer, elle **détruit** les tiles traversées (travail `destruction_pop_jours` par tile : champ 2, pâturage 1, verger 8, forêt exploitée 3, lin 2, élevage 1), qui s'ajoute au chantier et pèse dans le choix du site comme un pont. Le nœud d'une terre, les chantiers et les hameaux restent intraversables |
 | Scission | `Simulation::scinder` | quand une destruction coupe l'emprise, **les tiles contiguës dissociées forment une nouvelle terre** (même type), qui garde sa part du stock et se relie à la route posée |
 | Abandon d'une terre | `abandonner_terre`, `entretien_mensuel` | une terre à laquelle on ne travaille presque pas (< 2 % du besoin) **et dont la ressource ne manque pas** depuis 20 ans est abandonnée : elle ne produit plus, ne reçoit plus de travail, ne compte plus comme fournisseur. Gratuit. Après 8 ans elle redevient friche (ses tiles sont libérées, le stock est compté comme perdu) |
-| Abandon d'un hameau | `abandonner_hameau`, `detruire_hameau` | sans pop depuis 10 ans, il est abandonné (plus de logement) ; en ruine après 40 ans, il est **détruit** (sa tile est libre, l'atelier devient un site inerte) |
+| Abandon d'un hameau | `abandonner_hameau`, `detruire_hameau` | **abandonné = sans pop** : un hameau vide depuis 2 ans (délai qui évite les à-coups) est abandonné, ce qui retire son logement (la capacité est gardée en mémoire) ; il **s'use** ensuite, et en ruine après 40 ans il est **détruit** (sa tile est libre, l'atelier devient un site inerte). *(Corrigé le 2026-11-04 : le délai était de 10 ans.)* |
+| Remise en état | `lancer_remise_hameau`, `lancer_remise_terre` | tant qu'un hameau ou une terre abandonnés ne sont pas détruits, on peut les **remettre en état**, pour une part de leur construction qui croît avec l'usure : de 10 % (à peine abandonné) à 60 % (au bord de la ruine) ; passé ce seuil, il faut reconstruire. Le seigneur préfère la remise à une fondation. Vaut pour les hameaux et les terres ; les autres bâtiments inutilisés suivront le même principe quand ils existeront |
 | Abandon d'un chantier | `abandonner_chantier` | sans progrès depuis 3 ans, il est abandonné : l'équipe est libérée, un hameau en fondation est détruit et ses pops retournent dans un autre hameau. Un hameau n'est plus fondé sur un site abandonné depuis moins de 10 ans, ni un chantier qui consomme du bois lancé dans un hameau qui en manque |
 | Repousse | `repousse_mensuelle`, `facteur_repousse_ppm` | une tile libérée (friche) redevient **forêt après 40 ans**, ×0,6 si trois tiles voisines ou plus sont de la forêt (lisière), ×1,0 pour 1 ou 2, ×1,5 isolée. Une tile qui a servi (`vacant_mois`) repousse ; une tile jamais utilisée ne change pas. L'app affiche depuis combien d'années elle est en friche et dans combien la forêt reviendra |
 | Données | `poc.toml` `[abandon]`, `destruction_pop_jours` | toutes les durées sont des données |
@@ -278,7 +279,7 @@ Décidé le 2026-11-04 avec Jonathan, en remplacement des deux rustines de l'ét
 - Le test de chantier bloqué mesure maintenant la règle d'abandon (aucun chantier ne survit au-delà de 3 ans sans progrès) ; celui de croissance du pont WebAssembly n'exige plus qu'une population soit croissante, seulement vivante.
 - Le défaut de l'étape 3 (« le bois récupéré va au hameau le plus proche ») reste, ainsi qu'un défaut de la fondation : l'équipe d'un hameau qui n'avance pas vit sans ravitaillement ; l'abandon du chantier la libère désormais.
 
-## 15. Vision des acteurs et étape 6 (conçue, non réalisée)
+## 15. Vision des acteurs (conçue le 2026-11-04, réalisée au §16)
 
 ### 15.1 Qui fait quoi (formulation de Jonathan, 2026-11-04)
 
@@ -313,3 +314,26 @@ Le principe 3 du `CLAUDE.md` est reformulé en ce sens (la Firme n'est plus « l
 ### 15.4 Ordre de réalisation
 
 1. **Étape 4 bis** (fait). 2. **Étape 6** : personnage et poste, statut de serf, grenier et champart, maître d'ouvrage, `etendre` devient la politique du seigneur, panneau « Seigneur » dans l'app. 3. **Étape 5** : réglage des poids et durées, mesure sur plusieurs graines (noyaux de plusieurs pops, hameaux vides, échecs de fondation).
+
+## 16. Étape 6 réalisée : le seigneur local, les serfs, le grenier
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Personnage | `monde.rs` `Personnage`, `Monde.personnages` | un seul : le **seigneur du village** (poste `seigneur_local`, domaine 0 = toute la carte), créé à la génération avec un grenier garni (`[seigneurie] grenier_initial`). Dévolution non implémentée |
+| Serfs | `Pop.statut` | toutes les pops sont `Serf` (champ nullable : `None` = libre, futur). Liberté du lieu de travail (inchangée), pas de liberté de construction ni d'installation |
+| Champart | `produire` | le seigneur prélève **12 %** de la production des terres en grain et en bois (`champart`, `champart_ressources`), en nature, versés à son grenier |
+| Train de vie | `train_de_vie` | il consomme chaque jour la ration d'une **demi-pop** sur son grenier |
+| Maître d'ouvrage | `Chantier.maitre` | tout chantier a pour maître le seigneur : **son grenier fournit le matériau** (les contrats de livraison depuis les producteurs ne servent plus aux chantiers), le reste du matériau lui revient, la main-d'œuvre est la corvée des pops |
+| Il ne lance que ce qu'il peut payer | `assez_de_materiau`, `bras_recrutables_depuis` | pas de chantier si son grenier ne couvre pas le bois (déjà engagé compris), ni si aucune pop à portée ne peut en former l'équipe. Un chantier qui manque de bois pèse sur la tension du bois (déjà en place) |
+| Décisions | `Simulation::etendre` | les décisions d'aménagement (logement, hameau, terre, remise en état) sont celles du seigneur ; il remet en état un hameau abandonné avant d'en fonder un, une terre abandonnée avant d'en défricher une |
+| Remise en état | `Cible::RemiseHameau`, `Cible::RemiseTerre` | voir §14 |
+| App | `PanneauInfos.vue`, `sim-wasm` | un bloc « Seigneur du village » (grenier de grain et de bois, chantiers qu'il finance, champart, nombre de serfs) |
+| Tests | `sim/tests/seigneur.rs` | un seigneur et des serfs, champart et conservation de la matière, train de vie, matériau payé par le grenier, rien sans grenier, coût de remise croissant avec l'usure, remise qui rend le logement |
+
+**Ce que la phase 6 ne règle pas (et mesure)** : sur 8 graines et 150 ans, sans réglage, 47 pops, 36 hameaux vivants de taille médiane **1**, 7 vides, **73 hameaux abandonnés et 207 détruits**, deux graines sur huit presque éteintes. Les hameaux détruits viennent surtout d'un cycle de **migration** : fonder un hameau déplace une pop (l'équipe de fondation s'y installe), ce qui vide l'ancien hameau, abandonné puis ruiné ; la fondation ne tient pas compte de la désertion qu'elle provoque. Le critère de décision du seigneur (valeur du site pour ses revenus) n'est pas encore réglé : c'est l'objet de l'étape 5.
+
+**Points ouverts**
+- Les **autres bâtiments inutilisés** (ateliers, futurs services) : même principe (usure, remise), à écrire avec eux.
+- **Banalités** (moulin, four) : la force de regroupement attendue ; le champart en nature est déjà là pour les financer.
+- **Dévolution** du poste, plusieurs seigneurs et domaines, pops libres promues personnages : voir §15.3.
+- La position du **grenier** n'est pas spatiale (transport comptable, principe 5) : à reprendre avec les banalités.

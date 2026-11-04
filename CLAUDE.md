@@ -34,7 +34,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
 | `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
-| `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 4 bis réalisées, étape 6 (seigneur, serfs, grenier) conçue |
+| `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 4 bis et 6 réalisées (seigneur, serfs, grenier), étape 5 (réglage) à venir |
 
 ## Code
 
