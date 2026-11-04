@@ -1,7 +1,7 @@
 <script setup>
 import { computed } from 'vue'
 import { store } from '../store.js'
-import { RESSOURCES, TYPES, HABITATS, limitantTexte, pct, un, etatPop, couleurRatio, dateJeu, traduire } from '../libelles.js'
+import { TERRAINS_INFO, EAUX_INFO, RESSOURCES, TYPES, HABITATS, limitantTexte, pct, un, etatPop, couleurRatio, dateJeu, traduire } from '../libelles.js'
 
 const nomRes = (r) => store.meta.ressources[r]
 
@@ -21,6 +21,15 @@ const entite = computed(() => {
   const l = e.lieux[t.m]
   return { genre: l.chantier ? 'chantier' : 'terre', b: t.m, l, chantier: l.chantier, lieu: l, ...s, fert }
 })
+
+// Terrain et eau de la tile sélectionnée (2 octets par tile, voir terrain.js).
+const sol = computed(() => {
+  const s = store.selection, m = store.meta
+  if (!s || !m || !store.terrain) return null
+  const i = (s.y * m.largeur + s.x) * 2
+  return { ...TERRAINS_INFO[store.terrain[i]], eau: EAUX_INFO[store.terrain[i + 1] & 3] }
+})
+const sansBatir = computed(() => !!sol.value && (sol.value.eau !== '' || ['Forêt', 'Plaine marécageuse'].includes(sol.value.nom)))
 
 const pops = computed(() => {
   const en = entite.value, e = store.etat
@@ -78,12 +87,14 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
     </div>
 
     <template v-else>
-      <small>Tile ({{ entite.x }}, {{ entite.y }}) · fertilité {{ Math.round(entite.fert * 100) }} %</small>
+      <small>Tile ({{ entite.x }}, {{ entite.y }}) · {{ sol?.eau || sol?.nom }} · fertilité {{ Math.round(entite.fert * 100) }} %</small>
 
       <!-- Terre libre / chemin -->
       <div v-if="entite.genre === 'vide'">
-        <h2>Terre libre</h2>
-        <p class="doux">Plaine, exploitable : un défrichement doit rester à portée d'un hameau ({{ store.meta.distance_max }} tiles de chemin au plus). Plus la terre est pauvre, moins elle produit.</p>
+        <h2>{{ sol?.eau ? sol.eau : sansBatir ? sol.nom : 'Terre libre' }}</h2>
+        <p v-if="sol?.eau" class="doux">Cours d'eau : il coupe le territoire, on ne le franchit pas encore (ponts à venir). Un point d'eau attire l'habitat.</p>
+        <p v-else-if="sansBatir" class="doux">{{ sol.texte }} Pas encore constructible : il faudra défricher ou drainer.</p>
+        <p v-else class="doux"><b>{{ sol?.nom }}</b>. {{ sol?.texte }} Un défrichement doit rester à portée d'un hameau ({{ store.meta.distance_max }} tiles de chemin au plus). Plus la terre est pauvre, moins elle produit.</p>
       </div>
       <div v-else-if="entite.genre === 'chemin'">
         <h2>Chemin de terre</h2>

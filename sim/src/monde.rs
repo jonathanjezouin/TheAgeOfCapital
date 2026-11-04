@@ -1,6 +1,7 @@
 //! La carte (tiles passives) et les entités actives (quartiers, bâtiments).
 
 use crate::donnees::Qte;
+use crate::terrain::{Eau, Terrain};
 use serde::Serialize;
 
 /// Les 8 directions d'arêtes, dans l'ordre E, SE, S, SO, O, NO, N, NE :
@@ -53,8 +54,21 @@ pub struct Tuile {
     /// Variante visuelle (herbe, sprite de bâtiment) : pur rendu, aucune incidence économique.
     pub variante: u8,
     /// Fertilité de la tile (ppm de 1,0) : proportionnelle à la production des terres exploitées.
-    /// Le terrain reste unique (plaine) ; seule la qualité de la terre varie.
+    /// Pour l'instant indépendante du terrain (champ radial autour du village, docs/07 étape 2).
     pub fertilite_ppm: i64,
+    /// Terrain de la tile (docs/07 §3) : plaine, plaine riche, rocailleuse, marécageuse, forêt.
+    pub terrain: Terrain,
+    /// Cours d'eau qui occupe la tile (rien, ruisseau, rivière, fleuve) : non constructible tant qu'il n'y a pas de pont.
+    pub eau: Eau,
+    /// Direction (index de `DIRS`) vers la tile aval d'un cours d'eau, 255 sinon : pur rendu.
+    pub aval: u8,
+}
+
+impl Tuile {
+    /// Peut-on y bâtir ou y faire passer une route neuve ? (ni eau, ni forêt, ni marais)
+    pub fn constructible(&self) -> bool {
+        self.eau == Eau::Aucune && self.terrain.constructible()
+    }
 }
 
 /// Un hameau : lieu de vie à faible densité (logement + travail domestique).

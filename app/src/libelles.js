@@ -66,3 +66,13 @@ export function couleurRatio(r) {
   const h = 8 + 112 * x
   return `hsl(${h} 62% 46%)`
 }
+
+/** Terrains de la carte (docs/07 §3) : nom et description pour le panneau d'information. */
+export const TERRAINS_INFO = [
+  { nom: 'Plaine', texte: 'Terrain de référence : exploitable sans contrainte.' },
+  { nom: 'Plaine riche', texte: 'Limons profonds : les meilleures terres à céréales, mises en valeur les premières.' },
+  { nom: 'Plaine rocailleuse', texte: 'Sol caillouteux : plus pauvre pour les céréales, plus rude à travailler.' },
+  { nom: 'Plaine marécageuse', texte: 'Sol détrempé : inutilisable tant qu\'il n\'est pas drainé, difficile à bâtir.' },
+  { nom: 'Forêt', texte: 'Bois sur pied : réserve foncière, à défricher plus tard.' },
+]
+export const EAUX_INFO = ['', 'Ruisseau', 'Rivière', 'Fleuve']

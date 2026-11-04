@@ -14,6 +14,7 @@ cargo test --release
 | `--graine N` | graine du village (même graine, même résultat) |
 | `--hameaux N` / `--occupation PCT` | taille du village de départ / pops initiales en % de la capacité de logement |
 | `--rayon-fertile T` / `--rayon-sterile T` | terroir : rayon (tiles) de pleine fertilité / de terre la plus pauvre |
+| `--terrain` | parts de chaque terrain et vue d'ensemble ASCII de la carte (`T` forêt, `%` marais, `^` rocailleuse, `"` plaine riche, `~ = #` ruisseau, rivière, fleuve, `V` hameau) |
 | `--carte` / `--journal` | plan ASCII du village / journal des événements (chantiers, avec leur motif) |
 | `--accel X` | facteur sur natalité et mortalité (observer l'équilibre plus vite) |
 | `--donnees f.toml` | remplace `donnees/poc.toml` |
@@ -28,8 +29,10 @@ cargo test --release
 | `src/donnees.rs` | chargement et validation ; quantités en milli-unités, proportions en ppm (entiers) |
 | `src/monde.rs` | tiles passives, quartiers, bâtiments, **arêtes** (demi-arêtes dans 8 directions par tile, coûts 10 / 14, pas de croisement de diagonales) |
 | `src/reseau.rs` | segments (arêtes), Dijkstra à coûts entiers borné par `distance_max`, chemins précalculés entre lieux |
+| `src/terrain.rs` | générateur de terrain (docs/07 §3, §10) : altitude, rivières par écoulement, terrains par parts, site du village |
 | `src/village.rs` | génération déterministe (croix de chemins, champ de fertilité), dimensionnée près de l'équilibre |
 | `src/simulation.rs` | jour : différés → contrats (pro rata) → budget de jours de travail → production → consommation → jauges de croissance → péremption ; saison : extension (chantiers de maison, de défrichement, de hameau) |
+| `tests/terrain.rs` | déterminisme du terrain, parts, cours d'eau jusqu'au bord, site du village, rien de bâti sur un terrain fermé |
 | `tests/invariants.rs` | déterminisme, conservation de la matière, stocks ≥ 0, stabilité sur 500 ans, oracle malthusien, jauges de croissance, budget de jours, producteur servi d'abord, distance = coût des arêtes (diagonale à 14, croisement interdit), fertilité, chantiers (travail, bois, jamais bloqués), terres d'un seul tenant, extension, congestion en sommeil |
 
 ## Terres sur N tiles et budget de jours (docs/02 §8.2, §8.3)

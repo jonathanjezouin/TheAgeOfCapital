@@ -19,7 +19,7 @@ Prérequis : Node 20+, Rust avec la cible `wasm32-unknown-unknown` (`rustup targ
 
 | Élément | Détail |
 |---|---|
-| Carte | Sol, **routes en courbes** (arêtes du moteur, 8 directions, lissées par Catmull-Rom avec décalage organique et texture de terre battue), **une maison en bois par pop** le long des routes et tournée vers elles, terres, chantiers (maison en 3 états, barre d'avancement), **une pop = un point** (vert satisfaite, orange insatisfaite, rouge en manque ; contour clair = reste chez elle aujourd'hui), qui **marche sur les routes** matin et soir en mode Jour/nuit |
+| Carte | **Terrain** (plaine, plaine riche, rocailleuse, marécageuse, forêt, cours d'eau sur 200 × 200 tiles),  **routes en courbes** (arêtes du moteur, 8 directions, lissées par Catmull-Rom avec décalage organique et texture de terre battue), **une maison en bois par pop** le long des routes et tournée vers elles, terres, chantiers (maison en 3 états, barre d'avancement), **une pop = un point** (vert satisfaite, orange insatisfaite, rouge en manque ; contour clair = reste chez elle aujourd'hui), qui **marche sur les routes** matin et soir en mode Jour/nuit |
 | Vitesse | Pause, +1 jour, **Jour/nuit** (un jour dure 24 s : la nuit tombe et les pops rentrent chez elles), ×1, ×10, ×100, ×1000 jours par seconde |
 | Pop | Clic sur une pop (ou sur son nom dans la liste d'un hameau) : **inspecteur** (lieu du jour et motif, stock personnel et autonomie, terres possibles surlignées avec la raison du choix, trajet, santé) |
 | Sélection | Clic sur une tile : hameau (pops, rations, stock, croissance), terre (production, **facteur limitant**, fertilité, pops affectées), chantier (avancement, équipe, **motif**), chemin, terre libre |
@@ -33,6 +33,7 @@ Prérequis : Node 20+, Rust avec la cible `wasm32-unknown-unknown` (`rustup targ
 | Fichier | Rôle |
 |---|---|
 | `src/sim.js` | Chargeur du `.wasm` et appels (`creer`, `avancer`, `meta`, `carte`, `etat`, `fertilite`) |
+| `src/terrain.js` | Rendu du terrain de toute la carte (image procédurale + rivières lissées), docs/07 §10 |
 | `src/carte.js` | Rendu PixiJS : couches, caméra, sélection, modes, nuit |
 | `src/store.js` | État partagé (vitesse, mode, sélection, événements) |
 | `src/libelles.js` | Libellés français, date de jeu (1ᵉʳ janvier 1750), traduction du journal |

@@ -10,7 +10,7 @@ fn aide() -> ! {
     eprintln!(
         "sim-cli [--annees N] [--graine N] [--hameaux N] [--occupation PCT]\n\
          \x20       [--donnees fichier.toml] [--accel X] [--csv fichier.csv] [--pas JOURS]\n\
-         \x20       [--json-final fichier.json] [--carte] [--journal]\n\
+         \x20       [--json-final fichier.json] [--carte] [--terrain] [--journal]\n\
          \x20       [--rayon-fertile T] [--rayon-sterile T]"
     );
     std::process::exit(2)
@@ -19,7 +19,7 @@ fn aide() -> ! {
 fn main() {
     let mut args = std::env::args().skip(1);
     let (mut annees, mut pas) = (50u64, 30u64);
-    let (mut carte, mut journal) = (false, false);
+    let (mut carte, mut journal, mut terrain) = (false, false, false);
     let mut pv = ParamsVillage::default();
     let (mut donnees, mut csv, mut json, mut accel): (
         Option<String>,
@@ -42,6 +42,7 @@ fn main() {
             "--rayon-fertile" => pv.rayon_fertile = val().parse().unwrap_or_else(|_| aide()),
             "--rayon-sterile" => pv.rayon_sterile = val().parse().unwrap_or_else(|_| aide()),
             "--carte" => carte = true,
+            "--terrain" => terrain = true,
             "--journal" => journal = true,
             _ => aide(),
         }
@@ -173,6 +174,9 @@ fn main() {
             postes,
             bat.prod_ppm * 100 / PPM
         );
+    }
+    if terrain {
+        println!("\n{}", sim.terrain_ascii());
     }
     if carte {
         println!("\n{}", sim.carte_ascii());

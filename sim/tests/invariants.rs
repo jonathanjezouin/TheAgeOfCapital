@@ -229,6 +229,9 @@ fn monde_3x3() -> Monde {
                 aretes: 0,
                 variante: 0,
                 fertilite_ppm: 1_000_000,
+                terrain: sim::terrain::Terrain::Plaine,
+                eau: sim::terrain::Eau::Aucune,
+                aval: 255,
             })
             .collect(),
         quartiers: Vec::new(),

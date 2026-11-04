@@ -14,6 +14,8 @@ thread_local! {
     static SIM: RefCell<Option<Simulation>> = const { RefCell::new(None) };
     static SORTIE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static FERTILITE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+    /// Deux octets par tile : terrain, puis gabarit d'eau (bits 0-1) et sens de l'aval (bits 2-4, 0 = aucun, sinon 1 + direction / 2).
+    static TERRAIN: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 fn f(ppm: i64) -> f64 {
@@ -260,6 +262,16 @@ pub extern "C" fn sim_creer(graine: u32, hameaux: u32, rayon_fertile: i32, rayon
         Ok(s) => {
             let fert: Vec<u8> = s.monde.tuiles.iter().map(|t| (t.fertilite_ppm / 10_000).clamp(0, 255) as u8).collect();
             FERTILITE.with(|f| *f.borrow_mut() = fert);
+            let terrain: Vec<u8> = s
+                .monde
+                .tuiles
+                .iter()
+                .flat_map(|t| {
+                    let aval = if t.aval < 8 { 1 + t.aval / 2 } else { 0 };
+                    [t.terrain as u8, (t.eau as u8) | (aval << 2)]
+                })
+                .collect();
+            TERRAIN.with(|f| *f.borrow_mut() = terrain);
             SIM.with(|x| *x.borrow_mut() = Some(s));
             0
         }
@@ -299,6 +311,16 @@ pub extern "C" fn sim_fertilite_ptr() -> *const u8 {
 #[no_mangle]
 pub extern "C" fn sim_fertilite_len() -> u32 {
     FERTILITE.with(|f| f.borrow().len() as u32)
+}
+
+#[no_mangle]
+pub extern "C" fn sim_terrain_ptr() -> *const u8 {
+    TERRAIN.with(|f| f.borrow().as_ptr())
+}
+
+#[no_mangle]
+pub extern "C" fn sim_terrain_len() -> u32 {
+    TERRAIN.with(|f| f.borrow().len() as u32)
 }
 
 /// Description statique : ressources, types de bâtiments, habitats, dimensions.

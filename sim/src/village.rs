@@ -13,6 +13,7 @@ use crate::monde::{Batiment, Contenu, Limitant, Monde, Quartier, Tuile};
 use crate::reseau::Reseau;
 use crate::rng::Rng;
 use crate::simulation::{Pop, Simulation};
+use crate::terrain::{generer_terrain, sites_village, CarteTerrain, ParamsTerrain};
 use crate::PPM;
 
 #[derive(Clone, Debug)]
@@ -129,11 +130,11 @@ fn isqrt(n: u64) -> u64 {
 
 /// Fertilité d'une tile (ppm) : bruit de valeur lissé (0,85 à 1,3), qui s'effondre
 /// entre `rayon_fertile` et `rayon_sterile` autour du centre. Pur entier.
-fn champ_fertilite(p: &ParamsVillage, rng: &mut Rng) -> Vec<i64> {
+fn champ_fertilite(p: &ParamsVillage, centre: (usize, usize), rng: &mut Rng) -> Vec<i64> {
     const CELLULE: usize = 24; // ~6 km : le bruit de fertilité varie à l'échelle du terroir (tile de 250 m)
     let (gw, gh) = (p.largeur / CELLULE + 2, p.hauteur / CELLULE + 2);
     let grille: Vec<i64> = (0..gw * gh).map(|_| rng.dans(1001) as i64).collect();
-    let (cx, cy) = (p.largeur as i64 / 2, p.hauteur as i64 / 2);
+    let (cx, cy) = (centre.0 as i64, centre.1 as i64);
     let (r0, r1) = (p.rayon_fertile * 1000, p.rayon_sterile * 1000);
     let mut f = Vec::with_capacity(p.largeur * p.hauteur);
     for y in 0..p.hauteur {
@@ -228,18 +229,28 @@ fn poser_hameau(monde: &mut Monde, cat: &Catalogue, h: usize, t: usize, rng: &mu
 /// on en tire une autre de façon déterministe à partir de la même graine.
 pub fn generer(cat: Catalogue, p: &ParamsVillage) -> Result<Simulation, String> {
     let mut derniere = String::new();
-    for essai in 0..32u64 {
-        let mut rng = Rng::new(
-            p.graine
-                .wrapping_add(essai.wrapping_mul(0x9E37_79B9_7F4A_7C15)),
-        );
-        match essayer(&cat, p, &mut rng) {
-            Ok(sim) => return Ok(sim),
-            Err(e) => derniere = e,
+    // Le terrain dépend de la seule graine ; le village se pose sur une fenêtre dégagée, près d'un point d'eau.
+    let carte = generer_terrain(&ParamsTerrain::defaut(p.graine, p.largeur, p.hauteur));
+    let sites = sites_village(&carte);
+    if sites.is_empty() {
+        return Err("aucun site dégagé pour le village sur cette carte".into());
+    }
+    // Le meilleur site d'abord ; si la disposition n'y tient pas, le suivant.
+    for &(_, cx0, cy0) in &sites {
+        let centre = (cx0, cy0);
+        for essai in 0..32u64 {
+            let mut rng = Rng::new(
+                p.graine
+                    .wrapping_add(essai.wrapping_mul(0x9E37_79B9_7F4A_7C15)),
+            );
+            match essayer(&cat, p, &mut rng, &carte, centre) {
+                Ok(sim) => return Ok(sim),
+                Err(e) => derniere = e,
+            }
         }
     }
     Err(format!(
-        "aucune disposition valide en 32 essais : {derniere}"
+        "aucune disposition valide ({derniere})"
     ))
 }
 
@@ -249,7 +260,13 @@ fn blocs(tiles: usize, max: usize) -> Vec<usize> {
     (0..n).map(|i| tiles / n + usize::from(i < tiles % n)).collect()
 }
 
-fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulation, String> {
+fn essayer(
+    cat: &Catalogue,
+    p: &ParamsVillage,
+    rng: &mut Rng,
+    carte: &CarteTerrain,
+    centre_village: (usize, usize),
+) -> Result<Simulation, String> {
     // --- Éléments à placer ---
     let compo = composition(cat, p.nb_hameaux);
     let hameaux: Vec<Item> = (0..p.nb_hameaux).map(|_| Item::Hameau(0)).collect();
@@ -281,10 +298,10 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
 
     // --- Disposition en croix ---
     let (w, h) = (p.largeur, p.hauteur);
-    let (cx, cy) = (w / 2, h / 2);
+    let (cx, cy) = centre_village;
     // Longueur des bras : le fond d'un bras reste à portée de tous les hameaux (coût 10 par tile).
     let longueur = ((cat.infra.distance_max / 10) as usize).saturating_sub(3).clamp(3, 8);
-    if cx < longueur + 20 || cy < longueur + 20 {
+    if cx < longueur + 2 || cy < longueur + 2 || cx + longueur + 2 >= w || cy + longueur + 2 >= h {
         return Err("carte trop petite pour ce village".into());
     }
     let mut monde = Monde {
@@ -294,13 +311,16 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
         quartiers: Vec::new(),
         batiments: Vec::new(),
     };
-    let fertilite = champ_fertilite(p, rng);
+    let fertilite = champ_fertilite(p, centre_village, rng);
     monde.tuiles = (0..w * h)
         .map(|i| Tuile {
             contenu: Contenu::Vide,
             aretes: 0,
             variante: rng.dans(12) as u8,
             fertilite_ppm: fertilite[i],
+            terrain: carte.terrain[i],
+            eau: carte.eau[i],
+            aval: carte.aval[i],
         })
         .collect();
     let dirs: [(i32, i32); 4] = [(1, 0), (0, 1), (-1, 0), (0, -1)];
@@ -323,7 +343,9 @@ fn essayer(cat: &Catalogue, p: &ParamsVillage, rng: &mut Rng) -> Result<Simulati
             prec = t;
         }
     }
-    let libre = |m: &Monde, t: usize| m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0;
+    let libre = |m: &Monde, t: usize| {
+        m.tuiles[t].contenu == Contenu::Vide && m.tuiles[t].aretes == 0 && m.tuiles[t].constructible()
+    };
 
     // Hameaux : au plus près du centre, de part et d'autre des bras (k = 1 puis 2).
     let mut slots: Vec<(usize, usize)> = Vec::new(); // (tile du hameau, tile du bras)

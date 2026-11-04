@@ -8,6 +8,7 @@ export const store = reactive({
   etat: null,
   carte: null,
   fertilite: null,
+  terrain: null, // 2 octets par tile (terrain ; eau et aval), voir terrain.js
   evenements: [], // tous les événements reçus : [jour, texte]
   // Vitesse en jours de simulation par seconde réelle ; 1/24 = « jour/nuit » (un jour dure 24 s).
   vitesse: 10,

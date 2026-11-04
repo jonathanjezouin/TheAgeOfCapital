@@ -4,9 +4,9 @@
 import 'pixi.js/unsafe-eval' // aucune génération de code à l'exécution : compatible avec une CSP stricte
 import { Application, Assets, Container, Graphics, Rectangle, Sprite, Texture, Point } from 'pixi.js'
 import { store } from './store.js'
+import { construireTerrain } from './terrain.js'
 
 export const T = 256 // pixels d'une tile dans l'atlas (unités du monde)
-const RAYON_SOL = 40 // tiles d'herbe dessinées autour du centre de la carte
 
 // Type de terre -> groupe d'images de l'atlas.
 const GROUPE = {
@@ -34,7 +34,7 @@ function hsl(h, s, l) {
 }
 
 export class Carte {
-  async init(parent, urls, meta, fertilite) {
+  async init(parent, urls, meta, fertilite, terrain) {
     this.meta = meta
     this.parent = parent
     this.app = new Application()
@@ -82,7 +82,7 @@ export class Carte {
     this.monde.addChild(this.fertiliteSprite, this.terres, this.infra, this.bat, this.couleurs, this.barres, this.pops, this.selectionG)
     this.app.stage.addChild(this.monde, this.nuit)
 
-    this.construireSol()
+    this.construireSol(terrain)
     this.installerCamera()
     this.app.renderer.on('resize', () => this.majNuit())
     return this
@@ -112,36 +112,35 @@ export class Carte {
 
   // ---------- Couches ----------
 
-  construireSol() {
-    const cx = this.meta.largeur >> 1, cy = this.meta.hauteur >> 1
-    for (let y = cy - RAYON_SOL; y <= cy + RAYON_SOL; y++) {
-      for (let x = cx - RAYON_SOL; x <= cx + RAYON_SOL; x++) {
-        this.poser(this.sol, this.variante('terrain_plaine', hash(x, y)), x, y)
-      }
-    }
+  /** Sol de toute la carte : terrains, forêts et cours d'eau, peints dans une seule image (docs/07 §3). */
+  construireSol(terrain) {
+    this.sol.removeChildren().forEach((c) => c.destroy({ texture: true }))
+    const canvas = construireTerrain(terrain, this.meta.largeur, this.meta.hauteur)
+    const tex = Texture.from(canvas)
+    try { tex.source.autoGenerateMipmaps = true; tex.source.style.mipmapFilter = 'linear' } catch { /* facultatif */ }
+    const s = new Sprite(tex)
+    s.width = this.meta.largeur * T
+    s.height = this.meta.hauteur * T
+    this.sol.addChild(s)
   }
 
   /** Carte de chaleur de la fertilité (mode « fertilité »), une image d'un pixel par tile. */
   construireFertilite(fertilite) {
-    const cx = this.meta.largeur >> 1, cy = this.meta.hauteur >> 1
-    const R = RAYON_SOL * 2 + 1
+    const W = this.meta.largeur, H = this.meta.hauteur
     const canvas = document.createElement('canvas')
-    canvas.width = canvas.height = R
+    canvas.width = W
+    canvas.height = H
     const ctx = canvas.getContext('2d')
-    const img = ctx.createImageData(R, R)
-    for (let j = 0; j < R; j++) {
-      for (let i = 0; i < R; i++) {
-        const f = fertilite[(cy - RAYON_SOL + j) * this.meta.largeur + (cx - RAYON_SOL + i)] / 100
-        const t = Math.max(0, Math.min(1, f / 1.2))
-        const [r, g, b] = rampe(t)
-        const k = (j * R + i) * 4
-        img.data[k] = r; img.data[k + 1] = g; img.data[k + 2] = b; img.data[k + 3] = 255
-      }
+    const img = ctx.createImageData(W, H)
+    for (let i = 0; i < W * H; i++) {
+      const t = Math.max(0, Math.min(1, fertilite[i] / 100 / 1.2))
+      const [r, g, b] = rampe(t)
+      img.data[i * 4] = r; img.data[i * 4 + 1] = g; img.data[i * 4 + 2] = b; img.data[i * 4 + 3] = 255
     }
     ctx.putImageData(img, 0, 0)
     const s = new Sprite(Texture.from(canvas))
-    s.position.set((cx - RAYON_SOL) * T, (cy - RAYON_SOL) * T)
-    s.width = s.height = R * T
+    s.width = W * T
+    s.height = H * T
     s.alpha = 0.62
     s.visible = false
     return s
@@ -676,7 +675,7 @@ export class Carte {
       const r = cv.getBoundingClientRect()
       const px = e.clientX - r.left, py = e.clientY - r.top
       const ancien = this.monde.scale.x
-      const z = Math.max(0.07, Math.min(1.2, ancien * Math.exp(-e.deltaY * 0.0015)))
+      const z = Math.max(0.025, Math.min(1.2, ancien * Math.exp(-e.deltaY * 0.0015)))
       this.monde.scale.set(z)
       this.monde.position.set(px - (px - this.monde.x) * (z / ancien), py - (py - this.monde.y) * (z / ancien))
     }, { passive: false })

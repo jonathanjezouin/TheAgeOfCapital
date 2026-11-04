@@ -18,7 +18,7 @@
 
 - **Une tile d'habitat est une capacité de logement**, occupée par des **pops de 100 habitants** (voir `00`). Ex. : Rouen ≈ 50 000 hab ≈ 500 pops ≈ 50–80 tiles. Il n'y a plus de « bassin de peuplement » agrégé en une tile : un village est composé de plusieurs tiles.
 - La capacité varie avec le type de bâtiment et la densité ; elle n'est pas un nombre fixe d'habitants. **Plafond de densité : 10 pops par tile pour le bâti bas** (~160 hab/ha). Des immeubles pourront le relever (§9.4).
-- **Fertilité** : le terrain reste unique (plaine), mais chaque tile porte une `fertilite` (ppm de 1,0) qui multiplie la production des terres exploitées. Elle est tirée par le générateur (bruit lissé, appauvri avec la distance au centre). C'est ce qui fait de la terre, même « toute exploitable », un facteur limitant : on défriche d'abord la meilleure terre accessible, puis de moins en moins productive.
+- **Fertilité** : le terrain varie depuis le 2026-11-04 (plaine, plaine riche, rocailleuse, marécageuse, forêt, cours d'eau : `07` §3 et §10), mais la fertilité reste pour l'instant un scalaire par tile ; chaque tile porte une `fertilite` (ppm de 1,0) qui multiplie la production des terres exploitées. Elle est tirée par le générateur (bruit lissé, appauvri avec la distance au centre). C'est ce qui fait de la terre, même « toute exploitable », un facteur limitant : on défriche d'abord la meilleure terre accessible, puis de moins en moins productive.
 - `valeur_fonciere` existe dès le départ mais n'est pas utilisée dans le POC (futur moteur de la ségrégation spatiale).
 
 ### Le ratio habitat / production : indicateur émergent

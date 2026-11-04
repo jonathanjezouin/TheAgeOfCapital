@@ -8,6 +8,7 @@ pub mod monde;
 pub mod reseau;
 pub mod rng;
 pub mod simulation;
+pub mod terrain;
 pub mod village;
 
 pub use donnees::{Catalogue, Qte, PPM, U};

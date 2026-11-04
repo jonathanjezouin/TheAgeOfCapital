@@ -62,6 +62,8 @@ function nouvellePartie() {
   store.carte = null
   store.fertilite = sim.fertilite()
   carte.remplacerFertilite(store.fertilite)
+  store.terrain = sim.terrain()
+  carte.construireSol(store.terrain)
   accumule = 0
   lireEtat()
   carte.centrer(store.carte)
@@ -114,7 +116,8 @@ onMounted(async () => {
     sim.creer({ graine: store.graine, hameaux: store.hameaux })
     store.meta = markRaw(sim.meta())
     store.fertilite = sim.fertilite()
-    carte = await new Carte().init(zone.value, URLS, store.meta, store.fertilite)
+    store.terrain = sim.terrain()
+    carte = await new Carte().init(zone.value, URLS, store.meta, store.fertilite, store.terrain)
     carte.sim = sim
     window.__carte = carte
     window.__sim = sim

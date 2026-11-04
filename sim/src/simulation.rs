@@ -1596,7 +1596,9 @@ impl Simulation {
         let dmax = self.cat.infra.distance_max;
         // Une tile traversée par une arête n'est pas encore constructible (docs/02 §9, à lever plus tard).
         let vide = |t: usize| {
-            self.monde.tuiles[t].contenu == Contenu::Vide && self.monde.tuiles[t].aretes == 0
+            self.monde.tuiles[t].contenu == Contenu::Vide
+                && self.monde.tuiles[t].aretes == 0
+                && self.monde.tuiles[t].constructible()
         };
         // Le lieu posé à `supplement` d'arêtes de `attache` est-il desservi ?
         let desservi = |attache: usize, supplement: i64| {
@@ -1701,6 +1703,10 @@ impl Simulation {
 
     /// Traversabilité d'une tile par une route neuve, selon son contenu (docs/02 §10.1).
     pub fn traversabilite(&self, t: usize) -> Traversabilite {
+        // Eau, forêt et marais ne se traversent pas (pas de pont ni de défrichement dans cette étape, docs/07 §3).
+        if !self.monde.tuiles[t].constructible() {
+            return Traversabilite::Interdite;
+        }
         match self.monde.tuiles[t].contenu {
             Contenu::Vide | Contenu::Quartier(_) => Traversabilite::Libre,
             Contenu::Batiment(b) => self.cat.batiments[self.monde.batiments[b].type_id].traversable,
@@ -1755,7 +1761,9 @@ impl Simulation {
     /// demandeur, moins une pénalité hors du terroir de la terre (hameau le plus proche différent).
     fn agrandir(&self, base: &[usize], k: usize, hameau: Option<usize>) -> Vec<usize> {
         let libre = |t: usize| {
-            self.monde.tuiles[t].contenu == Contenu::Vide && self.monde.tuiles[t].aretes == 0
+            self.monde.tuiles[t].contenu == Contenu::Vide
+                && self.monde.tuiles[t].aretes == 0
+                && self.monde.tuiles[t].constructible()
         };
         let ext = &self.cat.extension;
         let terroir_terre = base.first().and_then(|&t| self.terroir(t));
@@ -2170,6 +2178,52 @@ impl Simulation {
     /// Plan ASCII du village (pour l'observation en ligne de commande).
     /// H hameau, C champ, P pâturage, V verger, F forêt, L lin, W laine,
     /// + chemin, minuscules = chantier de la lettre correspondante, # chantier de hameau.
+    /// Vue d'ensemble du terrain (1 caractère pour 2 × 2 tiles) et parts de chaque terrain ; `V` : un hameau.
+    pub fn terrain_ascii(&self) -> String {
+        use crate::terrain::{Eau, Terrain};
+        let m = &self.monde;
+        let mut out = String::new();
+        let mut parts = [0usize; 5];
+        let mut eau = [0usize; 4];
+        for t in &m.tuiles {
+            parts[t.terrain as usize] += 1;
+            eau[t.eau as usize] += 1;
+        }
+        let n = m.tuiles.len() as f64;
+        out += &format!(
+            "plaine {:.1} % · riche {:.1} % · rocailleuse {:.1} % · marécageuse {:.1} % · forêt {:.1} % · eau {:.1} % (ruisseau {}, rivière {}, fleuve {})\n",
+            parts[0] as f64 * 100.0 / n, parts[1] as f64 * 100.0 / n, parts[2] as f64 * 100.0 / n,
+            parts[3] as f64 * 100.0 / n, parts[4] as f64 * 100.0 / n,
+            (eau[1] + eau[2] + eau[3]) as f64 * 100.0 / n, eau[1], eau[2], eau[3]
+        );
+        for y in (0..m.hauteur).step_by(4) {
+            for x in (0..m.largeur).step_by(2) {
+                let mut c = ' ';
+                let mut rang = -1i32;
+                for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                    let (xx, yy) = (x + dx, y + dy);
+                    if xx >= m.largeur || yy >= m.hauteur { continue; }
+                    let t = &m.tuiles[yy * m.largeur + xx];
+                    let (r, ch) = if matches!(t.contenu, Contenu::Quartier(_)) { (9, 'V') }
+                        else if t.eau == Eau::Fleuve { (8, '#') }
+                        else if t.eau == Eau::Riviere { (7, '=') }
+                        else if t.eau == Eau::Ruisseau { (6, '~') }
+                        else { match t.terrain {
+                            Terrain::Foret => (4, 'T'),
+                            Terrain::Marecageuse => (3, '%'),
+                            Terrain::Rocailleuse => (2, '^'),
+                            Terrain::PlaineRiche => (1, '"'),
+                            Terrain::Plaine => (0, '.'),
+                        } };
+                    if r > rang { rang = r; c = ch; }
+                }
+                out.push(c);
+            }
+            out.push('\n');
+        }
+        out
+    }
+
     pub fn carte_ascii(&self) -> String {
         let m = &self.monde;
         let lettre = |t: usize| -> char {

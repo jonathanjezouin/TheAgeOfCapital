@@ -1,6 +1,6 @@
 # 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
 
-> Statut : **notes de design du 2026-11-04**, rien n'est implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+> Statut : **design du 2026-11-04** ; **l'étape 1 (générateur de carte) est faite** (§8, §10), le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
 
 ## 1. Objectif
 
@@ -126,17 +126,48 @@ La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peu
 
 ## 8. Ordre de travail
 
-1. Générateur de carte : couches, terrains (plaine, plaine riche, rocailleuse, marécageuse, forêt), rivières à trois gabarits, forêts fixes (§3). Rendu de la carte de terrains, validé visuellement.
+1. ~~Générateur de carte~~ : **fait le 2026-11-04** (`sim/src/terrain.rs`, rendu `app/src/terrain.js`, détail §10).
 2. Table d'aptitudes et effet sur rendement, travail requis et coût de construction (§3.5) ; mode de carte « aptitude ».
-3. Défrichement (coût, bois récupéré, repousse) et coût de pont (§3.3, §3.4).
+3. Défrichement (coût, bois récupéré, repousse), drainage, ponts et gués (§3.3, §3.4, §9).
 4. Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4).
 5. Outils de mesure (distribution des tailles de hameaux, §6), puis réglage des poids.
 6. Plus tard : échange entre pops, outils, saisons, services, navigation, relief (collines, montagnes), régions macro.
 
-## 9. Questions ouvertes
+## 9. Décisions prises (2026-11-04)
 
-- Repousse : plus rapide ou plus lente en lisière d'une autre forêt (hypothèse : plus rapide) ? Durée de départ ?
-- Défrichement : quantité de bois rapportée par tile ; lien avec les chantiers.
-- Nombre de rivières et de sources pour une carte 200×200 (50 km × 50 km) ; gabarits et coût de pont par gabarit.
-- Opportunités des terrains difficiles (§3.2) : lesquelles dans le POC (pierre, tourbe, poisson) ? Sans ressource à aller chercher, une route à travers un marais n'a pas de raison d'être.
-- Taille des terres en champs ouverts : voir `02` §10.2 (la terre est un bâtiment multi-tiles ; reste à décider si elle peut englober des tiles de terrains différents, avec rendement moyen, ou si elle doit rester sur un terrain homogène).
+Valeurs de départ **réalistes pour une tile de 250 m (6,25 ha)** et une carte de 200 × 200 (50 × 50 km, 2 500 km²) ; à régler à l'usage. Sauf mention, elles ne sont pas encore dans le code (étapes 2 et 3).
+
+| Sujet | Décision | Repère réaliste |
+|---|---|---|
+| **Rivières** | 1 fleuve, 3 affluents, 6 ruisseaux sur la carte (**fait**) ; gabarit selon le nombre de tiles d'eau en amont : ruisseau < 70, rivière ≥ 70, fleuve ≥ 240 | un cours tous les 5 à 8 km ; ~2 à 3 % de la carte en eau |
+| **Franchissement** (étape 3) | coût d'une tile de route ×3 sur un ruisseau (gué ou passerelle), ×10 sur une rivière (pont de bois ou de pierre), ×40 sur un fleuve (grand pont, enjeu majeur) | un pont de pierre coûte des années de travail d'un village |
+| **Défrichement** (étape 3) | ~1 000 pop-jours par tile de forêt (chantier, équipe), qui rapporte un lot de bois | 150 à 250 jours-homme par hectare × 6,25 ha |
+| **Bois rapporté** (étape 3) | ~600 stères par tile de forêt, à convertir dans les unités de `poc.toml` | 100 à 150 stères/ha pour un taillis sous futaie ; un ménage brûle 10 à 15 stères par an, une pop (≈ 20 ménages) ~250 |
+| **Repousse** (étape 3) | friche → taillis en ~15 ans, taillis → bois exploitable en ~40 ans ; **plus rapide en lisière d'une forêt** (×0,6 de durée, ensemencement par les voisines), plus lente au milieu d'une zone déboisée (×1,5). Le défrichement se fait une tile à la fois, avec la repousse comme contrainte sur la forêt exploitée | succession naturelle des taillis |
+| **Opportunités retenues** (étape 3) | **pierre** (carrière en plaine rocailleuse : construction, routes) et **tourbe** (marais : combustible, alternative au bois là où il manque). **Poisson** et étangs reportés (ressource nouvelle) | |
+| **Terres en champs ouverts** | une terre peut **englober des terrains différents** (rendement = moyenne de l'emprise, comme aujourd'hui), mais seulement sur des tiles constructibles. Les champs ouverts réels recouvrent plusieurs sols | parcelles en lanières traversant les sols |
+| **État initial** | généré d'un coup (§5), pas de pré-simulation | |
+| **Palette** | trois terrains agricoles (plaine, riche, rocailleuse), marais, forêt ; colline et montagne avec les régions à relief | |
+
+Question encore ouverte : la **forêt exploitée** (type de terre actuel, `foret_exploitee`) doit-elle s'appliquer sur les tiles de forêt de la carte, ou rester une terre ordinaire sur plaine ? (étape 3, avec le défrichement)
+
+## 10. Étape 1 réalisée : le générateur de carte
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Terrain | `sim/src/terrain.rs` | `generer_terrain(ParamsTerrain)` : altitude (pente générale + relief doux), écoulement par inondation de priorité (aucune cuvette, chaque cours d'eau mène au bord), gabarit par accumulation, puis terrains attribués par parts dans l'ordre marais, forêt, rocailleuse, riche. Entiers seulement, déterministe |
+| Parts par défaut | `ParamsTerrain::defaut` | marais 4 %, forêt 12 %, rocailleuse 15 %, riche 26 %, plaine le reste (~43 %) ; eau ~2,4 % en plus. Les parts sont des paramètres, pas des règles |
+| Tile | `sim/src/monde.rs` | `Tuile.terrain`, `Tuile.eau`, `Tuile.aval` ; `Tuile::constructible()` : ni eau, ni forêt, ni marais |
+| Effets de jeu | `sim/src/simulation.rs`, `village.rs` | une tile non constructible n'est ni bâtie, ni plantée, ni traversée par une route neuve. Les cours d'eau sont 4-connexes : une route (même en diagonale) ne peut pas les franchir tant qu'il n'y a pas de pont |
+| Site du village | `terrain::sites_village` | fenêtre dégagée de rayon 12 (ou 10), sans eau, forêt ni marais, de préférence près d'un point d'eau (≤ 17 tiles) et du centre de la carte ; les sites suivants servent de repli si la disposition en croix n'y tient pas |
+| Rendu | `app/src/terrain.js` | une image pour toute la carte (12 px par tile) : bordures déformées par un bruit, textures procédurales par terrain, rivières lissées entre tiles (courbes G1) avec berges ; mode Fertilité sur toute la carte ; panneau d'information (terrain, eau) |
+| Tests | `sim/tests/terrain.rs` | déterminisme, parts exactes, chaque cours d'eau va au bord par des côtés avec un gabarit croissant, site du village dégagé et près de l'eau, jamais de bâti ni de chemin sur un terrain fermé après 120 ans |
+| Visualisation | `sim-cli --terrain` | parts de chaque terrain et vue d'ensemble en ASCII |
+
+**Limites connues**
+- La **fertilité reste le champ radial** autour du village (étape 2 : aptitude par terrain). Le terrain n'a donc encore aucun effet sur le rendement.
+- Le village garde sa **disposition en croix** (remplacée à l'étape 4). Comme la fenêtre dégagée exclut l'eau, le point d'eau le plus proche est à 11–17 tiles (3 à 4 km) : à la lisière du terroir, pas au cœur du village.
+- Forêts et marais sont fermés (ni défrichement, ni drainage avant l'étape 3) ; les routes ne franchissent aucun cours d'eau (pas de pont).
+- La pente générale donne des rivières à peu près parallèles ; le relief n'est pas rendu.
+- Le sol est une image de 12 px par tile : un peu flou à fort zoom ; un rendu par chunks à plus forte résolution est possible plus tard.
+- Pas de variantes visuelles par tile (fleurs, rochers…) ; les assets de l'atlas ne servent plus pour le sol.
