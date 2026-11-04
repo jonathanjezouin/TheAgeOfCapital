@@ -10,7 +10,7 @@
 
 | Type | Emprise | Population |
 |---|---|---|
-| Terre exploitée (champ, pré, verger, forêt, lin, élevage…) | **N tiles contiguës**, **un seul bâtiment actif** (un seul nœud) ; extensible tile par tile | — |
+| Terre exploitée (champ, pré, verger, forêt, lin, élevage…) | **N tiles contiguës**, **un seul bâtiment actif** (accessible par n'importe laquelle de ses tiles : `07` §18) ; extensible tile par tile | — |
 | Hameau (POC) | 1 tile | capacité 2 pops = 200 hab |
 | Village, bourg (futur) | 2–4 tiles | 4–15 pops |
 | Quartier urbain (futur) | 1 tile par quartier | jusqu'à 10 pops par tile |
@@ -334,6 +334,8 @@ Largeurs d'ordre de grandeur, à vérifier.
 Issues d'une discussion sur le rendu des routes, la forme des terres et la vie des pops. Elles **précisent ou remplacent** : §7 « Où » (route qui traverse des tiles occupées), §9.1 (« un chemin ne coupe plus un champ de N tiles » : vrai pour la comptabilité, faux à l'écran), §8.3 (budget de jours réparti) et §6 (couverture par hameau).
 
 ### 10.1 Traversabilité et tile nœud
+> **Remplacé le 2026-11-04 par `07` §18** : plus de tile nœud ; on marche sur toute tile praticable (×2 hors route), une terre est accessible par n'importe laquelle de ses tiles, les routes sont décidées par le seigneur. Le texte ci-dessous est conservé pour mémoire.
+
 - **Tile nœud = entrée du bâtiment.** C'est la seule tile d'une emprise sur laquelle le réseau se raccorde (c'est déjà `Batiment.tuile`). Elle est placée **en bordure de l'emprise**, côté route, pour que la route n'entre jamais dans la terre. Agrandir l'emprise ne la déplace pas.
 - **Traversabilité par type de tile**, en donnée (`poc.toml`) : `libre`, `couteuse` ou `interdite`.
 

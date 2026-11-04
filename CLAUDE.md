@@ -34,7 +34,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
 | `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
-| `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 6 réalisées (carte, aptitude, défrichement, peuplement, abandon, seigneur et serfs, réglage), banalités à venir |
+| `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 6 réalisées (carte, aptitude, défrichement, peuplement, abandon, seigneur et serfs, réglage) + accès par marche et routes décidées par le seigneur (§18), banalités à venir |
 
 ## Code
 
@@ -47,7 +47,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 
 ## Principes non négociables
 
-1. **Une tile = une surface réelle fixe : 250 m × 250 m (6,25 ha)** (décision du 2026-11-02, remplace l'ancienne « unité comptable à surface variable »). Les distances en tiles ont un sens réel (10 tiles = 2,5 km ≈ 30–50 min à pied). C'est l'**emprise** et la **densité** qui varient selon le type : une terre exploitée = bâtiment de N tiles contiguës (un seul nœud), un hameau = 1 tile (2 pops), plafond 10 pops/tile (voir `docs/02` §1 et §8).
+1. **Une tile = une surface réelle fixe : 250 m × 250 m (6,25 ha)** (décision du 2026-11-02, remplace l'ancienne « unité comptable à surface variable »). Les distances en tiles ont un sens réel (10 tiles = 2,5 km ≈ 30–50 min à pied). C'est l'**emprise** et la **densité** qui varient selon le type : une terre exploitée = bâtiment de N tiles contiguës, accessible par n'importe laquelle de ses tiles (plus de tile « nœud », `docs/07` §18), un hameau = 1 tile (2 pops), plafond 10 pops/tile (voir `docs/02` §1 et §8).
 2. **Les tiles sont passives** (données en SQLite, hors boucle de tick). **Les bâtiments sont actifs** (nœuds d'un graphe en mémoire).
 3. **Le personnage est le décideur politico-économique** ; la **Firme** est l'entité économique qu'il possède ou gère (pas le bâtiment ; un groupe possède des firmes mono-secteur) ; la **pop** est l'unité de travail et de consommation, autonome dans ce qui lui est ouvert (où elle travaille, ce qu'elle consomme, son stock) mais qui ne décide ni des règles ni des constructions. *(Reformulé le 2026-11-04, voir `docs/07` §15.)*
 4. **Flux unifié** : la main-d'œuvre est une ressource comme les autres (produite par les quartiers, consommée par la production, soumise à la même congestion).

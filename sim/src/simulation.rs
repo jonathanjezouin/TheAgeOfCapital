@@ -1956,7 +1956,7 @@ impl Simulation {
 
     /// Pose la route d'un site. Les tiles de terre traversées sont détruites (la terre peut se scinder : les tiles
     /// qui ne se touchent plus forment une nouvelle terre), puis la route est tracée.
-    fn poser_site(&mut self, site: &Site) {
+    fn poser_site(&mut self, site: &Site, relier_fin: bool) {
         let a_detruire: Vec<usize> = site.route.iter().copied().filter(|&t| self.destruction_de(t).is_some()).collect();
         let touchees = self.detruire_tuiles(&a_detruire);
         if site.attache != usize::MAX {
@@ -1965,7 +1965,10 @@ impl Simulation {
                 self.monde.relier(prec, r);
                 prec = r;
             }
-            self.monde.relier(prec, site.tuile);
+            // Une terre n'a pas d'entrée : la route s'arrête à sa lisière. Seul un hameau est relié.
+            if relier_fin {
+                self.monde.relier(prec, site.tuile);
+            }
         }
         for b in touchees {
             self.scinder(b, &site.route);
@@ -1975,7 +1978,7 @@ impl Simulation {
     /// Trace une route de `attache` à `tuile` par les tiles `route` (intermédiaires), en détruisant les tiles de terre
     /// traversées ; reconstruit le réseau. Primitive des chantiers de route, et de tout décideur qui en ordonne une.
     pub fn tracer_route(&mut self, attache: usize, route: &[usize], tuile: usize) {
-        self.poser_site(&Site { tuile, attache, route: route.to_vec() });
+        self.poser_site(&Site { tuile, attache, route: route.to_vec() }, true);
         self.reconstruire_reseau();
     }
 
@@ -2205,7 +2208,14 @@ impl Simulation {
             return None;
         }
         // On pose la route sur tout le trajet, sauf la dernière tile (celle de la terre atteinte).
-        let tuiles: Vec<usize> = ch.tuiles[..n - 1].to_vec();
+        let mut tuiles: Vec<usize> = ch.tuiles[..n - 1].to_vec();
+        // La route s'arrête devant une terre qu'on ne peut pas couper (tile de référence, chantier) : jamais dedans.
+        if let Some(k) = tuiles.iter().position(|&x| matches!(self.monde.tuiles[x].contenu, Contenu::Batiment(_)) && self.destruction_de(x).is_none()) {
+            tuiles.truncate(k);
+        }
+        if tuiles.len() < 3 {
+            return None;
+        }
         let neuves: Vec<usize> = tuiles
             .windows(2)
             .filter(|w| {
@@ -2225,7 +2235,7 @@ impl Simulation {
     fn poser_route_entre(&mut self, q: usize, t: usize) {
         let Some((tuiles, _)) = self.plan_route_entre(q, t) else { return };
         let n = tuiles.len();
-        let (attache, route, bout) = (tuiles[0], tuiles[1..n - 1].to_vec(), tuiles[n - 1]);
+        let (attache, route, bout) = (tuiles[0], tuiles[1..n].to_vec(), tuiles[n - 1]);
         let a_detruire: Vec<usize> = route.iter().copied().filter(|&x| self.destruction_de(x).is_some()).collect();
         let touchees = self.detruire_tuiles(&a_detruire);
         let mut prec = attache;
@@ -2237,7 +2247,7 @@ impl Simulation {
             self.scinder(b, &route);
         }
         let (x, y) = self.monde.xy(bout);
-        self.journal(format!("Route terminée vers ({x}, {y}) : {} tiles", route.len() + 1));
+        self.journal(format!("Route terminée vers ({x}, {y}) : {} tiles", route.len()));
         self.reconstruire_reseau();
     }
 
@@ -2887,7 +2897,7 @@ impl Simulation {
             return false;
         };
         let nb_destructions = site.route.iter().filter(|&&t| self.destruction_de(t).is_some()).count();
-        self.poser_site(&site);
+        self.poser_site(&site, false);
         let b = self.monde.batiments.len();
         let mut chantier = self.nouveau_chantier(site.tuile, Cible::Terre(type_id), &cout);
         chantier.emprise = emprise.clone();
@@ -3221,7 +3231,7 @@ impl Simulation {
         let destructions = self.travail_destructions(&site.route);
         let nb_destructions = site.route.iter().filter(|&&t| self.destruction_de(t).is_some()).count();
         cout.travail += ponts + destructions;
-        self.poser_site(&site);
+        self.poser_site(&site, true);
         // Un hameau s'ajoute aux quartiers : les lieux « bâtiment » se décalent d'un cran.
         let nq = self.nq();
         for d in &mut self.differes {

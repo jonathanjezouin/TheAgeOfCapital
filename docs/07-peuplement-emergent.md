@@ -363,3 +363,22 @@ Le principe 3 du `CLAUDE.md` est reformulé en ce sens (la Firme n'est plus « l
 - **Aucun noyau de 16 pops** : la population reste modeste (6 à ~12 pops par village en 150 ans), et les forces de regroupement manquantes (§1 : services à coût fixe, entraide aux pointes de travail, sécurité) ne sont pas là. C'est l'objet des **banalités** (moulin, four) du seigneur (§16).
 - Les durées de `[abandon]` et le champart n'ont pas été touchés ; le coût d'une fondation reste celui d'une maison (150 pop-jours) : l'arbitrage « agrandir ou créer » reste à calibrer avec l'économie des échanges.
 - Le réglage porte sur 8 à 16 graines : il est **statistique**, pas garanti graine par graine. Les tests (`sim/tests/peuplement.rs`) vérifient les ordres de grandeur : fondation sans désertion, pas d'extinction, au plus 30 hameaux détruits sur 6 villages et 150 ans, 70 % de hameaux de 1 à 2 pops, au moins 2 noyaux de 4 pops ou plus sur 7 villages et 200 ans.
+
+## 18. Accès par marche, routes décidées par le seigneur, terres en amas (2026-11-04)
+
+Décidé avec Jonathan après des bugs visibles à l'initialisation (deux chemins parallèles, chemin à travers un champ, route qui « entre » dans un champ, champs en lanières). Cause commune : l'accès passait par une **tile nœud** et par un réseau de routes obligatoire, ce qui fabriquait des entrées de champ, des détours et des lanières.
+
+| Règle | Détail |
+|---|---|
+| Marche | On marche sur **toute tile praticable** (hors eau, sans pont), 8 directions. Sur route : 10/14 par pas ; hors route : ×`cout_hors_route` (2,0) soit 20/28. Avec `distance_max = 100` : 10 tiles par la route, 5 à pied. |
+| Accès | Hameau, terre ou chantier est accessible par **n'importe laquelle de ses tiles**. Plus de nœud (principe 1 de CLAUDE.md reformulé) ; `Batiment.tuile` n'est plus qu'une tile de référence, protégée de la destruction. |
+| Route = bonus | La route ne conditionne plus l'accès : elle le rend moins cher. Son travail (`route_pop_jours_par_tile` = 5 pop-jours/tile) et sa pose sont une **décision du seigneur**. Une route peut rejoindre une route existante (plus de parallèles) et s'arrête à la lisière d'une terre (jamais dedans) ; elle ne détruit des tiles de terre que si elle en traverse une. |
+| Quand le seigneur ordonne une route | (a) à la fondation d'un site dont l'accès à pied dépasse `route_seuil_acces` × `distance_max` (0,5) ; (b) quand un trajet de travail à pied est très répété (`trajets` ≥ 60 sur la période), via `Cible::Route(hameau, terre)`. Un chantier de route à la fois. |
+| Choix des sites | Un site est admis s'il est à portée **comme si** les routes existaient (`distances_si_route`, l'eau se franchit alors par un pont à ×3) ; si l'accès réel dépasse le seuil, la route est planifiée avec le site. |
+| Chantiers | Une équipe aménage son accès en y allant : vers un chantier, un pas hors route coûte comme sur route (`distances_chantier`). |
+| Croissance en amas | `agrandir` pénalise la distance au centre de la terre (`poids_centre` 0,02) et favorise les tiles touchant une route ou un hameau (`poids_route` 0,15) : des blocs compacts, pas des lanières ni du patchwork. |
+| Scission | Sans nœud : les morceaux disjoints forment de nouvelles terres, budget de jours remis à zéro sur les clones (bug de conservation corrigé). |
+
+**Mesure** (8 graines, 150 ans) : 87 pops, 32 hameaux (médiane 3, max 8), 6 détruits, 3 abandonnés ; génération ≈ 0,26 s.
+**Tests** : `sim/tests/acces.rs` (marche ×2 hors route, accès par toute tile, aucune route dans une terre, pas de lanières), invariants/terrain/seigneur/peuplement adaptés.
+**Limites** : pas encore de maintenance des routes (prolifération possible, prévue plus tard) ; seuils (×2, 0,5, 5 pj/tile, 60 trajets) à régler ; un hameau abandonné n'est remis en état que s'il est joignable à pied.
