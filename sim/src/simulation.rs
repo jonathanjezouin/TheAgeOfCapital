@@ -192,11 +192,9 @@ pub struct Evenement {
     pub texte: String,
 }
 
-/// Surcoût de pathfinding (unités d'arête) pour entrer dans une tile `couteuse` (docs/02 §10.1).
-const SURCOUT_TRAVERSEE: i64 = 30;
-
 /// Longueur maximale (coût) de la route neuve qui relie un hameau fondé au réseau existant.
-const ROUTE_FONDATION_MAX: i64 = 80;
+/// Coût d'un côté de tile sur route (unités d'arête).
+const COUT_COTE: i64 = 10;
 /// Part (en %) du besoin nominal que le générateur d'état initial couvre, en tiles *équivalentes* (tiles pondérées
 /// par leur rendement réel : qualité du sol × aptitude du terrain).
 const MARGE_TERRES_PCT: usize = 150;
@@ -206,6 +204,7 @@ const MARGE_TERRES_PCT: usize = 150;
 #[derive(Clone, Debug)]
 struct Site {
     tuile: usize,
+    /// Tile du réseau où s'accroche la route neuve ; `usize::MAX` : pas de route (le lieu s'atteint à pied).
     attache: usize,
     route: Vec<usize>,
 }
@@ -233,6 +232,8 @@ pub struct Simulation {
     pub libre_milli: Vec<i64>,
     /// Temps libre de chaque hameau, moyenne mobile sur ~30 jours (milli pop-jours) : sert à compter les bras sans emploi.
     pub libre_lisse_milli: Vec<i64>,
+    /// Trajets de travail récents (hameau de résidence, terre) -> pop-jours, depuis la dernière décision de routes.
+    pub trajets: BTreeMap<(usize, usize), u32>,
     /// Distance (en côtés de tile) de chaque tile au cours d'eau le plus proche : fixe, elle sert à valoriser les sites.
     pub dist_eau: Vec<u16>,
 }
@@ -378,6 +379,7 @@ impl Simulation {
             fournisseurs: Vec::new(),
             libre_milli: Vec::new(),
             libre_lisse_milli: Vec::new(),
+            trajets: BTreeMap::new(),
             dist_eau,
         };
         sim.calculer_fournisseurs();
@@ -981,6 +983,14 @@ impl Simulation {
             self.libre_lisse_milli[q] += (cap[q] - self.libre_lisse_milli[q]) / 30;
         }
         self.libre_milli = cap;
+        // Mémoire des trajets : de quoi décider d'une route là où l'on marche beaucoup (docs/07 §18).
+        for i in 0..self.pops.len() {
+            if let Some(e) = self.pops[i].emploi {
+                if !self.est_chantier_type(e) {
+                    *self.trajets.entry((self.pops[i].residence, e)).or_default() += 1;
+                }
+            }
+        }
     }
 
     fn produire(&mut self) {
@@ -1309,6 +1319,10 @@ impl Simulation {
                     self.rendre_au_maitre(b);
                     self.journal(format!("Hameau remis en état en ({x}, {y})"));
                 }
+                Cible::Route(q, t) => {
+                    self.monde.batiments[b].equipe = 0;
+                    self.poser_route_entre(q, t);
+                }
                 Cible::RemiseTerre(t) => {
                     let bat = &mut self.monde.batiments[t];
                     bat.abandon_mois = None;
@@ -1606,7 +1620,7 @@ impl Simulation {
                 .iter()
                 .any(|(x, _)| *x == r),
             Some(Chantier {
-                cible: Cible::Maison(_) | Cible::RemiseHameau(_) | Cible::RemiseTerre(_),
+                cible: Cible::Maison(_) | Cible::RemiseHameau(_) | Cible::RemiseTerre(_) | Cible::Route(..),
                 ..
             }) => false,
             None => false,
@@ -1637,6 +1651,10 @@ impl Simulation {
             .filter(|b| b.chantier.is_some() && !matches!(b.limitant, Limitant::Intrant(_)))
             .count();
         if actifs >= self.cat.extension.chantiers_max {
+            return;
+        }
+        // Routes : là où l'on marche beaucoup hors route (60 pop-jours de marche en une période), le seigneur ordonne une route.
+        if self.decider_routes(60) {
             return;
         }
         // Pas de chantier sans bras pour le mener : le seigneur n'ordonne que ce que les pops (corvée) peuvent faire.
@@ -1778,17 +1796,17 @@ impl Simulation {
         v
     }
 
-    /// Meilleur emplacement pour un nouveau lieu, à portée du hameau `centre` :
-    /// soit relié par une arête à une tile du réseau, soit au bout d'une nouvelle tile intermédiaire
-    /// (deux arêtes), dans 8 directions. Les coûts sont ceux des arêtes (10 / 14).
-    /// Terre fertile : fertilité / distance ; sinon : le plus proche, sur la terre la plus pauvre.
-    /// `requis` : groupes de ressources dont l'une au moins doit avoir un producteur à portée du site.
+    /// Meilleur emplacement pour un nouveau lieu, à portée de **marche** du hameau `centre` (toute tile praticable,
+    /// la route réduisant le coût, docs/07 §18). Terre fertile : rendement / distance ; hameau : valeur du site.
+    /// `requis` : groupes de ressources dont l'une au moins doit avoir un producteur à portée de marche du site.
+    /// Si l'accès dépasse `route_seuil_acces` de `distance_max`, le seigneur ordonne aussi une route (`planifier_route`).
     fn meilleur_site(&self, centre: usize, fertile: bool, type_id: Option<usize>, requis: &[Vec<usize>]) -> Option<Site> {
         let nq = self.nq();
-        let d = self
-            .reseau
-            .distances_depuis(self.monde.quartiers[centre].tuile);
-        // Coût de chaque tile du réseau aux producteurs de chaque groupe requis.
+        let d_marche = self.reseau.distances_depuis(self.monde.quartiers[centre].tuile);
+        // Le seigneur choisit un site qu'il compte relier par une route : on admet donc les sites à portée *si la route
+        // existait* ; une route n'est ordonnée que si la marche seule dépasse le seuil (voir plus bas).
+        let d = self.reseau.distances_si_route(&[self.monde.quartiers[centre].tuile]);
+        // Coût (route supposée construite) de chaque tile aux producteurs de chaque groupe requis.
         let portees: Vec<Vec<i64>> = requis
             .iter()
             .map(|groupe| {
@@ -1798,12 +1816,13 @@ impl Simulation {
                         sources.extend_from_slice(self.reseau.acces(nq + b));
                     }
                 }
-                self.reseau.distances_depuis_tuiles(&sources)
+                self.reseau.distances_si_route(&sources)
             })
             .collect();
         let dmax = self.cat.infra.distance_max;
+        let seuil = dmax * self.cat.infra.route_seuil_ppm / PPM;
         let memoire = self.cat.abandon.memoire_site_mois;
-        // Une tile traversée par une arête n'est pas encore constructible (docs/02 §9, à lever plus tard).
+        // Une tile traversée par une route n'est pas encore constructible (docs/02 §9, à lever plus tard).
         let vide = |t: usize| {
             self.monde.tuiles[t].contenu == Contenu::Vide
                 && self.monde.tuiles[t].aretes == 0
@@ -1811,133 +1830,95 @@ impl Simulation {
                 // Mémoire du lieu : on ne refonde pas un hameau là où un projet vient d'échouer (docs/07 §14).
                 && (fertile || self.monde.tuiles[t].vacant_mois == 0 || self.monde.tuiles[t].vacant_mois as u32 >= memoire)
         };
-        // Le lieu posé à `supplement` d'arêtes de `attache` est-il desservi ?
-        let desservi = |attache: usize, supplement: i64| {
-            portees
-                .iter()
-                .all(|dp| dp[attache] != i64::MAX && dp[attache] + supplement <= dmax)
-        };
-        let mut best: Option<((i64, i64, i64, usize), Site)> = None;
-        let essayer = |tuile: usize,
-                       attache: usize,
-                       route: &[usize],
-                       dist: i64,
-                       best: &mut Option<((i64, i64, i64, usize), Site)>| {
-            let fert = self.fert_pour(type_id, tuile);
-            // Travaux propres au site : ponts et gués de la route neuve, conversion du terrain (défrichement,
-            // drainage). Ils pèsent dans le choix, sans l'interdire : on ne franchit une rivière ou ne défriche
-            // une forêt que faute de mieux à portée.
-            let travaux = self.travail_route(route)
-                + self.cat.travail_conversion(type_id, &[tuile], &self.monde.tuiles);
+        let mut best: Option<((i64, i64, usize), usize)> = None;
+        for v in 0..self.monde.tuiles.len() {
+            if d[v] == i64::MAX || !vide(v) || !portees.iter().all(|dp| dp[v] != i64::MAX) {
+                continue;
+            }
+            let dist = d[v];
+            let fert = self.fert_pour(type_id, v);
+            // Travaux propres au site : conversion du terrain (défrichement, drainage) et route estimée si l'accès est long.
+            let route_est = if d_marche[v] > seuil { (dist.min(d_marche[v]) / COUT_COTE).max(1) * self.cat.infra.route_travail_milli / 2 } else { 0 };
+            let travaux = route_est + self.cat.travail_conversion(type_id, &[v], &self.monde.tuiles);
             let cle = if fertile {
-                (
-                    -(fert * 10_000 / (dist + 10) * 100_000 / (100_000 + travaux)),
-                    dist,
-                    route.len() as i64,
-                    tuile,
-                )
+                (-(fert * 10_000 / (dist + 10) * 100_000 / (100_000 + travaux)), dist, v)
             } else {
                 // Hameau : le site vaut par la terre libre qu'il partage, l'eau et les voisins (docs/07 §4.1) ;
-                // les travaux (pont, conversion) en rabattent la valeur.
-                let valeur = self.valeur_habitat(tuile, 1);
-                (
-                    -(valeur * 100_000 / (100_000 + travaux)),
-                    dist + travaux / self.cat.extension.travail_par_unite_route_milli,
-                    route.len() as i64,
-                    tuile,
-                )
+                // les travaux en rabattent la valeur.
+                let valeur = self.valeur_habitat(v, 1);
+                (-(valeur * 100_000 / (100_000 + travaux)), dist + travaux / self.cat.extension.travail_par_unite_route_milli, v)
             };
-            if best.as_ref().map_or(true, |(k, _)| cle < *k) {
-                *best = Some((
-                    cle,
-                    Site {
-                        tuile,
-                        attache,
-                        route: route.to_vec(),
-                    },
-                ));
-            }
-        };
-        // Dijkstra depuis tout le réseau atteignable : une route neuve ne traverse que les tiles dont le
-        // type est traversable (habitat) ; elle contourne terres et chantiers (docs/02 §10.1) et ne rejoint
-        // pas une autre arête ; le site lui-même doit être libre.
-        let n = self.monde.tuiles.len();
-        let mut cout = vec![i64::MAX; n]; // coût d'ordre (distance + pénalité des ponts)
-        let mut reel = vec![i64::MAX; n]; // distance réelle (arêtes) : celle qui compte pour la portée
-        let mut prec = vec![usize::MAX; n];
-        let mut racine = vec![usize::MAX; n];
-        let mut tas: std::collections::BinaryHeap<std::cmp::Reverse<(i64, usize)>> =
-            std::collections::BinaryHeap::new();
-        // Terre : le site doit rester à portée du hameau demandeur (coût total ≤ dmax). Hameau : il se
-        // fonde en périphérie du réseau, à `ROUTE_FONDATION_MAX` de route neuve au plus ; ce qui compte
-        // est l'accès aux producteurs depuis le site (`desservi`).
-        let limite_route = if fertile { dmax } else { ROUTE_FONDATION_MAX };
-        for p in 0..n {
-            if d[p] != i64::MAX {
-                cout[p] = d[p];
-                reel[p] = d[p];
-                racine[p] = p;
-                tas.push(std::cmp::Reverse((d[p], p)));
+            if best.map_or(true, |(k, _)| cle < k) {
+                best = Some((cle, v));
             }
         }
+        let (_, tuile) = best?;
+        if d_marche[tuile] > seuil {
+            if let Some((attache, route)) = self.planifier_route(tuile) {
+                return Some(Site { tuile, attache, route });
+            }
+        }
+        Some(Site { tuile, attache: usize::MAX, route: Vec::new() })
+    }
+
+    /// Plan d'une route neuve de la tile `v` au réseau le plus proche (route existante ou hameau) : renvoie la tile du
+    /// réseau où elle s'accroche et les tiles intermédiaires, de l'accroche vers `v`. Elle peut franchir l'eau par un
+    /// pont ou traverser une terre en détruisant les tiles (travail et pénalité d'ordre), jamais un chantier. Elle
+    /// rejoint une route existante au lieu de la longer.
+    fn planifier_route(&self, v: usize) -> Option<(usize, Vec<usize>)> {
+        let n = self.monde.tuiles.len();
+        let limite = 3 * self.cat.infra.distance_max;
+        let unite = self.cat.extension.travail_par_unite_route_milli;
+        let reseau_t = |t: usize| {
+            self.monde.tuiles[t].aretes != 0 || matches!(self.monde.tuiles[t].contenu, Contenu::Quartier(_))
+        };
+        let mut cout = vec![i64::MAX; n];
+        let mut prec = vec![usize::MAX; n];
+        let mut tas: std::collections::BinaryHeap<std::cmp::Reverse<(i64, usize)>> = std::collections::BinaryHeap::new();
+        cout[v] = 0;
+        tas.push(std::cmp::Reverse((0, v)));
         while let Some(std::cmp::Reverse((c, t))) = tas.pop() {
             if c > cout[t] {
                 continue;
             }
+            if t != v && reseau_t(t) {
+                // Arrivée : de l'accroche `t` on suit les précédents jusqu'à `v` ; ce sont les tiles intermédiaires.
+                let mut route = Vec::new();
+                let mut x = prec[t];
+                while x != v && x != usize::MAX {
+                    route.push(x);
+                    x = prec[x];
+                }
+                return Some((t, route));
+            }
             for dir in 0..8 {
-                let Some(v) = self.monde.voisin(t, dir) else {
-                    continue;
-                };
-                if self.monde.tuiles[v].aretes != 0 || !self.monde.peut_relier(t, v) {
+                let Some(w) = self.monde.voisin(t, dir) else { continue };
+                if !self.monde.peut_relier(t, w) {
                     continue;
                 }
-                // Une route neuve franchit un cours d'eau par un pont (travail ajouté au chantier, pénalité d'ordre
-                // pour préférer un détour raisonnable) ; sinon elle contourne les terres et les chantiers
-                // (traversabilité, docs/02 §10.1).
-                let eau = self.monde.tuiles[v].eau;
-                let (surcout, penalite) = if eau != Eau::Aucune {
-                    (0, self.cat.pont_milli[eau as usize] / self.cat.extension.travail_par_unite_route_milli)
-                } else if let Some(w) = self.destruction_de(v) {
-                    // Une route ne traverse une terre qu'en détruisant la tile : le travail pèse dans l'ordre de
-                    // préférence (on contourne tant que c'est moins cher) et s'ajoute au chantier (docs/07 §14).
-                    (0, w / self.cat.extension.travail_par_unite_route_milli)
+                let tw = &self.monde.tuiles[w];
+                let penalite = if tw.eau != Eau::Aucune {
+                    self.cat.pont_milli[tw.eau as usize] / unite
+                } else if reseau_t(w) {
+                    0
+                } else if let Some(wd) = self.destruction_de(w) {
+                    wd / unite
                 } else {
-                    match self.traversabilite(v) {
-                        Traversabilite::Libre => (0, 0),
-                        Traversabilite::Couteuse => (SURCOUT_TRAVERSEE, 0),
-                        Traversabilite::Interdite => continue,
+                    match tw.contenu {
+                        Contenu::Vide => 0,
+                        Contenu::Quartier(_) => 0,
+                        Contenu::Batiment(_) => continue, // chantier, ou terre indestructible : on contourne
                     }
                 };
-                let nr = reel[t] + cout_dir(dir) + surcout;
-                let nc = c + cout_dir(dir) + surcout + penalite;
-                let ok = if fertile { nr <= dmax } else { nr - d[racine[t]] <= limite_route };
-                if ok && nc < cout[v] {
-                    cout[v] = nc;
-                    reel[v] = nr;
-                    prec[v] = t;
-                    racine[v] = racine[t];
-                    tas.push(std::cmp::Reverse((nc, v)));
+                let nc = c + cout_dir(dir) + penalite;
+                if nc <= limite && nc < cout[w] {
+                    cout[w] = nc;
+                    prec[w] = t;
+                    tas.push(std::cmp::Reverse((nc, w)));
                 }
             }
         }
-        for v in 0..n {
-            if prec[v] == usize::MAX || !vide(v) {
-                continue;
-            }
-            let r = racine[v];
-            if !desservi(r, reel[v] - d[r]) {
-                continue;
-            }
-            let mut route: Vec<usize> = Vec::new();
-            let mut t = prec[v];
-            while t != r {
-                route.push(t);
-                t = prec[t];
-            }
-            route.reverse();
-            essayer(v, r, &route, reel[v], &mut best);
-        }
-        best.map(|(_, s)| s)
+        None
     }
 
     /// Traversabilité d'une tile par une route neuve, selon son contenu (docs/02 §10.1).
@@ -1978,12 +1959,14 @@ impl Simulation {
     fn poser_site(&mut self, site: &Site) {
         let a_detruire: Vec<usize> = site.route.iter().copied().filter(|&t| self.destruction_de(t).is_some()).collect();
         let touchees = self.detruire_tuiles(&a_detruire);
-        let mut prec = site.attache;
-        for &r in &site.route {
-            self.monde.relier(prec, r);
-            prec = r;
+        if site.attache != usize::MAX {
+            let mut prec = site.attache;
+            for &r in &site.route {
+                self.monde.relier(prec, r);
+                prec = r;
+            }
+            self.monde.relier(prec, site.tuile);
         }
-        self.monde.relier(prec, site.tuile);
         for b in touchees {
             self.scinder(b, &site.route);
         }
@@ -2066,20 +2049,13 @@ impl Simulation {
                 self.monde.batiments[b].stock_entree[r] -= pe;
                 self.monde.batiments[b].stock_sortie[r] -= ps;
             }
-            // Nœud du nouveau morceau : une tile voisine d'une route posée (et raccordée), sinon la première.
-            let mut choix = (comp[0], None);
-            'cherche: for &t in &comp {
-                for &r in acces {
-                    if self.monde.direction(t, r).is_some() && self.monde.peut_relier(t, r) {
-                        choix = (t, Some(r));
-                        break 'cherche;
-                    }
-                }
-            }
-            if let Some(r) = choix.1 {
-                self.monde.relier(choix.0, r);
-            }
+            // Plus de nœud : le nouveau morceau est accessible par toutes ses tiles ; la première sert de repère.
+            let choix = (comp[0], None::<usize>);
+            let _ = acces;
             bat.tuile = choix.0;
+            // Le nouveau morceau repart à zéro : il n'hérite ni du travail reçu aujourd'hui ni des présents du jour.
+            bat.mo_milli = 0;
+            bat.presents = 0;
             bat.emprise = comp.clone();
             bat.equipe = 0;
             bat.chantier = None;
@@ -2217,6 +2193,97 @@ impl Simulation {
                 ((eff[q] / 2).max(1)).saturating_sub(equipe[q]).min(libres)
             })
             .sum()
+    }
+
+    /// Chemin à pied du hameau `q` à la terre `t` : tiles de route à poser (celles du trajet qui n'en ont pas encore), coût en
+    /// travail (route + destruction des tiles de terre traversées). Le dernier pas (dans la terre) n'est pas goudronné.
+    fn plan_route_entre(&self, q: usize, t: usize) -> Option<(Vec<usize>, Qte)> {
+        let nq = self.nq();
+        let ch = self.reseau.chemin(q, nq + t)?;
+        let n = ch.tuiles.len();
+        if n < 3 {
+            return None;
+        }
+        // On pose la route sur tout le trajet, sauf la dernière tile (celle de la terre atteinte).
+        let tuiles: Vec<usize> = ch.tuiles[..n - 1].to_vec();
+        let neuves: Vec<usize> = tuiles
+            .windows(2)
+            .filter(|w| {
+                let d = self.monde.direction(w[0], w[1]).unwrap_or(0);
+                !(self.monde.masque(w[0]) & crate::monde::DIRS[d].0 != 0 && self.monde.masque(w[1]) & crate::monde::DIRS[d].3 != 0)
+            })
+            .map(|w| w[1])
+            .collect();
+        if neuves.is_empty() {
+            return None;
+        }
+        let travail = neuves.len() as i64 * self.cat.infra.route_travail_milli + self.travail_destructions(&neuves);
+        Some((tuiles, travail))
+    }
+
+    /// Pose la route décidée entre le hameau `q` et la terre `t` (fin d'un chantier de route).
+    fn poser_route_entre(&mut self, q: usize, t: usize) {
+        let Some((tuiles, _)) = self.plan_route_entre(q, t) else { return };
+        let n = tuiles.len();
+        let (attache, route, bout) = (tuiles[0], tuiles[1..n - 1].to_vec(), tuiles[n - 1]);
+        let a_detruire: Vec<usize> = route.iter().copied().filter(|&x| self.destruction_de(x).is_some()).collect();
+        let touchees = self.detruire_tuiles(&a_detruire);
+        let mut prec = attache;
+        for &r in &route {
+            self.monde.relier(prec, r);
+            prec = r;
+        }
+        for b in touchees {
+            self.scinder(b, &route);
+        }
+        let (x, y) = self.monde.xy(bout);
+        self.journal(format!("Route terminée vers ({x}, {y}) : {} tiles", route.len() + 1));
+        self.reconstruire_reseau();
+    }
+
+    /// Le seigneur fait tracer une route là où l'on marche beaucoup hors route : le trajet de travail le plus répété dont l'accès
+    /// dépasse `route_seuil_acces` de `distance_max`. Un chantier de route à la fois.
+    fn decider_routes(&mut self, motif_seuil_trajets: u32) -> bool {
+        let seuil = self.cat.infra.distance_max * self.cat.infra.route_seuil_ppm / PPM;
+        let nq = self.nq();
+        let en_cours = self.monde.batiments.iter().any(|b| matches!(b.chantier.as_ref().map(|c| c.cible), Some(Cible::Route(..))));
+        let mut candidats: Vec<(u32, usize, usize)> = self
+            .trajets
+            .iter()
+            .filter(|&(_, &n)| n >= motif_seuil_trajets)
+            .map(|(&(q, b), &n)| (n, q, b))
+            .collect();
+        self.trajets.clear();
+        if en_cours {
+            return false;
+        }
+        candidats.sort_by(|a, b| b.cmp(a));
+        for (n, q, b) in candidats {
+            if b >= self.monde.batiments.len() || q >= nq || self.monde.batiments[b].chantier.is_some() || self.monde.batiments[b].abandon_mois.is_some() {
+                continue;
+            }
+            let Some(ch) = self.reseau.chemin(q, nq + b) else { continue };
+            if ch.cout <= seuil {
+                continue;
+            }
+            let Some((_, travail)) = self.plan_route_entre(q, b) else { continue };
+            if self.bras_recrutables_depuis(Some(q), false) == 0 {
+                return false;
+            }
+            let cout = crate::donnees::CoutCreation { travail, materiau: 0, equipe: 1 };
+            let noeud = self.monde.batiments[b].tuile;
+            let c = self.site_de_chantier(noeud, Cible::Route(q, b), &cout);
+            let (x, y) = self.monde.xy(noeud);
+            self.journal(format!(
+                "Chantier lancé : route vers la terre en ({x}, {y}) ({} pop-jours) — {n} jours de marche en {} jours",
+                travail / 1000,
+                self.cat.extension.periode_jours
+            ));
+            self.reconstruire_reseau();
+            self.recruter(c, cout.equipe);
+            return true;
+        }
+        false
     }
 
     /// Part du coût de construction que coûte la remise en état, selon l'usure (0 à 1 en ppm).
@@ -2360,6 +2427,7 @@ impl Simulation {
             Cible::Maison(_) => "maison",
             Cible::RemiseHameau(_) => "remise en état d'un hameau",
             Cible::RemiseTerre(_) => "remise en service d'une terre",
+            Cible::Route(..) => "route",
         };
         for &t in &libres {
             self.monde.tuiles[t].contenu = Contenu::Vide;
@@ -2587,6 +2655,23 @@ impl Simulation {
                     let mut score = self.fert_pour(type_id, v) + voisins * ext.poids_voisins_ppm
                         - self.cat.travail_conversion(type_id, &[v], &self.monde.tuiles) / 1000
                             * ext.poids_conversion_ppm;
+                    // En amas : on s'éloigne peu du centre de la terre (forme de disque, pas de bande), et on
+                    // se range volontiers contre une route ou un hameau (docs/07 §18).
+                    let n = occupees.len() as i64;
+                    let (sx, sy) = occupees.iter().fold((0i64, 0i64), |(a, b), &o| {
+                        let (x, y) = self.monde.xy(o);
+                        (a + x as i64, b + y as i64)
+                    });
+                    let (vx, vy) = self.monde.xy(v);
+                    let (dx, dy) = (vx as i64 * n - sx, vy as i64 * n - sy);
+                    let d2_100 = (dx * dx + dy * dy) * 100 / (n * n).max(1);
+                    score -= ext.poids_centre_ppm * d2_100 / 100;
+                    let contre_route = (0..8).filter_map(|e| self.monde.voisin(v, e)).any(|w| {
+                        self.monde.tuiles[w].aretes != 0 || matches!(self.monde.tuiles[w].contenu, Contenu::Quartier(_))
+                    });
+                    if contre_route {
+                        score += ext.poids_route_ppm;
+                    }
                     if let Some(h) = hameau {
                         score -= self.distance_tiles(v, self.monde.quartiers[h].tuile)
                             * ext.poids_distance_ppm;
@@ -3209,7 +3294,7 @@ impl Simulation {
         }
         let distances = fondation.map(|_| {
             self.reseau
-                .distances_depuis(self.monde.batiments[chantier].tuile)
+                .distances_chantier(self.monde.batiments[chantier].tuile)
         });
         let mut libres: Vec<(i64, u32, usize)> = (0..self.pops.len())
             .filter(|&i| {

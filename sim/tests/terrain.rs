@@ -346,10 +346,16 @@ fn la_valeur_d_un_site_baisse_quand_le_terroir_se_partage_et_sans_eau() {
     // Une pop de plus dans le voisinage : la terre se partage entre plus de monde.
     let plus = s.valeur_habitat(h, 2);
     assert!(plus < base, "{plus} >= {base}");
-    // Beaucoup de pops tout près : le terroir se remplit.
+    // Beaucoup de pops tout près : le terroir se remplit (le bonus de voisinage, qui joue en sens inverse, est neutralisé).
     let mut s2 = s.clone();
+    s2.cat.peuplement.poids_voisins_ppm = 0;
+    let base = {
+        let mut s0 = s.clone();
+        s0.cat.peuplement.poids_voisins_ppm = 0;
+        s0.valeur_habitat(h, 1)
+    };
     for _ in 0..6 {
-        let p = s2.pops[0].clone();
+        let p = s2.pops.iter().find(|p| p.residence == 0).unwrap_or(&s2.pops[0]).clone();
         s2.pops.push(p);
     }
     assert!(s2.valeur_habitat(h, 1) < base);
@@ -422,14 +428,18 @@ fn rien_ne_borne_la_taille_d_un_hameau_que_la_densite_maximale() {
 #[test]
 fn l_etat_initial_est_pose_par_les_regles_de_site() {
     // Plus de croix : les hameaux sont posés par la valeur du site (docs/07 §13) ; ils sont distincts, sur terrain ouvert,
-    // chacun relié au réseau.
+    // chacun avec au moins une terre accessible à pied (la route est une décision du seigneur, docs/07 §18).
     for graine in 1..=6u64 {
         let s = village_graine(graine);
         let pos: std::collections::BTreeSet<usize> = s.monde.quartiers.iter().map(|q| q.tuile).collect();
         assert_eq!(pos.len(), 4, "graine {graine} : hameaux confondus");
-        for q in &s.monde.quartiers {
+        let nq = s.monde.quartiers.len();
+        for (h, q) in s.monde.quartiers.iter().enumerate() {
             assert!(s.monde.tuiles[q.tuile].ouvert(), "graine {graine} : hameau sur terrain fermé");
-            assert_ne!(s.monde.tuiles[q.tuile].aretes, 0, "graine {graine} : hameau hors du réseau");
+            assert!(
+                (0..s.monde.batiments.len()).any(|b| s.reseau.chemin(h, nq + b).is_some()),
+                "graine {graine} : hameau sans terre accessible"
+            );
         }
     }
 }

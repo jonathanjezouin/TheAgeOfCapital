@@ -102,6 +102,9 @@ fn un_hameau_vide_est_remis_en_etat_plutot_que_refonde_et_l_usure_renchérit_la_
         let mut s = generer(Catalogue::defaut(), &ParamsVillage { occupation_initiale_pct: 100, ..Default::default() }).unwrap();
         s.cat.peuplement.seuil_fondation_ppm = 1_000 * PPM;
         s.cat.seigneurie.champart_ppm = 0;
+        // Les hameaux sont reliés (marcher hors route ne coûte pas plus cher) : la remise est à portée de main-d'œuvre.
+        s.cat.infra.cout_hors_route_ppm = PPM;
+        s.reconstruire_reseau();
         // Le hameau 0 est abandonné depuis `mois_abandon` mois ; ses pops sont parties ailleurs.
         for p in &mut s.pops {
             if p.residence == 0 {
@@ -142,6 +145,8 @@ fn un_hameau_vide_est_remis_en_etat_plutot_que_refonde_et_l_usure_renchérit_la_
 fn une_remise_en_etat_rend_le_logement() {
     let mut s = village_qui_construit();
     s.cat.seigneurie.champart_ppm = 0;
+    s.cat.infra.cout_hors_route_ppm = PPM;
+    s.reconstruire_reseau();
     for p in &mut s.pops {
         if p.residence == 0 {
             p.residence = 1;

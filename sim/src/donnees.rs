@@ -138,6 +138,25 @@ struct BrutInfra {
     capacite_nominale: f64,
     capacite_max: f64,
     poids_trajet_pop: f64,
+    /// Multiplicateur du coût d'un pas hors route (on marche sur toute tile praticable ; une route le réduit).
+    #[serde(default = "hors_route_defaut")]
+    cout_hors_route: f64,
+    /// Travail d'une tile de route neuve (pop-jours).
+    #[serde(default = "route_pj_defaut")]
+    route_pop_jours_par_tile: f64,
+    /// Le seigneur ordonne une route quand l'accès d'un lieu dépasse cette part de `distance_max`.
+    #[serde(default = "route_seuil_defaut")]
+    route_seuil_acces: f64,
+}
+
+fn hors_route_defaut() -> f64 {
+    2.0
+}
+fn route_pj_defaut() -> f64 {
+    5.0
+}
+fn route_seuil_defaut() -> f64 {
+    0.5
 }
 
 #[derive(Deserialize)]
@@ -193,11 +212,23 @@ struct BrutExtension {
     /// défriche une forêt que faute de terre ouverte à portée.
     #[serde(default = "poids_conversion_defaut")]
     poids_conversion: f64,
+    /// Croissance en amas : malus par tile² de distance au centre de la terre (forme de disque, pas de bande).
+    #[serde(default = "poids_centre_defaut")]
+    poids_centre: f64,
+    /// Bonus d'une tile qui touche une route ou un hameau.
+    #[serde(default = "poids_route_defaut")]
+    poids_route: f64,
     /// Travail (pop-jours) qui vaut une unité de distance de route dans le choix d'un site (pont, conversion).
     #[serde(default = "pop_jours_par_unite_defaut")]
     pop_jours_par_unite_route: f64,
 }
 
+fn poids_centre_defaut() -> f64 {
+    0.02
+}
+fn poids_route_defaut() -> f64 {
+    0.15
+}
 fn poids_conversion_defaut() -> f64 {
     0.0025
 }
@@ -333,6 +364,12 @@ pub struct ParamsInfra {
     pub capacite_nominale: Qte,
     pub capacite_max: Qte,
     pub poids_trajet_pop: Qte,
+    /// Coût d'un pas hors route, en ppm du coût sur route (2,0 : on va deux fois moins loin à pied qu'en route).
+    pub cout_hors_route_ppm: i64,
+    /// Travail d'une tile de route neuve (milli pop-jours).
+    pub route_travail_milli: Qte,
+    /// Part de `distance_max` (ppm) au-delà de laquelle le seigneur ordonne une route.
+    pub route_seuil_ppm: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -400,6 +437,9 @@ pub struct ParamsExtension {
     pub penalite_terroir_ppm: i64,
     /// Malus par pop-jour de conversion d'une tile (ppm de fertilité).
     pub poids_conversion_ppm: i64,
+    /// Malus par tile² de distance au centre de la terre, et bonus d'une tile qui touche une route ou un hameau (ppm).
+    pub poids_centre_ppm: i64,
+    pub poids_route_ppm: i64,
     /// Milli pop-jours de travail (pont, conversion) qui valent une unité de coût de route dans le choix d'un site.
     pub travail_par_unite_route_milli: i64,
 }
@@ -747,6 +787,9 @@ impl Catalogue {
                 capacite_nominale: en_milli(b.infrastructure.capacite_nominale),
                 capacite_max: en_milli(b.infrastructure.capacite_max),
                 poids_trajet_pop: en_milli(b.infrastructure.poids_trajet_pop),
+                cout_hors_route_ppm: en_ppm(b.infrastructure.cout_hors_route).max(PPM),
+                route_travail_milli: en_milli(b.infrastructure.route_pop_jours_par_tile),
+                route_seuil_ppm: en_ppm(b.infrastructure.route_seuil_acces),
             },
             habitat: ParamsHabitat {
                 densite_max_pops: b.habitat.densite_max_pops,
@@ -792,6 +835,8 @@ impl Catalogue {
                 poids_voisins_ppm: (b.extension.poids_voisins * PPM as f64).round() as i64,
                 poids_distance_ppm: (b.extension.poids_distance * PPM as f64).round() as i64,
                 poids_conversion_ppm: (b.extension.poids_conversion * PPM as f64).round() as i64,
+                poids_centre_ppm: (b.extension.poids_centre * PPM as f64).round() as i64,
+                poids_route_ppm: (b.extension.poids_route * PPM as f64).round() as i64,
                 travail_par_unite_route_milli: en_milli(b.extension.pop_jours_par_unite_route).max(1),
                 penalite_terroir_ppm: (b.extension.penalite_terroir * PPM as f64).round() as i64,
             },
