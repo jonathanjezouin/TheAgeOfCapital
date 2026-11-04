@@ -194,6 +194,8 @@ pub enum Cible {
     RemiseHameau(usize),
     /// Remise en service d'une terre abandonnée.
     RemiseTerre(usize),
+    /// Route ordonnée par le seigneur entre un hameau et une terre dont le trajet à pied se répète (hameau, terre).
+    Route(usize, usize),
     /// Défrichement de tiles de plus pour la terre exploitée d'index donné.
     Extension(usize),
 }

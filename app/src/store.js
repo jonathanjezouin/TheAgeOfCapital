@@ -16,6 +16,7 @@ export const store = reactive({
   // Vitesse en jours de simulation par seconde réelle ; 1/24 = « jour/nuit » (un jour dure 24 s).
   vitesse: 10,
   enPause: false,
+  seigneurOuvert: false, // fiche du seigneur, indépendante de la sélection
   mode: 'normal', // normal | fertilite | besoins | ressource
   selection: null, // { x, y }
   selectionPop: null, // identifiant de la pop inspectée

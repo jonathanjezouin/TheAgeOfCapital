@@ -526,6 +526,7 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                         Cible::Extension(terre) => ("extension", c.batiments[s.monde.batiments[terre].type_id].nom.clone()),
                         Cible::RemiseHameau(q) => ("remise_hameau", c.habitats[s.monde.quartiers[q].habitat_id].nom.clone()),
                         Cible::RemiseTerre(t) => ("remise_terre", c.batiments[s.monde.batiments[t].type_id].nom.clone()),
+                        Cible::Route(_, t) => ("route", c.batiments[s.monde.batiments[t].type_id].nom.clone()),
                     };
                     ChantierVue {
                         cible,
@@ -974,18 +975,7 @@ pub extern "C" fn sim_chemin_json(q: u32, b: u32) -> u32 {
         let Some(ch) = s.reseau.chemin(q, nq + b) else {
             return ecrire(&Vec::<(usize, usize)>::new());
         };
-        let mut t = s.monde.quartiers[q].tuile;
-        let mut pts = vec![s.monde.xy(t)];
-        for &sg in &ch.segments {
-            let seg = &s.reseau.segments[sg];
-            t = if seg.a == t { seg.b } else { seg.a };
-            pts.push(s.monde.xy(t));
-        }
-        // Arrivée sur la tile nœud du bâtiment.
-        let fin = s.monde.xy(s.monde.batiments[b].tuile);
-        if pts.last() != Some(&fin) {
-            pts.push(fin);
-        }
+        let pts: Vec<(usize, usize)> = ch.tuiles.iter().map(|&t| s.monde.xy(t)).collect();
         ecrire(&pts)
     })
 }

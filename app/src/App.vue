@@ -9,7 +9,7 @@ import PanneauRessource from './components/PanneauRessource.vue'
 import { chargerSim } from './sim.js'
 import { Carte } from './carte.js'
 import { store } from './store.js'
-import { TYPES } from './libelles.js'
+import { TYPES, pct, un } from './libelles.js'
 
 const zone = ref(null)
 let sim = null
@@ -178,6 +178,14 @@ watch(() => store.vitesse, () => carte?.majNuit())
         </div>
       </div>
       <div v-if="store.pret && store.survol" class="infobulle">({{ store.survol.x }}, {{ store.survol.y }})</div>
+      <div v-if="store.pret && store.seigneurOuvert && store.etat?.seigneur" class="fiche-seigneur">
+        <button class="fermer" title="Fermer" @click="store.seigneurOuvert = false">×</button>
+        <h3>{{ store.etat.seigneur.nom }}</h3>
+        <p>Il décide des constructions, des installations et des abandons. Les {{ store.etat.nb_serfs }} pops sont serves : elles choisissent où travailler, mais ni où vivre ni quoi bâtir. Il prélève {{ pct(store.etat.seigneur.champart) }} de la production (champart) en nature.</p>
+        <div class="ligne"><span>Grenier : grain</span><span>{{ un(store.etat.seigneur.grenier[store.meta.ressources.indexOf('grain')], 0) }}</span></div>
+        <div class="ligne"><span>Grenier : bois</span><span>{{ un(store.etat.seigneur.grenier[store.meta.ressources.indexOf('bois')], 0) }}</span></div>
+        <div class="ligne"><span>Chantiers qu'il finance</span><span>{{ store.etat.seigneur.chantiers }}</span></div>
+      </div>
       <div v-if="store.pret && store.mode === 'fertilite'" class="legende">
         Aptitude du terrain pour
         <select v-model.number="store.typeAptitude" class="choix-terre" aria-label="Type de terre">

@@ -22,6 +22,8 @@ const MODES = [
     <span class="titre">Village 1750</span>
     <span class="date" aria-live="off">{{ date }}</span>
 
+    <button :class="{ actif: store.seigneurOuvert }" title="Le seigneur : grenier, champart, chantiers" @click="store.seigneurOuvert = !store.seigneurOuvert">Seigneur</button>
+
     <span class="groupe" role="group" aria-label="Vitesse de simulation">
       <button :class="{ actif: store.enPause }" title="Pause (espace)" @click="store.enPause = !store.enPause">
         {{ store.enPause ? '▶' : '⏸' }}

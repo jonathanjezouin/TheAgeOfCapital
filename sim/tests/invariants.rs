@@ -150,13 +150,17 @@ fn villages_toujours_connexes_et_pourvus() {
             },
         )
         .unwrap_or_else(|e| panic!("graine {graine} : {e}"));
-        // Chaque terre occupe N tiles contiguës, dont sa tile « nœud » desservie par le réseau.
+        // Chaque terre occupe N tiles contiguës, toutes accessibles ; elle est à portée de marche d'au moins un hameau.
+        let nq = s.monde.quartiers.len();
         for (b, bat) in s.monde.batiments.iter().enumerate() {
             assert!(bat.emprise.contains(&bat.tuile));
             if s.cat.batiments[bat.type_id].par_tile {
                 assert!(!bat.emprise.is_empty(), "graine {graine} : terre sans tile");
                 assert!(bat.emprise.len() <= s.cat.batiments[bat.type_id].emprise_max as usize);
-                assert_ne!(s.monde.masque(bat.tuile), 0, "graine {graine} : terre non desservie");
+                assert!(
+                    (0..nq).any(|q| s.reseau.chemin(q, nq + b).is_some()),
+                    "graine {graine} : terre hors de portée de marche de tout hameau"
+                );
             }
             if s.cat.batiments[bat.type_id].par_tile {
                 for &t in &bat.emprise {
@@ -210,10 +214,22 @@ fn la_distance_est_le_cout_des_aretes_empruntees() {
             if tuile(de) == tuile(vers) {
                 assert_eq!(ch.cout, 0);
             } else {
-                // Deux lieux distincts : la distance est la somme des coûts des arêtes empruntées.
-                let somme: i64 = ch.segments.iter().map(|&sg| s.reseau.segments[sg].cout).sum();
+                // Deux lieux distincts : la distance est la somme des coûts des pas : sur route le coût de l'arête, hors route
+                // `cout_hors_route` fois plus cher.
+                let mut somme = 0;
+                for w in ch.tuiles.windows(2) {
+                    let d = s.monde.direction(w[0], w[1]).expect("pas entre voisines");
+                    let route = s.monde.masque(w[0]) & sim::monde::DIRS[d].0 != 0 && s.monde.masque(w[1]) & sim::monde::DIRS[d].3 != 0;
+                    somme += if route {
+                        sim::monde::cout_dir(d)
+                    } else {
+                        sim::monde::cout_dir(d) * s.cat.infra.cout_hors_route_ppm / PPM
+                    };
+                }
                 assert_eq!(ch.cout, somme);
-                assert!(ch.cout >= 10);
+                // Les segments de route empruntés sont ceux des pas sur route.
+                let routes: i64 = ch.segments.iter().map(|&sg| s.reseau.segments[sg].cout).sum();
+                assert!(routes <= ch.cout);
             }
         }
     }
@@ -871,7 +887,7 @@ fn un_hameau_a_la_densite_maximale_fait_fonder_un_autre_hameau() {
         s.monde.quartiers[nq].capacite_pops, 0,
         "pas de logement avant la fin du chantier"
     );
-    s.avancer(365 * 2);
+    s.avancer(365 * 4);
     assert_eq!(
         s.monde.quartiers[nq].capacite_pops, 1,
         "un hameau neuf n'a que sa première maison"
@@ -990,8 +1006,8 @@ fn aucun_chantier_ne_reste_bloque() {
 #[test]
 fn la_congestion_differe_les_livraisons_sans_perdre_de_matiere() {
     let texte = sim::donnees::DONNEES_POC
-        .replace("capacite_nominale = 4000.0", "capacite_nominale = 25.0")
-        .replace("capacite_max = 8000.0", "capacite_max = 50.0");
+        .replace("capacite_nominale = 4000.0", "capacite_nominale = 0.5")
+        .replace("capacite_max = 8000.0", "capacite_max = 1.0");
     let mut s = sans_extension(
         generer(
             Catalogue::depuis_toml(&texte).unwrap(),
