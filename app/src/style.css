@@ -103,6 +103,11 @@ input[type='number'] { width: 4.2em; background: var(--panneau-2); border: 1px s
 .etat-chargement { position: absolute; inset: 0; display: grid; place-items: center; text-align: center; padding: 20px; color: #f3efdd; background: rgba(21, 19, 14, 0.82); }
 .erreur { color: #f2a99d; max-width: 36em; white-space: pre-wrap; }
 .infobulle { position: absolute; left: 10px; bottom: 10px; background: rgba(21, 19, 14, 0.78); color: #ece6d3; padding: 3px 9px; border-radius: 6px; font-size: 12px; pointer-events: none; }
+.fiche-seigneur { position: absolute; left: 10px; top: 10px; width: 300px; background: rgba(21, 19, 14, 0.9); color: #ece6d3; padding: 8px 12px 10px; border-radius: 6px; font-size: 12px; z-index: 5; }
+.fiche-seigneur h3 { color: #e0c98a; margin-top: 2px; }
+.fiche-seigneur p { margin: 4px 0 8px; line-height: 1.35; color: #cfc8b2; }
+.fiche-seigneur .ligne { padding: 1px 0; color: #ece6d3; }
+.fiche-seigneur .fermer { position: absolute; right: 6px; top: 4px; background: none; border: none; color: #ece6d3; font-size: 16px; cursor: pointer; }
 .legende { position: absolute; right: 10px; bottom: 10px; background: rgba(21, 19, 14, 0.82); color: #ece6d3; padding: 6px 10px; border-radius: 6px; font-size: 12px; pointer-events: none; }
 .legende { pointer-events: auto; }
 .legende .choix-terre { font: inherit; background: #2b2820; color: #ece6d3; border: 1px solid #5a5340; border-radius: 4px; padding: 1px 4px; }
