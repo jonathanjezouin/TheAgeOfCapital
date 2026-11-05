@@ -59,6 +59,7 @@ fn village_qui_construit() -> Simulation {
     s.cat.extension.periode_jours = 1_000_000;
     s.cat.seigneurie.champart_ppm = 0;
     s.cat.seigneurie.train_de_vie_milli = 0;
+    s.cat.seigneurie.secours_milli_jours = 0;
     let seuil = s.seuil_croissance();
     s.pops[0].croissance = seuil;
     s

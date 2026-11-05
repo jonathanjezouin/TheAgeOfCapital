@@ -59,6 +59,13 @@ champart = 0.12
 champart_ressources = ["grain", "bois"]
 train_de_vie_pops = 0.5            # il consomme la ration d'une demi-pop par jour
 grenier_initial = { grain = 300.0, bois = 400.0 }
+# But du seigneur (docs/07 §19) : son revenu est le champart, donc le nombre de serfs. Il garde `reserve_annees` années de
+# ration du village (semence à avancer, mauvaise année) et investit le surplus : des logements d'avance (`marge_logement`
+# en part des pops), pour que la place ne manque jamais quand une pop naît.
+reserve_annees = 1.0
+marge_logement = 0.25
+# Secours : en deçà de 3 jours de réserve (nourriture, chauffage), le seigneur sert ses serfs sur son grenier (la soudure).
+secours_jours = 3.0
 
 # Usure et abandon des lieux (docs/07 §14). Une terre sans travail depuis `terre_inactive_ans` est abandonnée : elle ne
 # produit plus et redevient friche après `terre_friche_ans`. Un hameau sans pop depuis `hameau_vide_ans` est abandonné :

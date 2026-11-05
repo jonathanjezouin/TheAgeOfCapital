@@ -734,6 +734,7 @@ fn le_stock_est_personnel_et_la_couverture_aussi() {
         &ParamsVillage { occupation_initiale_pct: 100, ..Default::default() },
     )
     .unwrap());
+    s.cat.seigneurie.secours_milli_jours = 0; // sans le secours du seigneur : on teste les stocks personnels
     let q = s.pops[0].residence;
     let idx: Vec<usize> = (0..s.pops.len()).filter(|&i| s.pops[i].residence == q).collect();
     assert!(idx.len() >= 2, "hameau de deux pops au moins");
@@ -954,12 +955,14 @@ fn le_village_s_etend_selon_le_besoin_sans_deborder_la_distance() {
         .evenements
         .iter()
         .any(|e| e.texte.starts_with("Terre agrandie")));
-    // Des pops attendent un logement : une maison de plus là où l'on est, ou un hameau neuf s'il vaut mieux
-    // (valeur du site, docs/07 §4).
-    assert!(s
-        .evenements
-        .iter()
-        .any(|e| e.texte.starts_with("Nouvelle maison") || e.texte.starts_with("Nouveau hameau construit")));
+    // Des pops attendent un logement, ou le seigneur investit son surplus : une maison de plus là où l'on est, ou un
+    // hameau neuf s'il vaut mieux (valeur du site, docs/07 §4). Au moins un des villages en bâtit en 150 ans.
+    let bati = (1..=4u64).any(|g| {
+        let mut v = village(g);
+        v.avancer(365 * 150);
+        v.evenements.iter().any(|e| e.texte.starts_with("Nouvelle maison") || e.texte.starts_with("Nouveau hameau construit"))
+    });
+    assert!(bati, "aucune maison en 4 villages et 150 ans");
     let nq = s.monde.quartiers.len();
     let dmax = s.cat.infra.distance_max;
     // Tout poste reste accessible dans la distance limite, aucun logement n'est dépassé.

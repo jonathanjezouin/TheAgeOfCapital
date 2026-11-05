@@ -234,6 +234,8 @@ pub struct Simulation {
     pub libre_lisse_milli: Vec<i64>,
     /// Trajets de travail récents (hameau de résidence, terre) -> pop-jours, depuis la dernière décision de routes.
     pub trajets: BTreeMap<(usize, usize), u32>,
+    /// Tiles perdues faute de bras (saisons), avec le jour : tant qu'il y en a beaucoup, le seigneur n'ouvre pas de champ de plus.
+    pub pertes_saison: Vec<(u64, usize)>,
     /// Distance (en côtés de tile) de chaque tile au cours d'eau le plus proche : fixe, elle sert à valoriser les sites.
     pub dist_eau: Vec<u16>,
 }
@@ -380,6 +382,7 @@ impl Simulation {
             libre_milli: Vec::new(),
             libre_lisse_milli: Vec::new(),
             trajets: BTreeMap::new(),
+            pertes_saison: Vec::new(),
             dist_eau,
         };
         sim.calculer_fournisseurs();
@@ -639,6 +642,7 @@ impl Simulation {
         self.produire();
         self.terminer_chantiers();
         // 5. Consommation des pops et couverture des besoins.
+        self.secours();
         self.consommer();
         self.train_de_vie();
         // 6. Jauges de croissance : naissances et disparitions de pops.
@@ -914,12 +918,27 @@ impl Simulation {
             && bat.abandon_mois.is_none()
             && bat.cycle.etape != 255
             && bat.cycle.fait_milli < bat.cycle.requis_milli
+            && !(bat.cycle.etape == 2 && self.grange_pleine(bat))
+    }
+
+    fn grange_pleine(&self, bat: &Batiment) -> bool {
+        let sa = self.cat.batiments[bat.type_id].saisons.as_ref().unwrap();
+        let (r, complete) = self.recolte_complete(bat);
+        bat.stock_sortie[r] >= mul_div(complete, sa.grange_ppm, PPM)
     }
 
     /// Travail réclamé aujourd'hui par une terre à saisons : tout ce qui reste de l'étape, tant que la fenêtre est ouverte.
     fn demande_saisonniere(&self, bat: &Batiment) -> i64 {
         if !self.urgence_saison(bat) {
             return 0;
+        }
+        // Récolte : la grange pleine, on ne récolte plus (ce que personne n'a la place de ranger se perd sur pied).
+        if bat.cycle.etape == 2 {
+            let sa = self.cat.batiments[bat.type_id].saisons.as_ref().unwrap();
+            let (r, complete) = self.recolte_complete(bat);
+            if bat.stock_sortie[r] >= mul_div(complete, sa.grange_ppm, PPM) {
+                return 0;
+            }
         }
         (bat.cycle.requis_milli - bat.cycle.fait_milli).max(0)
     }
@@ -963,6 +982,7 @@ impl Simulation {
                 continue;
             }
             changement = true;
+            self.pertes_saison.push((self.jour, perdues));
             self.liberer_tuiles_perdues(b, perdues, etape);
         }
         if changement {
@@ -985,6 +1005,12 @@ impl Simulation {
             let premiere = c.semences_milli < 0;
             // Le seigneur avance la semence qui manque (nouvelles tiles, mauvaise année) sur son grenier.
             if !premiere {
+                // La graine manquante se prend d'abord dans la grange de la terre elle-même…
+                let manque = (besoin - self.monde.batiments[b].stock_entree[r]).max(0);
+                let propre = manque.min(self.monde.batiments[b].stock_sortie[r]);
+                self.monde.batiments[b].stock_sortie[r] -= propre;
+                self.monde.batiments[b].stock_entree[r] += propre;
+                // … puis le seigneur avance le reste sur son grenier.
                 let manque = (besoin - self.monde.batiments[b].stock_entree[r]).max(0);
                 if let Some(pn) = self.monde.personnages.get_mut(0) {
                     let avance = manque.min(pn.grenier[r]);
@@ -1002,6 +1028,10 @@ impl Simulation {
                 self.bilan.consomme_prod[r] += utilise;
             }
             self.monde.batiments[b].cycle.semences_milli = 0;
+        }
+        // Grange pleine à la récolte : ce qui n'a pas été récolté n'avait pas de place, mais le champ reste (aucune tile perdue).
+        if etape == 2 && self.grange_pleine(&self.monde.batiments[b]) {
+            fait = PPM;
         }
         let perdues = ((PPM - fait) * n + PPM / 2) / PPM;
         Some(perdues as usize)
@@ -1587,6 +1617,39 @@ impl Simulation {
 
     /// Chaque pop consomme sur son propre stock ; le hameau agrège la couverture de ses habitants.
     /// Le seigneur vit sur son grenier : chaque jour, la ration de `train_de_vie_pops` pops (grain, bois…) y est prélevée.
+    /// Soudure : une pop dont la réserve vitale tombe sous `secours_jours` est servie sur le grenier du seigneur (ses serfs
+    /// sont son revenu). Transfert de stock à stock : la matière est conservée.
+    fn secours(&mut self) {
+        let cible = self.cat.seigneurie.secours_milli_jours;
+        if cible <= 0 || self.monde.personnages.is_empty() {
+            return;
+        }
+        let nr = self.cat.ressources.len();
+        for i in 0..self.pops.len() {
+            let a = self.autonomies(&self.pops[i]);
+            // Nourriture : un manque de nutrition à combler, en grain d'abord.
+            if a.nutrition < cible {
+                let mut reste = (cible - a.nutrition) * self.cat.vital.nourriture / 1000;
+                for r in 0..nr {
+                    let nut = self.cat.ressources[r].nutritive_milli;
+                    if nut <= 0 || reste <= 0 {
+                        continue;
+                    }
+                    let unites = (reste * 1000 / nut).min(self.monde.personnages[0].grenier[r]);
+                    self.monde.personnages[0].grenier[r] -= unites;
+                    self.pops[i].stock[r] += unites;
+                    reste -= unites * nut / 1000;
+                }
+            }
+            if a.chauffage < cible {
+                let r = self.cat.vital.chauffage_ressource;
+                let besoin = ((cible - a.chauffage) * self.cat.vital.chauffage / 1000).min(self.monde.personnages[0].grenier[r]);
+                self.monde.personnages[0].grenier[r] -= besoin;
+                self.pops[i].stock[r] += besoin;
+            }
+        }
+    }
+
     fn train_de_vie(&mut self) {
         let milli = self.cat.seigneurie.train_de_vie_milli;
         let Some(p) = self.monde.personnages.get_mut(0) else { return };
@@ -1924,6 +1987,24 @@ impl Simulation {
             }
         }
 
+        // 1 bis. Surplus du seigneur : au-delà de sa réserve, il fait bâtir des logements d'avance (son revenu, ce sont les serfs).
+        if self.surplus_du_seigneur() {
+            let eff = self.effectifs();
+            let libres: i64 = (0..nq).filter(|&q| !self.monde.quartiers[q].detruit && self.monde.quartiers[q].abandon_mois.is_none()).map(|q| self.monde.quartiers[q].capacite_pops as i64 - eff[q] as i64).sum();
+            let voulu = (self.pops.len() as i64 * self.cat.seigneurie.marge_logement_ppm + PPM - 1) / PPM;
+            if libres < voulu.max(1) {
+                let motif = "le seigneur investit son surplus : de la place pour les naissances à venir".to_string();
+                // Le hameau le plus plein d'abord (la place manquera là).
+                let mut ordre: Vec<usize> = (0..nq).filter(|&q| self.monde.quartiers[q].capacite_pops > 0).collect();
+                ordre.sort_by_key(|&q| (self.monde.quartiers[q].capacite_pops as i64 - eff[q] as i64, q));
+                for q in ordre {
+                    if !self.maison_en_cours(q) && self.lancer_maison(q, &motif) {
+                        return;
+                    }
+                }
+            }
+        }
+
         // 2. Terres : des bras restent sans poste alors qu'une ressource manque.
         let sans: Vec<usize> = self
             .pops
@@ -1938,6 +2019,10 @@ impl Simulation {
         let nb_sans = self.sans_poste();
         for r in tensions {
             if self.chantier_pour(r) || self.producteurs_bloques_par_intrant(r) {
+                continue;
+            }
+            // Le bras manque, pas la terre : ouvrir un champ de plus pour le perdre à la saison suivante serait du gâchis.
+            if self.cat.ressources[r].nutritive_milli > 0 && self.tiles_perdues_cette_annee() >= self.cat.extension.tuiles_par_defrichement as usize {
                 continue;
             }
             let motif = format!(
@@ -1991,6 +2076,23 @@ impl Simulation {
                 return;
             }
         }
+    }
+
+    fn tiles_perdues_cette_annee(&self) -> usize {
+        let depuis = self.jour.saturating_sub(self.cat.sim.jours_par_an as u64);
+        self.pertes_saison.iter().filter(|(j, _)| *j >= depuis).map(|(_, k)| *k).sum()
+    }
+
+    /// Le grenier du seigneur dépasse sa réserve (années de ration nutritive du village).
+    fn surplus_du_seigneur(&self) -> bool {
+        let Some(pn) = self.monde.personnages.first() else { return false };
+        let grain: i64 = (0..self.cat.ressources.len())
+            .filter(|&r| self.cat.ressources[r].nutritive_milli > 0)
+            .map(|r| pn.grenier[r] * self.cat.ressources[r].nutritive_milli / 1000)
+            .sum();
+        let par_jour = self.pops.len() as i64 * self.cat.vital.nourriture;
+        let reserve = par_jour * self.cat.sim.jours_par_an * self.cat.seigneurie.reserve_annees_ppm / PPM;
+        grain > reserve
     }
 
     /// Hameaux d'origine à essayer, sans doublon, dans l'ordre où on les rencontre.
