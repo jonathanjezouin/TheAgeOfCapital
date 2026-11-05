@@ -17,6 +17,7 @@ Rappel de fond : un village de 1750 est en équilibre malthusien ; ce sont les t
 - Une tile **habitation** avec **1 pop**, une tile **champ** à côté.
 - Le **temps** : 1 tick = 1 jour, 365 jours par an, départ en 1750.
 - Rien d'autre : pas de production, pas de consommation, pas de natalité.
+- Interface : `app/` (carte PixiJS : sol, maison, champ ; date, lecture/pause, vitesses ; panneau Village) via `sim-wasm/`. Lancer : `cd app && npm install && npm run wasm && npm run dev`.
 - Code : `sim/` (crate Rust minimale, `cargo test`, `cargo run --bin sim-cli -- --annees 10`).
 
 ## Étapes envisagées (à valider une par une)

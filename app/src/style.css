@@ -1,0 +1,3 @@
+:root { --fond: #1b1d17; --panneau: #262a20; --texte: #e8e4d0; --accent: #d9b44a; --discret: #9a9680; }
+* { box-sizing: border-box; }
+html, body, #app { margin: 0; height: 100%; background: var(--fond); color: var(--texte); font: 14px/1.4 system-ui, sans-serif; }

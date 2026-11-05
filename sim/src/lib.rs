@@ -60,3 +60,43 @@ impl Default for Simulation {
         Self::new()
     }
 }
+
+impl Tile {
+    pub fn nom(&self) -> &'static str {
+        match self {
+            Tile::Habitation { .. } => "habitation",
+            Tile::Champ => "champ",
+        }
+    }
+}
+
+impl Simulation {
+    /// Instantané JSON de l'état (écrit à la main : le moteur reste sans dépendance).
+    pub fn etat_json(&self) -> String {
+        let tiles: Vec<String> = self
+            .monde
+            .tiles
+            .iter()
+            .enumerate()
+            .map(|(i, t)| {
+                let pops = if let Tile::Habitation { pops } = t { *pops } else { 0 };
+                format!(
+                    r#"{{"x":{},"y":{},"type":"{}","pops":{}}}"#,
+                    i % self.monde.largeur,
+                    i / self.monde.largeur,
+                    t.nom(),
+                    pops
+                )
+            })
+            .collect();
+        format!(
+            r#"{{"jour":{},"annee":{},"jour_de_l_annee":{},"pops":{},"largeur":{},"tiles":[{}]}}"#,
+            self.jour,
+            self.annee(),
+            self.jour_de_l_annee(),
+            self.monde.pops(),
+            self.monde.largeur,
+            tiles.join(",")
+        )
+    }
+}

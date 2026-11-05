@@ -42,6 +42,8 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | Dossier | Contenu |
 |---|---|
 | `sim/` | **POC v2** : moteur Rust minimal + CLI (`cargo run --bin sim-cli -- --annees 10`, `cargo test`) |
+| `sim-wasm/` | Pont WebAssembly du moteur v2 (interface C, instantanés JSON) |
+| `app/` | Interface v2 : carte PixiJS + Vue 3 + moteur WASM (`npm install && npm run wasm && npm run dev`) ; atlas copié du v1 |
 | `_archive/poc-v1/` | POC v1 archivé (`sim/`, `sim-wasm/`, `app/`) ; réserve d'idées, pas une base. Voir `_archive/README.md` |
 | `graphGeneration/` | Générateur d'assets : atlas de 49 tiles dans `app/public/assets/` (référence graphique) |
 

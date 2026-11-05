@@ -1,0 +1,14 @@
+{
+  "name": "the-age-of-capital-app",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "description": "POC v2 : carte PixiJS, interface Vue 3, moteur Rust en WebAssembly",
+  "scripts": {
+    "wasm": "cd ../sim-wasm && cargo build --release --target wasm32-unknown-unknown && node -e \"require('fs').copyFileSync('target/wasm32-unknown-unknown/release/sim_wasm.wasm', '../app/public/sim_wasm.wasm')\"",
+    "dev": "vite",
+    "build": "vite build"
+  },
+  "dependencies": { "pixi.js": "^8.9.0", "vue": "^3.5.0" },
+  "devDependencies": { "@vitejs/plugin-vue": "^6.0.0", "vite": "^7.0.0" }
+}
