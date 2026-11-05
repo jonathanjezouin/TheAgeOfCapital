@@ -168,6 +168,12 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
       <div v-else-if="entite.genre === 'terre'">
         <h2>{{ TYPES[entite.l.type_nom] ?? entite.l.type_nom }}<span v-if="entite.l.abandon != null"> (abandonnée)</span></h2>
         <p v-if="entite.l.abandon != null" class="note">Abandonnée : elle ne produit plus et personne n'y travaille. Elle redevient friche quand {{ pct(entite.l.abandon) }} du délai est écoulé… puis la forêt reprend.</p>
+        <div class="ligne"><span>Appartient à</span><span>{{ entite.l.proprietaire || '—' }} <small class="doux" v-if="entite.l.champart > 0">· champart {{ pct(entite.l.champart) }}</small></span></div>
+        <div class="ligne"><span>Produit</span><span>{{ store.meta.batiments.find((b) => b.nom === entite.l.type_nom)?.extrants.map((r) => RESSOURCES[r]).join(', ') }}
+          <small class="doux">· hier : <template v-for="(q, r) in entite.l.produit_jour" :key="r"><template v-if="q > 0.05">{{ un(q, 1) }} {{ nomRes(r) }} </template></template></small></span></div>
+        <div class="ligne"><span>Travail nécessaire</span><span>{{ un(entite.l.postes, 2) }} pop-jour par jour à plein régime</span></div>
+        <div class="ligne"><span>Pops qui peuvent y travailler</span><span>jusqu'à {{ entite.l.places }}</span></div>
+        <div class="ligne"><span>Pops qui y travaillent aujourd'hui</span><span>{{ pops.length }}</span></div>
         <div class="ligne"><span>Production</span><span :style="{ color: couleurRatio(entite.l.prod) }">{{ pct(entite.l.prod) }}</span></div>
         <div class="barre"><i :style="{ width: entite.l.prod * 100 + '%', background: couleurRatio(entite.l.prod) }"></i></div>
         <div class="ligne"><span>Limité par</span><span>{{ limitantTexte(entite.l.limitant) }}</span></div>

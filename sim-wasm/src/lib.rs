@@ -166,6 +166,13 @@ struct LieuVue {
     chantier: Option<ChantierVue>,
     /// Terre abandonnée : part du délai de friche écoulée (0 à 1) ; `None` si elle est en service.
     abandon: Option<f64>,
+    /// Production du dernier jour, par ressource (unités).
+    produit_jour: Vec<f64>,
+    /// Postes de travail à plein régime (pops, arrondi au-dessus).
+    places: u32,
+    /// Propriétaire éminent (le seigneur) et part qu'il prélève sur la production.
+    proprietaire: String,
+    champart: f64,
 }
 
 #[derive(Serialize)]
@@ -568,6 +575,12 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     sortie: bat.stock_sortie.iter().map(|&m| unites(m)).collect(),
                     chantier,
                     abandon: bat.abandon_mois.map(|m| (m as f64 / s.cat.abandon.terre_friche_mois as f64).min(1.0)),
+                    produit_jour: (0..c.ressources.len())
+                        .map(|r| unites(s.stats.produits_par_lieu.iter().filter(|&&(l, res, _)| l == b && res == r).map(|&(_, _, q)| q).sum::<i64>()))
+                        .collect(),
+                    places: (c.besoin_mo_terre_milli(bat.type_id, &bat.emprise, &s.monde.tuiles).max(0) as u32 + 999) / 1000,
+                    proprietaire: if t.par_tile { s.monde.personnages.first().map_or(String::new(), |p| p.nom.clone()) } else { String::new() },
+                    champart: if t.par_tile { f(s.cat.seigneurie.champart_ppm) } else { 0.0 },
                 }
             })
             .collect();
@@ -633,6 +646,11 @@ struct RationVue {
     autonomie_jours: Option<f64>,
     consomme_jour: f64,
     couverture: f64,
+    /// Vital (nourriture, chauffage) et/ou confort : de quoi il s'agit pour la pop.
+    vital: bool,
+    confort: bool,
+    /// Quantité qui manque aujourd'hui pour couvrir la ration (unités).
+    manque_jour: f64,
 }
 
 #[derive(Serialize)]
@@ -662,6 +680,9 @@ struct HorsPortee {
 #[derive(Serialize)]
 struct PopDetail {
     id: u32,
+    statut: &'static str,
+    seigneur: String,
+    champart: f64,
     residence: usize,
     x: usize,
     y: usize,
@@ -715,6 +736,9 @@ pub extern "C" fn sim_pop_json(id: u32) -> u32 {
                 autonomie_jours: Some(jours(a.par_ressource[b.ressource])).filter(|j| j.is_finite()),
                 consomme_jour: unites(p.conso_jour[b.ressource]),
                 couverture: f(p.sat_par_ressource_ppm[b.ressource]),
+                vital: c.ressources[b.ressource].nutritive_milli > 0 || b.ressource == c.vital.chauffage_ressource,
+                confort: c.confort.iter().any(|x| x.ressource == b.ressource),
+                manque_jour: unites(b.par_pop) * (1.0 - f(p.sat_par_ressource_ppm[b.ressource])).max(0.0),
             })
             .collect();
         let cands = s.expliquer_pop(id).unwrap_or_default();
@@ -764,6 +788,9 @@ pub extern "C" fn sim_pop_json(id: u32) -> u32 {
             .collect();
         ecrire(&PopDetail {
             id,
+            statut: match p.statut { Some(sim::monde::Statut::Serf) => "serf", None => "libre" },
+            seigneur: s.monde.personnages.first().map_or(String::new(), |q| q.nom.clone()),
+            champart: f(s.cat.seigneurie.champart_ppm),
             residence: p.residence,
             x: hx,
             y: hy,
