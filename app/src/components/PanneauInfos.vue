@@ -171,6 +171,14 @@ const jours = computed(() => (store.etat ? dateJeu(store.etat.jour).texte : ''))
         <div class="ligne"><span>Appartient à</span><span>{{ entite.l.proprietaire || '—' }} <small class="doux" v-if="entite.l.champart > 0">· champart {{ pct(entite.l.champart) }}</small></span></div>
         <div class="ligne"><span>Produit</span><span>{{ store.meta.batiments.find((b) => b.nom === entite.l.type_nom)?.extrants.map((r) => RESSOURCES[r]).join(', ') }}
           <small class="doux">· hier : <template v-for="(q, r) in entite.l.produit_jour" :key="r"><template v-if="q > 0.05">{{ un(q, 1) }} {{ nomRes(r) }} </template></template></small></span></div>
+        <template v-if="entite.l.saison">
+          <div class="ligne"><span>Saison</span><span><b>{{ entite.l.saison.etape }}</b>
+            <small class="doux" v-if="entite.l.saison.etape !== 'repos'"> · {{ un(entite.l.saison.fait, 1) }} / {{ un(entite.l.saison.requis, 1) }} pop-jours faits</small></span></div>
+          <div class="barre" v-if="entite.l.saison.requis > 0"><i :style="{ width: Math.min(100, entite.l.saison.fait / entite.l.saison.requis * 100) + '%', background: 'var(--accent)' }"></i></div>
+          <small class="doux">Calendrier : labour jours {{ entite.l.saison.fenetres[0][0] }}–{{ entite.l.saison.fenetres[0][1] }}, semis {{ entite.l.saison.fenetres[1][0] }}–{{ entite.l.saison.fenetres[1][1] }}, récolte {{ entite.l.saison.fenetres[2][0] }}–{{ entite.l.saison.fenetres[2][1] }}. Ce qui n'est pas fait à temps retombe en friche.</small>
+          <div class="ligne"><span>Semences en grange</span><span>{{ un(entite.l.saison.semences, 0) }}</span></div>
+          <div class="ligne"><span>Récolte complète attendue</span><span>≈ {{ un(entite.l.saison.recolte_complete * entite.l.fertilite, 0) }}</span></div>
+        </template>
         <div class="ligne"><span>Travail nécessaire</span><span>{{ un(entite.l.postes, 2) }} pop-jour par jour à plein régime</span></div>
         <div class="ligne"><span>Pops qui peuvent y travailler</span><span>jusqu'à {{ entite.l.places }}</span></div>
         <div class="ligne"><span>Pops qui y travaillent aujourd'hui</span><span>{{ pops.length }}</span></div>

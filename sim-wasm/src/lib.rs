@@ -173,6 +173,18 @@ struct LieuVue {
     /// Propriétaire éminent (le seigneur) et part qu'il prélève sur la production.
     proprietaire: String,
     champart: f64,
+    /// Terre à saisons : étape en cours, travail fait et requis (pop-jours), fenêtres `[début, fin)` de l'année.
+    saison: Option<SaisonVue>,
+}
+
+#[derive(Serialize)]
+struct SaisonVue {
+    etape: &'static str,
+    fait: f64,
+    requis: f64,
+    fenetres: Vec<(u32, u32)>,
+    semences: f64,
+    recolte_complete: f64,
 }
 
 #[derive(Serialize)]
@@ -581,6 +593,14 @@ pub extern "C" fn sim_etat_json(depuis: u32) -> u32 {
                     places: (c.besoin_mo_terre_milli(bat.type_id, &bat.emprise, &s.monde.tuiles).max(0) as u32 + 999) / 1000,
                     proprietaire: if t.par_tile { s.monde.personnages.first().map_or(String::new(), |p| p.nom.clone()) } else { String::new() },
                     champart: if t.par_tile { f(s.cat.seigneurie.champart_ppm) } else { 0.0 },
+                    saison: t.saisons.as_ref().filter(|_| bat.chantier.is_none()).map(|sa| SaisonVue {
+                        etape: match bat.cycle.etape { 0 => "labour", 1 => "semis", 2 => "récolte", _ => "repos" },
+                        fait: unites(bat.cycle.fait_milli),
+                        requis: unites(bat.cycle.requis_milli),
+                        fenetres: sa.fenetres.iter().map(|&(d, f, _)| (d, f)).collect(),
+                        semences: t.extrants_finaux().first().map_or(0.0, |&(r, _)| unites(bat.stock_entree[r])),
+                        recolte_complete: t.extrants_finaux().first().map_or(0.0, |&(_, q)| unites(q * bat.emprise.len() as i64 * c.sim.jours_par_an)),
+                    }),
                 }
             })
             .collect();

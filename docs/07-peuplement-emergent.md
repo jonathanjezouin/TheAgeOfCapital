@@ -382,3 +382,38 @@ Décidé avec Jonathan après des bugs visibles à l'initialisation (deux chemin
 **Mesure** (8 graines, 150 ans) : 87 pops, 32 hameaux (médiane 3, max 8), 6 détruits, 3 abandonnés ; génération ≈ 0,26 s.
 **Tests** : `sim/tests/acces.rs` (marche ×2 hors route, accès par toute tile, aucune route dans une terre, pas de lanières), invariants/terrain/seigneur/peuplement adaptés.
 **Limites** : pas encore de maintenance des routes (prolifération possible, prévue plus tard) ; seuils (×2, 0,5, 5 pj/tile, 60 trajets) à régler ; un hameau abandonné n'est remis en état que s'il est joignable à pied.
+
+## 19. Lisibilité, saisons du grain, but du seigneur (2026-11-05)
+
+### 19.1 Fiches (app)
+| Fiche | Contenu |
+|---|---|
+| Pop | statut (serve), seigneur et champart, **état d'esprit** (satisfaite, insatisfaite, en manque) ; ce qu'elle possède (jours de réserve) ; **besoins vitaux** et **confort** en tableaux séparés (ration, stock, couverture) ; **ce que cela change** (mortalité, croissance, logement) ; accès (lieux à portée, hors de portée) |
+| Lieu de travail (terre) | propriétaire et champart, produit (et production d'hier), travail nécessaire, pops qui peuvent y travailler / qui y travaillent, stock de sortie ; pour le grain : saison, travail fait, calendrier, semences, récolte attendue |
+| Tile vierge | fertilité par type de culture (déjà en place), travail de conversion, coût de construction |
+
+### 19.2 Saisons du grain (champ uniquement)
+Données : `saisons` du champ dans `poc.toml`. Trois étapes, en jours de l'année : **labour 45–125** (35 % du travail annuel), **semis 125–160** (15 %), **récolte 190–270** (50 %). Le travail annuel total est celui de l'ancien modèle continu.
+| Règle | Détail |
+|---|---|
+| Demande | hors fenêtre, la terre ne réclame aucun travail ; en fenêtre, elle réclame ce qui reste de l'étape. En saison, le calendrier prime sur les besoins de la pop (classe vitale) |
+| Récolte | tombe d'un coup, au prorata du travail ; champart (12 %) au grenier du seigneur ; **semences** (20 %) mises en réserve dans la terre (`stock_entree`) ; le reste dans la grange (`stock_sortie`), qui alimente les hameaux toute l'année |
+| Perte | à la fin d'une fenêtre, la part non travaillée **retombe en tile libre** (les tiles les plus éloignées du centre ; la terre se scinde si besoin) ; semis limité par les semences disponibles |
+| Semences | prises dans la grange de la terre, puis **avancées par le seigneur** sur son grenier ; la première année, fournies par le village |
+| Grange | capacité 1,5 récolte (`grange_recoltes`) : pleine, on ne récolte plus, **sans perdre de tile** |
+| Départ | le 1er janvier, la grange contient le reste de la dernière récolte jusqu'à la prochaine |
+| Choix retenu | **pas de jachère** pour l'instant (décision du 2026-11-05) |
+
+### 19.3 But du seigneur (option A)
+| Règle | Détail |
+|---|---|
+| Revenu | le champart, donc le nombre de serfs |
+| Réserve | `reserve_annees` = 1 an de ration nutritive du village dans le grenier |
+| Surplus investi | au-delà de la réserve : des **logements d'avance** (`marge_logement` = 25 % des pops) |
+| Garde-fou | pas de champ de plus si ≥ 4 tiles ont été perdues faute de bras dans l'année (c'est le bras qui manque, pas la terre) |
+| **Ajout non demandé** : secours | sous 3 jours de réserve (nourriture, chauffage), le seigneur sert la pop sur son grenier (`secours_jours`, 0 pour l'ôter). Sans cela les serfs avaient faim à la soudure alors que le grenier débordait |
+
+### 19.4 Mesure et limites
+8 graines, 150 ans : 66 pops, 30 hameaux (médiane 2), aucune extinction sauf une graine à 3 pops. Les villages se stabilisent autour de **8 à 10 pops** (le pic de travail de saison borne la surface cultivable) ; peu de fondations de hameaux en 150 ans (croissance 1,5 %/an).
+Le grenier continue de grossir : le seigneur n'a pas encore de dépense à la mesure du champart (banalités, train de vie proportionnel : option B).
+Tests : `sim/tests/saisons.rs` ; plusieurs tests d'équilibre long (sans extension, fondations) ont été adaptés.
