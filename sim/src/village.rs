@@ -177,6 +177,7 @@ fn nouveau_batiment(
         inactif_mois: 0,
         abandon_mois: None,
         progres_ref: 0,
+        cycle: Default::default(),
     }
 }
 
@@ -322,6 +323,17 @@ fn essayer(
         }
         for (r, q) in t.extrants_finaux() {
             b.stock_sortie[r] = Catalogue::jours_x(q, cat.sim.stock_initial_sortie_jours);
+        }
+        // Terre à saisons : le 1er janvier, il reste de la dernière récolte de quoi tenir jusqu'à la prochaine (fin de la
+        // fenêtre de récolte), moins les semences et le champart déjà prélevés.
+        if let Some(sa) = &t.saisons {
+            if let Some(&(r, q)) = t.extrants_finaux().first() {
+                let n = b.emprise.len() as i64;
+                let fert = b.emprise.iter().map(|&i| cat.rendement_tile(b.type_id, &monde.tuiles[i])).sum::<i64>() / n.max(1);
+                let annuelle = q * n / 1 * fert / PPM * cat.sim.jours_par_an;
+                let net = annuelle * (PPM - sa.semences_ppm - cat.seigneurie.champart_ppm) / PPM;
+                b.stock_sortie[r] = net * sa.fenetres[2].1 as i64 / cat.sim.jours_par_an;
+            }
         }
     }
 

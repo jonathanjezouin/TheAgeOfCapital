@@ -364,7 +364,7 @@ fn stable_sans_extension_sur_plusieurs_siecles() {
     assert!(s.ecart_conservation().iter().all(|&e| e == 0));
     let h = s.historique.last().unwrap();
     assert!(
-        h.vital_moy_ppm > PPM * 9 / 10,
+        h.vital_moy_ppm > PPM * 8 / 10, // sans extension, les champs perdus faute de bras ne reviennent pas
         "besoins vitaux couverts à {}",
         h.vital_moy_ppm
     );
@@ -424,6 +424,9 @@ fn le_score_d_extension_rend_les_terres_plus_compactes() {
         let (mut somme, mut nb) = (0.0, 0);
         for graine in 1..=6u64 {
             let mut s = village(graine);
+            // La forme se mesure hors saisons : les tiles perdues faute de bras brouillent le contour.
+            let champ = s.cat.bat_id("champ").unwrap();
+            s.cat.batiments[champ].saisons = None;
             if !compact {
                 // Ancien comportement : la fertilité seule décide.
                 s.cat.extension.poids_voisins_ppm = 0;
@@ -473,11 +476,11 @@ fn les_routes_contournent_les_terres_ou_les_detruisent() {
 fn la_production_suit_la_fertilite_de_la_tile() {
     let produit_grain = |fertilite: i64| {
         let mut s = sans_extension(village(1));
-        // Le travail se répartit : on choisit le champ qui en reçoit le plus.
-        s.avancer(60);
+        // La récolte tombe pendant sa fenêtre (jours 190 à 270) : on prend le plus grand champ en récolte.
+        s.avancer(192);
         let champ = (0..s.monde.batiments.len())
-            .filter(|&b| s.cat.batiments[s.monde.batiments[b].type_id].nom == "champ")
-            .max_by_key(|&b| s.monde.batiments[b].mo_lisse_milli)
+            .filter(|&b| s.cat.batiments[s.monde.batiments[b].type_id].nom == "champ" && s.monde.batiments[b].cycle.etape == 2)
+            .max_by_key(|&b| s.monde.batiments[b].emprise.len())
             .unwrap();
         for &t in &s.monde.tuiles.iter().enumerate().filter(|(_, tu)| tu.contenu == sim::monde::Contenu::Batiment(champ)).map(|(i, _)| i).collect::<Vec<_>>() {
             s.monde.tuiles[t].fertilite_ppm = fertilite;

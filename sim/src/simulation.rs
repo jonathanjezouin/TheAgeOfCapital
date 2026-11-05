@@ -617,6 +617,7 @@ impl Simulation {
         self.stats.produits_par_lieu.clear();
 
         self.vider_reserves();
+        self.avancer_saisons();
         // 1. Livraison des différés de la veille (priorité sur les nouveaux flux).
         let anciens = std::mem::take(&mut self.differes);
         for mut d in anciens {
@@ -842,7 +843,10 @@ impl Simulation {
             let Some(&(r, _)) = t.extrants_finaux().first() else {
                 continue;
             };
-            let (classe, m) = if self.cat.ressources[r].nutritive_milli > 0 && manque(a.nutrition) > 0 {
+            let (classe, m) = if self.urgence_saison(bat) {
+                // C'est la saison : le calendrier prime sur le reste (labourer, semer, récolter ne se reporte pas).
+                (Classe::Vital, cible)
+            } else if self.cat.ressources[r].nutritive_milli > 0 && manque(a.nutrition) > 0 {
                 (Classe::Vital, manque(a.nutrition))
             } else if r == self.cat.vital.chauffage_ressource && manque(a.chauffage) > 0 {
                 (Classe::Vital, manque(a.chauffage))
@@ -874,6 +878,171 @@ impl Simulation {
         Some(self.candidats(i, &demande, &self.poids_tension()))
     }
 
+    /// Jour de l'année (0 à jours_par_an - 1).
+    fn jour_an(&self) -> u32 {
+        (self.jour % self.cat.sim.jours_par_an as u64) as u32
+    }
+
+    /// Fenêtre de saison en cours pour ce type de terre : (étape, jour de fin).
+    fn fenetre_du_jour(&self, type_id: usize) -> Option<(u8, u32)> {
+        let sa = self.cat.batiments[type_id].saisons.as_ref()?;
+        let j = self.jour_an();
+        sa.fenetres.iter().enumerate().find(|(_, &(d, f, _))| j >= d && j < f).map(|(e, &(_, f, _))| (e as u8, f))
+    }
+
+    /// Travail d'une année complète pour une terre à saisons (milli pop-jours).
+    fn travail_annuel_milli(&self, bat: &Batiment) -> i64 {
+        self.cat.besoin_mo_terre_milli(bat.type_id, &bat.emprise, &self.monde.tuiles) * self.cat.sim.jours_par_an
+    }
+
+    /// Ressource, et quantité d'une récolte complète de la terre (milli).
+    fn recolte_complete(&self, bat: &Batiment) -> (usize, i64) {
+        let t = &self.cat.batiments[bat.type_id];
+        let &(r, q) = t.extrants_finaux().first().expect("terre à saisons sans extrant");
+        let n = bat.emprise.len() as i64;
+        let fert = if bat.emprise.is_empty() {
+            PPM
+        } else {
+            bat.emprise.iter().map(|&i| self.cat.rendement_tile(bat.type_id, &self.monde.tuiles[i])).sum::<i64>() / n
+        };
+        (r, mul_div(mul_div(q * n, fert, PPM), self.cat.sim.jours_par_an * PPM, PPM))
+    }
+
+    /// Terre à saisons dont le travail de l'étape en cours n'est pas fini.
+    fn urgence_saison(&self, bat: &Batiment) -> bool {
+        self.cat.batiments[bat.type_id].saisons.is_some()
+            && bat.abandon_mois.is_none()
+            && bat.cycle.etape != 255
+            && bat.cycle.fait_milli < bat.cycle.requis_milli
+    }
+
+    /// Travail réclamé aujourd'hui par une terre à saisons : tout ce qui reste de l'étape, tant que la fenêtre est ouverte.
+    fn demande_saisonniere(&self, bat: &Batiment) -> i64 {
+        if !self.urgence_saison(bat) {
+            return 0;
+        }
+        (bat.cycle.requis_milli - bat.cycle.fait_milli).max(0)
+    }
+
+    /// Ouvre et ferme les fenêtres de travail (labour, semis, récolte). À la fermeture, ce qui n'a pas été fait
+    /// fait retomber les tiles correspondantes en friche (docs/07 §19) ; les semences manquantes limitent le semis.
+    fn avancer_saisons(&mut self) {
+        let mut liberees: Vec<(usize, usize, usize)> = Vec::new(); // (terre, tiles perdues, étape)
+        for b in 0..self.monde.batiments.len() {
+            let (type_id, vide) = {
+                let bat = &self.monde.batiments[b];
+                (bat.type_id, bat.chantier.is_some() || bat.abandon_mois.is_some() || bat.emprise.is_empty())
+            };
+            if vide || self.cat.batiments[type_id].saisons.is_none() {
+                continue;
+            }
+            let fen = self.fenetre_du_jour(type_id).map(|(e, _)| e).unwrap_or(255);
+            let courante = self.monde.batiments[b].cycle.etape;
+            if fen == courante {
+                continue;
+            }
+            if courante != 255 {
+                if let Some(perdues) = self.cloturer_etape(b, courante) {
+                    liberees.push((b, perdues, courante as usize));
+                }
+            }
+            if fen != 255 {
+                let part = self.cat.batiments[type_id].saisons.as_ref().unwrap().fenetres[fen as usize].2;
+                let requis = mul_div(self.travail_annuel_milli(&self.monde.batiments[b]), part, PPM);
+                let c = &mut self.monde.batiments[b].cycle;
+                c.etape = fen;
+                c.requis_milli = requis;
+                c.fait_milli = 0;
+            } else {
+                self.monde.batiments[b].cycle.etape = 255;
+            }
+        }
+        let mut changement = false;
+        for (b, perdues, etape) in liberees {
+            if self.monde.batiments[b].emprise.is_empty() || perdues == 0 {
+                continue;
+            }
+            changement = true;
+            self.liberer_tuiles_perdues(b, perdues, etape);
+        }
+        if changement {
+            self.reconstruire_reseau();
+        }
+    }
+
+    /// Clôture une étape : renvoie le nombre de tiles non travaillées à temps.
+    fn cloturer_etape(&mut self, b: usize, etape: u8) -> Option<usize> {
+        let n = self.monde.batiments[b].emprise.len() as i64;
+        let c = self.monde.batiments[b].cycle;
+        let mut fait = if c.requis_milli > 0 { (c.fait_milli * PPM / c.requis_milli).min(PPM) } else { PPM };
+        if etape == 1 {
+            // Semis : il faut du grain de semence ; la première année il vient du village.
+            let sa = self.cat.batiments[self.monde.batiments[b].type_id].saisons.as_ref().unwrap().semences_ppm;
+            let (r, besoin) = {
+                let (r, complete) = self.recolte_complete(&self.monde.batiments[b]);
+                (r, mul_div(complete, sa, PPM))
+            };
+            let premiere = c.semences_milli < 0;
+            // Le seigneur avance la semence qui manque (nouvelles tiles, mauvaise année) sur son grenier.
+            if !premiere {
+                let manque = (besoin - self.monde.batiments[b].stock_entree[r]).max(0);
+                if let Some(pn) = self.monde.personnages.get_mut(0) {
+                    let avance = manque.min(pn.grenier[r]);
+                    pn.grenier[r] -= avance;
+                    self.monde.batiments[b].stock_entree[r] += avance;
+                }
+            }
+            let dispo = if premiere { besoin } else { self.monde.batiments[b].stock_entree[r] };
+            if besoin > 0 {
+                fait = fait.min(dispo * PPM / besoin);
+            }
+            let utilise = mul_div(besoin, fait, PPM);
+            if !premiere {
+                self.monde.batiments[b].stock_entree[r] -= utilise;
+                self.bilan.consomme_prod[r] += utilise;
+            }
+            self.monde.batiments[b].cycle.semences_milli = 0;
+        }
+        let perdues = ((PPM - fait) * n + PPM / 2) / PPM;
+        Some(perdues as usize)
+    }
+
+    /// Les `k` tiles les plus éloignées du centre de la terre retombent en friche ; la terre se scinde si besoin.
+    fn liberer_tuiles_perdues(&mut self, b: usize, k: usize, etape: usize) {
+        let n = self.monde.batiments[b].emprise.len();
+        let nom = self.cat.batiments[self.monde.batiments[b].type_id].nom.clone();
+        let quoi = ["labouré", "semé", "récolté"][etape.min(2)];
+        let (x0, y0) = {
+            let e = &self.monde.batiments[b].emprise;
+            let (sx, sy) = e.iter().fold((0usize, 0usize), |a, &t| { let (x, y) = self.monde.xy(t); (a.0 + x, a.1 + y) });
+            (sx as i64 * 100 / n as i64, sy as i64 * 100 / n as i64)
+        };
+        if k >= n {
+            let (x, y) = self.monde.xy(self.monde.batiments[b].tuile);
+            self.journal(format!("Terre non {quoi} à temps : {nom} de {n} tiles en ({x}, {y}) retombe en friche"));
+            self.liberer_terre(b);
+            return;
+        }
+        let mut ordre: Vec<usize> = self.monde.batiments[b].emprise.clone();
+        ordre.sort_by_key(|&t| {
+            let (x, y) = self.monde.xy(t);
+            let d = (x as i64 * 100 - x0).pow(2) + (y as i64 * 100 - y0).pow(2);
+            (std::cmp::Reverse(d), t)
+        });
+        let perdues: Vec<usize> = ordre.into_iter().take(k).collect();
+        for &t in &perdues {
+            self.monde.tuiles[t].contenu = Contenu::Vide;
+            self.monde.tuiles[t].vacant_mois = 1;
+        }
+        self.monde.batiments[b].emprise.retain(|t| !perdues.contains(t));
+        if !self.monde.batiments[b].emprise.contains(&self.monde.batiments[b].tuile) {
+            self.monde.batiments[b].tuile = self.monde.batiments[b].emprise[0];
+        }
+        let (x, y) = self.monde.xy(perdues[0]);
+        self.journal(format!("Terre non {quoi} à temps : {k} tile(s) de {nom} retombent en friche près de ({x}, {y})"));
+        self.scinder(b, &[]);
+    }
+
     /// Demande de travail de chaque terre (milli pop-jours) : de quoi remplir son stock de sortie.
     fn demandes_de_travail(&self) -> Vec<i64> {
         self.monde
@@ -883,6 +1052,9 @@ impl Simulation {
                 let t = &self.cat.batiments[bat.type_id];
                 if !t.par_tile || bat.chantier.is_some() || bat.abandon_mois.is_some() {
                     return 0;
+                }
+                if t.saisons.is_some() {
+                    return self.demande_saisonniere(bat);
                 }
                 let n = bat.emprise.len() as i64;
                 let Some(&(r, q)) = t.extrants_finaux().first() else {
@@ -1021,6 +1193,42 @@ impl Simulation {
             if b.abandon_mois.is_some() {
                 b.prod_ppm = 0;
                 b.limitant = Limitant::Aucun;
+                continue;
+            }
+            // Terre à saisons : le travail de la fenêtre en cours avance ; la récolte tombe d'un coup, au prorata du travail.
+            if let Some(sa) = &t.saisons {
+                let n = b.emprise.len() as i64;
+                if n == 0 || b.cycle.etape == 255 {
+                    b.prod_ppm = 0;
+                    b.limitant = Limitant::Aucun;
+                    continue;
+                }
+                let utile = b.mo_milli.min((b.cycle.requis_milli - b.cycle.fait_milli).max(0));
+                b.cycle.fait_milli += utile;
+                if b.cycle.etape == 2 && b.cycle.requis_milli > 0 && utile > 0 {
+                    if let Some(&(r, q)) = t.extrants_finaux().first() {
+                        let fert = b.emprise.iter().map(|&i| cat.rendement_tile(b.type_id, &tuiles[i])).sum::<i64>() / n;
+                        let annuelle = mul_div(mul_div(q * n, fert, PPM), cat.sim.jours_par_an * PPM, PPM);
+                        let p = mul_div(annuelle, utile, b.cycle.requis_milli);
+                        self.bilan.produit[r] += p;
+                        let mut part = 0;
+                        if cat.seigneurie.champart_ressources.contains(&r) {
+                            if let Some(pn) = self.monde.personnages.get_mut(0) {
+                                part = mul_div(p, champart_ppm, PPM);
+                                pn.grenier[r] += part;
+                            }
+                        }
+                        let graine = mul_div(p, sa.semences_ppm, PPM);
+                        b.stock_entree[r] += graine; // les semences attendent dans la grange de la terre
+                        b.stock_sortie[r] += p - part - graine;
+                        self.stats.produit[r] += p - part - graine;
+                        if p > 0 {
+                            self.stats.produits_par_lieu.push((idx_b, r, p - part - graine));
+                        }
+                    }
+                }
+                b.prod_ppm = if b.cycle.requis_milli > 0 { (b.cycle.fait_milli * PPM / b.cycle.requis_milli).min(PPM) } else { PPM };
+                b.limitant = if b.cycle.fait_milli < b.cycle.requis_milli { Limitant::MainOeuvre } else { Limitant::Aucun };
                 continue;
             }
             // Terre : N tiles, extrants et travail proportionnels à N ; rendement moyen de l'emprise
@@ -2060,6 +2268,13 @@ impl Simulation {
             bat.mo_milli = 0;
             bat.presents = 0;
             bat.emprise = comp.clone();
+            bat.cycle.requis_milli = bat.cycle.requis_milli * part / total;
+            bat.cycle.fait_milli = bat.cycle.fait_milli * part / total;
+            {
+                let o = &mut self.monde.batiments[b].cycle;
+                o.requis_milli -= bat.cycle.requis_milli;
+                o.fait_milli -= bat.cycle.fait_milli;
+            }
             bat.equipe = 0;
             bat.chantier = None;
             self.monde.batiments.push(bat);
@@ -2628,6 +2843,7 @@ impl Simulation {
             inactif_mois: 0,
             abandon_mois: None,
             progres_ref: cout.travail,
+            cycle: Default::default(),
         }
     }
 

@@ -119,11 +119,11 @@ use sim::PPM;
 fn grain_du_jour(terrain: Terrain) -> i64 {
     let mut s = generer(Catalogue::defaut(), &ParamsVillage { graine: 1, ..Default::default() }).unwrap();
     s.cat.extension.chantiers_max = 0;
-    // Le travail se répartit : on prend le champ qui en reçoit le plus.
-    s.avancer(60);
+    // La récolte tombe pendant sa fenêtre (jours 190 à 270) : on prend le plus grand champ en récolte.
+    s.avancer(192);
     let champ = (0..s.monde.batiments.len())
-        .filter(|&b| s.cat.batiments[s.monde.batiments[b].type_id].nom == "champ")
-        .max_by_key(|&b| s.monde.batiments[b].mo_lisse_milli)
+        .filter(|&b| s.cat.batiments[s.monde.batiments[b].type_id].nom == "champ" && s.monde.batiments[b].cycle.etape == 2)
+        .max_by_key(|&b| s.monde.batiments[b].emprise.len())
         .unwrap();
     let tuiles: Vec<usize> = (0..s.monde.tuiles.len()).filter(|&i| s.monde.tuiles[i].contenu == Contenu::Batiment(champ)).collect();
     for &t in &tuiles {
