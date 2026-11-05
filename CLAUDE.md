@@ -9,7 +9,7 @@ Jeu de stratégie / simulation historique **1750–1950** sur la naissance et le
 Inspirations : Victoria 3 (économie/politique), Songs of Syx (échelle, tiles), RimWorld (émergence narrative).
 Distribution visée : Steam. Licence : Apache 2.0.
 
-**Phase actuelle : POC** = une simulation économique autonome, sans intervention du joueur, sur une carte 200×200.
+**Phase actuelle : POC v2** (`docs/08-poc-v2.md`) : repartir d'une base presque vide (une habitation d'une pop, un champ, le temps), un concept à la fois. Le POC v1 est archivé dans `_archive/poc-v1/`.
 
 ## Stack
 
@@ -34,15 +34,15 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
 | `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
+| `docs/08-poc-v2.md` | **POC v2 en cours** : pourquoi on repart de presque rien, règle de méthode, étapes |
 | `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 6 réalisées (carte, aptitude, défrichement, peuplement, abandon, seigneur et serfs, réglage) + accès par marche et routes décidées par le seigneur (§18), banalités à venir |
 
 ## Code
 
 | Dossier | Contenu |
 |---|---|
-| `sim/` | Moteur Rust pur + CLI headless (`cargo run --release --bin sim-cli`), tests d'invariants (`cargo test --release`). Voir `sim/README.md` |
-| `sim-wasm/` | Pont WebAssembly du moteur (interface C, instantanés JSON) ; `node sim-wasm/test.mjs` |
-| `app/` | Application web : carte PixiJS + interface Vue 3 + moteur en WebAssembly. Voir `app/README.md` |
+| `sim/` | **POC v2** : moteur Rust minimal + CLI (`cargo run --bin sim-cli -- --annees 10`, `cargo test`) |
+| `_archive/poc-v1/` | POC v1 archivé (`sim/`, `sim-wasm/`, `app/`) ; réserve d'idées, pas une base. Voir `_archive/README.md` |
 | `graphGeneration/` | Générateur d'assets : atlas de 49 tiles dans `app/public/assets/` (référence graphique) |
 
 ## Principes non négociables
