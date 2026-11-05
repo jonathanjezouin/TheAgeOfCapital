@@ -60,7 +60,18 @@ struct BrutSeigneurie {
     /// Train de vie : ration de ce nombre de pops, prélevée chaque jour sur le grenier.
     train_de_vie_pops: f64,
     grenier_initial: BTreeMap<String, f64>,
+    /// Réserve que le seigneur garde dans son grenier, en années de ration du village ; au-delà c'est un surplus qu'il investit.
+    #[serde(default = "un_an")]
+    reserve_annees: f64,
+    /// Logements d'avance qu'il fait bâtir avec son surplus, en part des pops (revenu futur : plus de serfs, plus de champart).
+    #[serde(default = "quart")]
+    marge_logement: f64,
+    /// Secours : le seigneur nourrit et chauffe depuis son grenier une pop dont la réserve tombe sous ce nombre de jours (0 : aucun).
+    #[serde(default)]
+    secours_jours: f64,
 }
+fn un_an() -> f64 { 1.0 }
+fn quart() -> f64 { 0.25 }
 
 /// Usure et abandon des lieux (docs/07 §14), durées en années.
 #[derive(Deserialize)]
@@ -339,9 +350,25 @@ struct BrutBatiment {
     destruction_pop_jours: f64,
     #[serde(default)]
     domestique: bool,
+    /// Calendrier du travail d'une terre (docs/07 §19) : labour, semis, récolte. Absent : production continue.
+    #[serde(default)]
+    saisons: Option<BrutSaisons>,
     cout_creation: Option<BrutCout>,
     etapes: Vec<BrutEtape>,
 }
+
+/// Fenêtres `[debut, fin)` en jours de l'année et part du travail annuel de chaque étape ; semences en part de la récolte.
+#[derive(Deserialize, Clone, Debug)]
+struct BrutSaisons {
+    labour: [f64; 3],
+    semis: [f64; 3],
+    recolte: [f64; 3],
+    semences: f64,
+    /// Capacité de la grange en récoltes complètes : au-delà, on ne récolte plus (le surplus n'a pas de place).
+    #[serde(default = "un_an_demi")]
+    grange_recoltes: f64,
+}
+fn un_an_demi() -> f64 { 1.5 }
 
 // ---------- Catalogue résolu ----------
 
@@ -488,8 +515,18 @@ pub struct Etape {
     pub extrants: Vec<(usize, Qte)>,
 }
 
+/// Saisons d'une terre : trois étapes `(début, fin, part du travail annuel en ppm)` et semences en part de la récolte.
+#[derive(Clone, Debug)]
+pub struct Saisons {
+    pub fenetres: [(u32, u32, i64); 3],
+    pub semences_ppm: i64,
+    pub grange_ppm: i64,
+}
+
 #[derive(Clone, Debug)]
 pub struct TypeBatiment {
+    /// Calendrier saisonnier (labour, semis, récolte) ; `None` : production continue.
+    pub saisons: Option<Saisons>,
     /// Traversée des tiles de l'emprise par une route neuve (docs/02 §10.1) ; `interdite` par défaut.
     pub traversable: Traversabilite,
     pub nom: String,
@@ -653,6 +690,9 @@ pub struct ParamsSeigneurie {
     /// Pops dont le seigneur consomme la ration chaque jour (milli-pops).
     pub train_de_vie_milli: i64,
     pub grenier_initial: Vec<(usize, Qte)>,
+    pub reserve_annees_ppm: i64,
+    pub marge_logement_ppm: i64,
+    pub secours_milli_jours: i64,
 }
 
 pub const DONNEES_POC: &str = include_str!("../donnees/poc.toml");
@@ -743,6 +783,11 @@ impl Catalogue {
                 chantier: x.chantier,
                 fertile: x.fertile,
                 domestique: x.domestique,
+                saisons: x.saisons.as_ref().map(|c| Saisons {
+                    fenetres: [c.labour, c.semis, c.recolte].map(|f| (f[0] as u32, f[1] as u32, (f[2] * PPM as f64).round() as i64)),
+                    semences_ppm: (c.semences * PPM as f64).round() as i64,
+                    grange_ppm: (c.grange_recoltes * PPM as f64).round() as i64,
+                }),
                 par_tile: x.par_tile,
                 jours_par_tile_an: x.jours_par_tile_an.round() as i64,
                 emprise_max: x.emprise_max,
@@ -799,6 +844,9 @@ impl Catalogue {
                 poste: b.seigneurie.poste.clone(),
                 champart_ppm: en_ppm(b.seigneurie.champart),
                 champart_ressources: b.seigneurie.champart_ressources.iter().map(|n| id(n)).collect::<Result<_, _>>()?,
+                reserve_annees_ppm: en_ppm(b.seigneurie.reserve_annees),
+                marge_logement_ppm: en_ppm(b.seigneurie.marge_logement),
+                secours_milli_jours: en_milli(b.seigneurie.secours_jours),
                 train_de_vie_milli: en_milli(b.seigneurie.train_de_vie_pops),
                 grenier_initial: b.seigneurie.grenier_initial.iter().map(|(n, q)| Ok((id(n)?, en_milli(*q)))).collect::<Result<_, String>>()?,
             },

@@ -179,6 +179,25 @@ pub struct Batiment {
     pub abandon_mois: Option<u32>,
     /// Chantier : travail restant au dernier contrôle mensuel, pour détecter l'absence de progrès.
     pub progres_ref: Qte,
+    /// Terre à saisons : état du cycle labour, semis, récolte (docs/07 §19).
+    pub cycle: Cycle,
+}
+
+/// Avancement d'une terre à saisons. `etape` : 0 labour, 1 semis, 2 récolte ; 255 entre deux fenêtres.
+#[derive(Clone, Copy, Debug, Serialize)]
+pub struct Cycle {
+    pub etape: u8,
+    /// Travail requis et fait dans la fenêtre courante (milli pop-jours).
+    pub requis_milli: i64,
+    pub fait_milli: i64,
+    /// Grain mis de côté pour semer (milli) ; `-1` : la première année, semences fournies par le village.
+    pub semences_milli: i64,
+}
+
+impl Default for Cycle {
+    fn default() -> Self {
+        Cycle { etape: 255, requis_milli: 0, fait_milli: 0, semences_milli: -1 }
+    }
 }
 
 /// Ce qu'un chantier produit une fois terminé.
