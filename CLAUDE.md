@@ -9,7 +9,7 @@ Jeu de stratégie / simulation historique **1750–1950** sur la naissance et le
 Inspirations : Victoria 3 (économie/politique), Songs of Syx (échelle, tiles), RimWorld (émergence narrative).
 Distribution visée : Steam. Licence : Apache 2.0.
 
-**Phase actuelle : POC v2** (`docs/08-poc-v2.md`) : repartir d'une base presque vide (une habitation d'une pop, un champ, le temps), un concept à la fois. Le POC v1 est archivé dans `_archive/poc-v1/`.
+**Phase actuelle : POC v2** (`docs/09-poc-v2.md`) : repartir d'une base presque vide, un concept à la fois ; étape 1 réalisée : subsistance d'une pop (`docs/08-concept-subsistance.md`). Le POC v1 est archivé dans `_archive/poc-v1/`.
 
 ## Stack
 
@@ -34,7 +34,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
 | `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
-| `docs/08-poc-v2.md` | **POC v2 en cours** : pourquoi on repart de presque rien, règle de méthode, étapes |
+| `docs/09-poc-v2.md` | **POC v2 en cours** : pourquoi on repart de presque rien, règle de méthode, étapes |
 | `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 6 réalisées (carte, aptitude, défrichement, peuplement, abandon, seigneur et serfs, réglage) + accès par marche et routes décidées par le seigneur (§18), banalités à venir |
 | `docs/08-concept-subsistance.md` | Concept de subsistance pour une pop : grain, bois, vêtement, prélèvement 15 %, transport, décision quotidienne, consommation mensuelle (décisions du 2026-11-07, hors code actuel) |
 
@@ -42,9 +42,9 @@ Distribution visée : Steam. Licence : Apache 2.0.
 
 | Dossier | Contenu |
 |---|---|
-| `sim/` | **POC v2** : moteur Rust minimal + CLI (`cargo run --bin sim-cli -- --annees 10`, `cargo test`) |
+| `sim/` | **POC v2** : moteur Rust de la subsistance d'une pop (docs/08) + CLI (`cargo run --bin sim-cli -- --annees 20 --meteo 1000`, `cargo test`) |
 | `sim-wasm/` | Pont WebAssembly du moteur v2 (interface C, instantanés JSON) |
-| `app/` | Interface v2 : carte PixiJS + Vue 3 + moteur WASM (`npm install && npm run wasm && npm run dev`) ; atlas copié du v1 |
+| `app/` | Interface v2 : carte PixiJS (sélection de tiles) + panneaux Vue 3 + moteur WASM (`npm install && npm run wasm && npm run dev`) ; atlas copié du v1 |
 | `_archive/poc-v1/` | POC v1 archivé (`sim/`, `sim-wasm/`, `app/`) ; réserve d'idées, pas une base. Voir `_archive/README.md` |
 | `graphGeneration/` | Générateur d'assets : atlas de 49 tiles dans `app/public/assets/` (référence graphique) |
 

@@ -8,9 +8,15 @@ thread_local! {
     static SORTIE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
+/// `meteo_pm` = 0 : météo aléatoire ; sinon météo fixe en ‰ (1000 = année moyenne).
 #[no_mangle]
-pub extern "C" fn sim_creer() {
-    SIM.with(|s| *s.borrow_mut() = Simulation::new());
+pub extern "C" fn sim_creer(graine: u32, meteo_pm: u32) {
+    let p = sim::Params {
+        graine: graine as u64,
+        meteo_fixe_pm: if meteo_pm == 0 { None } else { Some(meteo_pm as i64) },
+        ..Default::default()
+    };
+    SIM.with(|s| *s.borrow_mut() = Simulation::avec(p));
 }
 
 #[no_mangle]

@@ -6,7 +6,7 @@ export async function chargerSim(url) {
   const w = instance.exports
   const dec = new TextDecoder()
   return {
-    creer: () => w.sim_creer(),
+    creer: (graine = 1, meteo = 0) => w.sim_creer(graine >>> 0, meteo >>> 0),
     avancer: (jours) => w.sim_avancer(jours),
     etat() {
       const n = w.sim_etat_json()

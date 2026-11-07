@@ -1,9 +1,9 @@
 [package]
 name = "sim"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 license = "Apache-2.0"
-description = "Moteur de simulation de The Age Of Capital, POC v2 (base minimale)"
+description = "Moteur de simulation de The Age Of Capital, POC v2 (subsistance d'une pop, docs/08)"
 
 [lib]
 name = "sim"
@@ -12,3 +12,7 @@ path = "src/lib.rs"
 [[bin]]
 name = "sim-cli"
 path = "src/bin/sim_cli.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
