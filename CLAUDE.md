@@ -36,6 +36,7 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
 | `docs/08-poc-v2.md` | **POC v2 en cours** : pourquoi on repart de presque rien, règle de méthode, étapes |
 | `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 6 réalisées (carte, aptitude, défrichement, peuplement, abandon, seigneur et serfs, réglage) + accès par marche et routes décidées par le seigneur (§18), banalités à venir |
+| `docs/08-concept-subsistance.md` | Concept de subsistance pour une pop : grain, bois, vêtement, prélèvement 15 %, transport, décision quotidienne, consommation mensuelle (décisions du 2026-11-07, hors code actuel) |
 
 ## Code
 
