@@ -1,99 +1,240 @@
 # 04 — Périmètre du POC
 
+> **Statut (2026-11-02).** Le moteur `sim/`, les assets et le rendu `app/` sont **alignés** sur le design ci-dessous : tile fixe de 250 m (la carte 200×200 couvre 50 × 50 km), réseau en arêtes à 8 directions (`02` §9), une maison en bois par pop, textile domestique (plus de hameau textile), terres exploitées sur N tiles et budget de jours de travail (`02` §8). Aperçu des assets : `docs/img/apercu-maisons-assets.png`. Reste à faire : plusieurs groupes de hameaux (la croix de départ ne porte qu'un village de ~4 hameaux), plafond des pops et densification (`02` §9.4), saisons.
+
 ## Objectif
 
-Une **simulation économique autonome** qui tourne seule, sans intervention du joueur : des pops travaillent, produisent et accumulent des ressources, qui satisfont (ou non) leurs besoins ; la satisfaction pilote la natalité et la mortalité. Le maire est inactif.
+Une **économie de subsistance** : un village isolé de **1750**, simulé de façon autonome (sans intervention du joueur). Des pops vivent dans des hameaux, travaillent des terres exploitées alentour (des champs de N tiles de 250 m), et filent, tissent et cousent à la maison de quoi vêtir tout le monde avec leur temps libre. La couverture de leurs besoins pilote la croissance ou le déclin de chaque pop, et **les habitants étendent eux-mêmes le village** (défrichement, nouveaux hameaux) quand il le faut. Pas de monnaie, pas de manufacture, pas de firme : le maire est inactif.
 
 **Deux étapes**
 
 | Étape | Contenu |
 |---|---|
-| **POC-A — boucle physique** | Production, flux, congestion, consommation directe des pops (sans monnaie), satisfaction, démographie. Carte initiale fixe, personne ne construit. |
-| **POC-B — monnaie** | Salaires, prix, profit des firmes, réinvestissement, rachat, faillite, construction (placement automatique). |
+| **POC-A — subsistance** | Production continue (pas de saisons), circulation des marchandises (production, stock, distribution, consommation), besoins vitaux et de confort, croissance par jauge de pop, budget de jours de travail réparti chaque jour entre les terres, **extension du village par ses habitants** (voir `02` §7). Village initial généré. |
+| **POC-B — monnaie et marché** | Salaires, prix, firmes, surplus qui quitte le village (dîme, marché), placement des bâtiments par des firmes. |
 
 **Critères de succès**
 - La simulation tourne indéfiniment sans blocage ni dérive absurde.
-- Les quantités produites / consommées restent proportionnellement cohérentes.
-- Les premières dynamiques émergent : pénuries localisées, goulots (chaîne textile), congestion, croissance puis saturation des quartiers selon la satisfaction des besoins.
-- POC-B : firmes qui réinvestissent ou font faillite, croissance de nouveaux quartiers.
+- Les quantités produites / consommées restent proportionnellement cohérentes (conservation de la matière vérifiée).
+- Les dynamiques de subsistance émergent : croissance lente (+0,5 %/an quand le confort manque, +1,5 %/an quand tout est couvert), déclin en cas de manque vital, pénuries localisées, production qui s'ajuste au besoin (le temps de travail va d'abord aux terres dont la ressource manque), **extension du village qui plafonne d'elle-même** (la terre à portée se remplit, la terre lointaine est plus pauvre), population en « dents de scie » autour de ce plafond.
+- **Chaque mécanisme est lisible** par le joueur (voir « Ce que voit le joueur »).
 
 ## Périmètre
 
 | Élément | POC |
 |---|---|
-| Carte | 200×200 tiles, une seule ville, vue micro uniquement |
+| Carte | 200×200 tiles de 250 m (50 × 50 km), **un village généré** (graine, aléatoire mais cohérent, voir ci-dessous), vue micro uniquement |
 | Personnage | Un seul : **le maire**, **inactif** (aucune décision, ne construit pas). Ni leviers (pouvoir / capital / influence), ni postes, ni fortune dans le POC |
-| Population | **Pops de 100 hab** : 10 pops « paysans » au départ par quartier rural, une seule culture / religion / orientation, attributs fixes. **Natalité / mortalité selon la satisfaction des besoins** (nouvelle pop à +100, disparition à −100, plafond = capacité de logement). Pas de mobilité ni de bascule |
-| Monnaie | POC-A : aucune (consommation directe des pops). POC-B : salaires et prix |
-| Construction | POC-A : aucune, carte initiale fixe. POC-B : réinvestissement des firmes |
-| Firmes | Autonomes, règles simples (voir `02`) |
+| Population | **Pops de 100 hab**, une seule strate (paysans), une seule culture / religion / orientation, attributs fixes. **Une jauge de croissance par pop** : à +100 hab elle se duplique, à −100 elle disparaît (voir `02` §6). La satisfaction du confort servira plus tard à la promotion vers d'autres classes |
+| Habitat | Un type : le **hameau** (**1 tile**, **une maison en bois par pop**, de 2 pops au départ à 4 au plus ; un hameau neuf n'a que sa première maison). Plafond de densité d'une tile d'habitat : 10 pops |
+| Production | Des **terres exploitées** sans logement (champ, pâturage, verger, forêt, lin, laine), chacune un seul bâtiment sur **N tiles contiguës**, travaillées par les pops des hameaux à portée ; l'**atelier domestique** de chaque hameau (textile, sans poste, avec le temps libre). Ni filature ni atelier de couture indépendants (voir `05`) |
+| Monnaie | Aucune (autoconsommation, échanges en nature entre voisins) |
+| Construction | Par la **communauté** : défrichement (une terre naît à 4 tiles et s'agrandit par blocs de 4), maisons une à une, fondation de hameaux, par des équipes de pops, avec du bois, à rythme saisonnier (voir `02` §7) |
+| Firmes | Aucune en POC-A |
 | Terrain | Un seul : **plaine** (herbe) |
-| Infrastructure | Une seule : **chemin de terre** |
-| Habitation | Une seule : **quartier rural** (capacité 1 000 hab = 10 pops) |
+| Infrastructure | Une seule : **chemin de terre**, couche d'**arêtes à 8 directions** sur les tiles (`02` §9) ; une route peut traverser des terres |
+| Temps | Production **continue**, pas de saisons |
 | Niveau technologique | 0 (production primitive) |
-| Transport | Implicite |
+| Transport | Le lien **pop → hameau de résidence → lieu de travail** est matérialisé. **Distance = coût du plus court chemin le long des arêtes** (10 par côté, 14 par diagonale), un lieu est desservi si une arête passe par sa tile ; aucune pénalité mais **limite de 100** (10 tiles-équivalents, 2,5 km) pour travailler ou s'approvisionner, et approvisionnement au plus proche. Congestion et livraisons différées : **en sommeil** (capacités très au-dessus des flux) |
 | Intermédiaires | Aucun (relation directe fournisseur ↔ client) |
-| Livraison différée sur congestion | **Oui** |
 
 ## Ressources
 
 | Catégorie | Ressources POC | Reporté |
 |---|---|---|
-| Nourriture | grain, viande, fruit — consommés directement (pas de farine) | poisson ; nourriture industrielle |
-| Textile | lin, laine → tissu → vêtements | coton |
-| Bois | bois, consommé directement | transformation |
-| Travail | `MAIN_OEUVRE` | qualifications |
+| Nourriture | grain, viande, fruit — **interchangeables** pour le besoin vital (unités nutritives) | poisson ; nourriture industrielle |
+| Textile | lin, laine → tissu → vêtements, **travail domestique** à l'atelier de chaque hameau | coton ; manufacture |
+| Bois | bois (chauffage), consommé directement | transformation |
+| Travail | les pops : **budget de jours** (12 500 jours-personne par pop et par an) | qualifications |
 
-## Catalogue des tiles (identifiants d'assets)
+## Catalogue des assets (identifiants)
 
-`terrain_plaine` · `infra_chemin_terre` (toutes combinaisons de demi-directions) ·
-`bat_champ` · `bat_paturage` · `bat_verger` · `bat_foret_exploitee` · `bat_champ_lin` · `bat_elevage_laine` · `bat_filature` · `bat_atelier_couture` · `bat_quartier_rural`
+**Tiles de 256 px** : `terrain_plaine` (10 variantes d'herbe raccordables) · terres exploitées à bords de parcelle, pour les chantiers et les terres d'une tile : `bat_champ` (3) · `bat_champ_mur` (réservé aux saisons) · `bat_paturage` (2) · `bat_verger` (2) · `bat_foret_exploitee` (3) · `bat_champ_lin` (2) · `bat_elevage_laine` (2) · `bat_chantier_champ` (2) · **textures raccordables** des terres sur N tiles : `bat_champ_plein`, `bat_champ_lin_plein`, `bat_verger_plein`, `bat_foret_exploitee_plein`, `bat_paturage_plein`, `bat_elevage_laine_plein` (2 variantes chacune ; haies et clôtures tracées par le rendu le long du bord de l'emprise).
 
-## Calibration (effectifs 100–500, unités rondes)
+**Sprites de 128 px** : `bat_maison_bois` (6 variantes, toit de planches, cour et tas de bois, dessinée face au Sud et pivotée vers la route) · `bat_chantier_maison` (3 états : sablières, ossature, charpente).
 
-Ce qui compte est la **proportion**, pas la valeur absolue.
+**Hors atlas** : `sol_chemin.png`, texture de terre battue raccordable qui remplit le trait des routes (tracées en courbes par le rendu, `03` §6).
 
-### Production
+48 frames, générées par `graphGeneration/` (voir `03` §7) ; aperçu : `docs/img/apercu-maisons-assets.png`. Convention : une maison par pop, sprite exagéré à ~1/3 de tile (`03` §6) ; matériau : bois seul. Reportés : `bat_filature`, `bat_atelier_couture` (manufacture), `bat_quartier_rural` (village de 2–4 tiles).
 
-| Bâtiment | Travailleurs | Production / jour | Productivité (u/travailleur) |
+## Référence 1750 (décision de design, implémentée dans le moteur)
+
+Ordres de grandeur reconstitués de mémoire (Toutain, Braudel…), **à vérifier avant de figer** ; précision attendue ±20 %. Densité moyenne ~47 hab./km², ~75 % d'actifs agricoles.
+
+### Usage du sol pour 100 hab. (1 pop), tile de 6,25 ha
+
+| Usage | % du territoire | ha | Tiles |
 |---|---|---|---|
-| Champ (grain) | 200 | 100 grain | 0,5 |
-| Pâturage (viande) | 100 | 20 viande | 0,2 |
-| Verger (fruit) | 150 | 30 fruit | 0,2 |
-| Exploitation forestière | 200 | 50 bois | 0,25 |
-| Champ de lin | 200 | 40 lin | 0,2 |
-| Élevage laine | 100 | 20 laine | 0,2 |
-| Filature / tissage | 300 | 30 tissu | 0,1 |
-| Atelier couture | 200 | 20 vêtements | 0,1 |
+| Labours (jachère incluse) | 40 % | 85 | 13,6 |
+| Prés | 7 % | 15 | 2,4 |
+| Vignes, vergers, jardins | 3 % | 6 | 1 |
+| Bois | 17 % | 36 | 5,8 |
+| Landes, friches, communaux | 28 % | 60 | 9,5 |
+| Bâti, routes, eaux | 5 % | 11 | 1,7 |
+| **Terroir total** | 100 % | ~212 | **~34** |
 
-Logique : agriculture céréalière extensive et productive par tête ; élevage peu productif ; transformation textile intensive en main-d'œuvre (beaucoup de bras, lent).
+- 1 pop ≈ 1 km² de labours (85–125 ha). Un champ de 5 km² correspond à ~4 pops **rattachées** (le « 4 pops » du POC), pas à 4 pops à plein temps.
+- Un hameau de 2 pops a un terroir de ~64 tiles (4 km², environ 8×8 tiles), dont ~27 de labours.
 
-### Consommation d'un quartier rural (1 000 hab)
+### Travail agricole (jours-personne par ha et par an)
 
-| Ressource | Par jour |
-|---|---|
-| Grain | 50 |
-| Viande | 10 |
-| Fruit | 10 |
-| Bois | 20 |
-| Vêtements | 5 |
+| Culture | Jours/ha/an | Par tile (6,25 ha) | Pic |
+|---|---|---|---|
+| Céréales | ~40 | ~250 | moisson juillet-août (~⅓ du travail en 4–6 semaines), battage nov-fév |
+| Prairie | ~12 | ~75 | fenaison juin |
+| Lin, chanvre | ~100 | ~625 | arrachage, rouissage |
+| Vigne | 100–150 | 625–940 | toute l'année |
+| Verger, forêt, élevage | *à calibrer* | | |
 
-### Besoins, satisfaction et démographie
-- Consommation par pop de 100 hab : 5 grain, 1 viande, 1 fruit, 2 bois, 0,5 vêtement par jour.
-- Satisfaction, natalité et mortalité : formules dans `02` §6.
-- À calibrer : `poids_r` des besoins, fonctions `taux_naissance` / `taux_mortalite`, seuil de ±100 pour créer ou supprimer une pop.
+Le travail des champs n'occupe qu'**environ un tiers** de l'année d'un actif (~2,8 ha de labours par actif, ~7 ha par actif à plein temps) : le reste va à l'élevage, au bois, à la construction et surtout au **textile domestique d'hiver** (`02` §8.3 et §8.4). Dans le POC actuel, 83 % des pops travaillent la terre à plein temps.
+
+### Cellule de marché 1750 (rayon ~12 km, ~450 km², ~21 000 hab., ~7 200 tiles)
+
+| Niveau | Nb | Hab. unit. | Pops | Tiles bâties |
+|---|---|---|---|---|
+| Ville | 1 | 5 000 | 50 | 8–10 |
+| Bourgs | 4 | 800 | 32 | 2 chacun |
+| Villages | 15 | 400 | 60 | 2 chacun |
+| Hameaux et fermes | ~45 | 150 | 67 | 1 chacun |
+
+- Espacements : hameaux ~2 km, villages 3–4 km, bourgs 8–10 km, villes 25–30 km.
+- Proportions ~1:4:15:45 (logique des lieux centraux de Christaller). C'est un **critère de succès mesurable** pour le maillage, jamais un ratio codé (principe n°6).
+- Fermes isolées : surtout à l'Ouest (bocage). Les plaines du Nord ont des villages groupés avec champs ouverts. Un paramètre de dispersion du générateur permettra de choisir.
+
+## Calibration
+
+Toutes les valeurs vivent dans `sim/donnees/poc.toml`. Les terres sont calibrées sur la référence 1750 ci-dessus (~34 tiles de terroir par pop) : la production par tile est la ration d'une pop ÷ le nombre de tiles qu'il lui faut.
+
+### Terres exploitées (par tile de 250 m, fertilité 1)
+
+| Terre | Extrant par tile et par jour | Jours-personne par tile et par an | Emprise max | Défrichement (par tile) |
+|---|---|---|---|---|
+| Champ (grain) | 0,40 grain | 250 | 36 | 10 pop-jours, équipe de 2 |
+| Pâturage (viande) | 0,42 viande | 80 | 30 | 5 pop-jours, 1 bois, équipe de 1 |
+| Verger (fruit) | 1,0 fruit | 150 | 16 | 12 pop-jours, équipe de 2 |
+| Exploitation forestière (bois) | 0,35 bois | 60 | 36 | 4 pop-jours, équipe de 2 |
+| Champ de lin | 1,2 lin | 625 | 12 | 10 pop-jours, équipe de 2 |
+| Élevage laine | 0,15 laine | 80 | 30 | 5 pop-jours, 1 bois, équipe de 1 |
+
+Une pop fournit **12 500 jours-personne par an** (~50 travailleurs × 250 jours). Pour 20 pops (10 hameaux), les terres demandent ~37 000 jours par an, soit **un tiers du temps des pops** : le reste est du temps libre (textile domestique, chantiers).
+Une **maison** coûte 150 pop-jours (équipe de 1) et 100 bois.
+
+### Atelier domestique (tout hameau)
+
+Sans poste : il prend le **temps libre du hameau**. 1 pop-jour par jour de travail requis à plein régime fait **4 vêtements par jour**, soit les besoins de 8 pops. L'atelier ne commande de fibre que pour vêtir les pops de son hameau.
+
+| Étape | Intrants | Extrants (1 pop-jour) |
+|---|---|---|
+| Tissage | 8 lin + 4 laine | 6 tissu |
+| Couture | 6 tissu | 4 vêtements |
+
+### Fertilité, distance et extension
+- Cible (aptitude sol/culture, fertilité dynamique) : voir `06`. Extension compacte et terroir : `02` §10.2.
+- **Fertilité** d'une tile : bruit lissé (cellule de ~6 km) entre 0,85 et 1,3 (qualité locale du sol). **Depuis le 2026-11-04**, plus de déclin radial autour du village : le rendement d'une tile est sa qualité × l'**aptitude du terrain** pour le type de terre (`docs/07` §3.3, §11), et la distance joue seule par le trajet.
+- **Distance maximale** : 100 (10 tiles-équivalents, 2,5 km) entre deux lieux (travail, approvisionnement). À calibrer.
+- **Extension** : une terre naît à 4 tiles contiguës et s'agrandit par blocs de 4 jusqu'à son emprise maximale ; au-delà on en fonde une autre. Une maison s'ajoute à un hameau jusqu'à 4 ; hameau plein, ou plus de terre à portée, un hameau neuf se fonde en périphérie du réseau (route neuve de 8 tiles au plus) et des pops sans poste s'y installent. Coûts : `02` §7.
+- Avec ces valeurs, un village de 4 hameaux (6 pops au départ) plafonne vers **8 à 15 pops** (800 à 1 500 hab.) en « dents de scie » en quelques siècles : tout le terroir à portée (rayon de 10 tiles) est occupé. C'est l'ordre de grandeur d'un village de 1750 ; aller plus loin demande plusieurs groupes de hameaux.
 
 ### Proportions qui en découlent
-- ~**7 tiles de production pour 2 quartiers ruraux**.
-- La **chaîne textile** (fibre → filature → couture) est le goulot naturel : une chaîne complète (20 vêtements/jour) couvre ~4 quartiers. Première filière candidate à l'intégration verticale.
-- Un quartier supplémentaire sans production supplémentaire crée une tension sur la main-d'œuvre → incitation à investir.
+- Pour **10 hameaux** (20 pops) : ~250 tiles de champ, ~48 de pâturage, ~20 de verger, ~114 de forêt, ~17 de lin, ~67 de laine, soit ~516 tiles de terres pour 20 pops. Le générateur découpe ces tiles en terres de 36 tiles au plus.
+- Le générateur démarre à 80 % de la capacité de logement. La croissance est d'abord limitée par le **logement**, puis par la **nourriture** quand la terre à portée est occupée.
 
-### ⚠️ Points de calibration non tranchés
-- **Main-d'œuvre disponible par quartier** : l'ancienne valeur (250 actifs / 1 000 hab) date de la première calibration (effectifs 15–50). Elle est **incompatible** avec les effectifs actuels (la liste ci-dessus totalise 1 450 travailleurs). Recalibrer : soit le taux d'actifs, soit le nombre de quartiers nécessaires.
-- **Affectation pop → lieu de travail** : une pop de 100 hab est affectée à un seul lieu. À valider par le POC : coût de simulation du facteur ×10 en objets, et granularité de l'affectation (effectifs des bâtiments vs actifs d'une pop).
-- **Ratios d'intrants de transformation** non fixés (combien de fibre par tissu, de tissu par vêtement).
-- POC-B : prix de départ, salaires de référence, seuils de réinvestissement / rachat / faillite : à définir.
+### ⚠️ Points de calibration
+- **Tranché** : bloc discret de 100 hab (`00` §3), tile de 250 m, une maison par pop, hameau de 2 à 4 pops, plafond de densité 10, recettes textiles, nourriture interchangeable, taux de croissance 1,5 % / 0,5 % / −8 %, distance = coût des arêtes avec limite, budget de jours (`jours_personne_par_pop_an`), extension par la communauté.
+- **À calibrer** avec le CLI headless : seuils vitaux, `mortalite_famine`, `distance_max`, coûts de défrichement, jours par tile du verger, de la forêt et de l'élevage (seuls les céréales, la prairie et le lin viennent de la référence 1750), rayons de fertilité, plafond du hameau, taille de la croix de départ.
+- **Plus tard** : POC-B (prix, salaires, seuils) ; aléa de récolte ; saisons ; rendements décroissants ; abandon des lieux en déclin.
 
-## Prochaine étape de design identifiée
+### Besoins d'une pop (par jour)
 
-**Algorithme de placement automatique des bâtiments** (étape « construction », saisonnière ; POC-B, car personne ne construit en POC-A) — identifié comme le cœur de l'émergence spatiale, jamais encore traité. Il devra préciser qui décide (maire ? firmes ?), comment on évalue un emplacement (accès aux intrants, à la main-d'œuvre, aux clients, coût de l'infrastructure à créer), et comment se crée l'infrastructure associée.
+| Ressource | Ration normale | Rôle |
+|---|---|---|
+| Grain | 5 | Nourriture (1 unité nutritive par unité) |
+| Viande | 1 | Nourriture **et** part de viande attendue (confort) |
+| Fruit | 1 | Nourriture |
+| Bois | 2 | Chauffage (vital) |
+| Vêtements | 0,5 | Minimum de confort |
+
+| Besoin | Seuil | Effet |
+|---|---|---|
+| **Vital** : nourriture | 5 unités nutritives (n'importe quelle combinaison de grain, viande, fruit) | Sous le seuil : déclin |
+| **Vital** : chauffage | 2 bois | Sous le seuil : déclin |
+| **Confort** : viande | 1 | Sous le minimum : insatisfaite |
+| **Confort** : vêtements | 0,5 | Sous le minimum : insatisfaite |
+
+| État de la pop | Croissance annuelle |
+|---|---|
+| Vital et confort couverts (**satisfaite**) | **+1,5 %** |
+| Vital couvert, confort insuffisant (**insatisfaite**) | **+0,5 %** (interpolé selon le confort) |
+| Vital insuffisant (**manque**) | de +0,5 % à **−8 %** quand le vital tombe à zéro (linéaire) |
+
+### Fertilité, distance et extension
+- **Fertilité** d'une tile : bruit lissé entre 0,85 et 1,3, qui s'effondre autour du centre du village (pleine jusqu'à 3 tiles, puis déclin linéaire jusqu'à 0,15 à 7 tiles). Elle multiplie la production des terres exploitées.
+- **Distance maximale** : 10 tiles chemin entre deux lieux (travail, approvisionnement). À calibrer.
+- **Coûts de création** (travail en pop-jours, équipe, bois) : voir `02` §7.
+- Avec ces valeurs, le village plafonne vers **60 à 90 pops** (6 000 à 9 000 hab.) en « dents de scie », après plusieurs siècles. Un terroir plus large plafonne plus haut (170 pops à 4/9, 240 pops à 5/11).
+
+### Proportions qui en découlent
+- Un village de **10 hameaux** (dont 3 textiles, 23 pops) demande 1 champ, 1 pâturage, 1 verger, 1 forêt, 1 champ de lin et 1 élevage de laine, soit **19 pops de travail + 3 à l'atelier**, pour 23 pops. Les bras ne sont pas en excès : c'est l'image d'une société agraire.
+- Le générateur démarre à 80 % de la capacité de logement. La croissance est d'abord limitée par le **logement**, puis par la **nourriture** à mesure que l'on gagne sur des terres plus pauvres.
+
+### ⚠️ Points de calibration
+- **Tranché** : bloc discret de 100 hab (`00` §3), effectifs en pops, hameau 2 pops et hameau textile 3 pops (1 à l'atelier), plafond de densité 10, recettes textiles, nourriture interchangeable, taux de croissance 1,5 % / 0,5 % / −8 %, distance = tiles chemin avec limite, extension par la communauté.
+- **À calibrer** avec le CLI headless : seuils vitaux, `mortalite_famine`, `distance_max`, coûts de création, fertilité (rayons du terroir), taille de village de départ.
+- **Plus tard** : POC-B (prix, salaires, seuils) ; aléa de récolte ; saisons ; rendements décroissants par pop ; abandon des lieux en déclin.
+
+## Générateur de village
+
+- **Déterministe** (même graine, même village), progressif : un village de 1750 à évolution lente et production quasi stable, puis un deuxième village avec liens économiques, puis un troisième, puis une ville. Simple en POC, il gagnera en finesse à chaque étape.
+- **Croix de chemins de terre** de 8 tiles (arêtes), compacte pour rester sous la distance limite. Les **hameaux** sont près du centre, de part et d'autre des bras ; les **terres** sont des blocs de tiles de 3 de large le long d'un bras, au plus près du centre, un bloc de chaque type d'abord pour que chaque ressource ait un producteur proche. La tile nœud de chaque terre est reliée au bras. Si une disposition viole les contraintes d'accès, une autre est tirée de façon déterministe.
+- Dimensionné pour être **proche de l'équilibre** : le nombre de tiles de chaque type est déduit des besoins (jamais un ratio codé), pops initiales à 80 % de la capacité de logement, stocks initiaux non nuls, jauges de croissance décalées. Défaut : **4 hameaux** ; au-delà d'environ 6, la croix ne suffit plus.
+- Champ de **fertilité** tiré avec la graine, centré sur le village.
+
+## Outillage de test et d'observation
+
+- Crate Rust `sim` **pure** (sans dépendance napi), **CLI headless** : N années en quelques secondes, séries temporelles en CSV.
+- **Invariants automatisés** : pas de stock négatif, conservation de la matière (produit = consommé + Δstock + pertes), équilibre malthusien comme oracle (une terre moins productive abaisse la population d'équilibre), pas de dérive sur de longues durées, déterminisme.
+- **Déterminisme** : quantités en entiers, itérations ordonnées.
+- Paramètres (bâtiments, recettes, besoins) en **fichiers de données**, pas en dur.
+
+## Ce que voit le joueur (POC) — implémenté dans `app/` (voir `app/README.md`)
+
+Chaque indicateur est affiché avec son **facteur limitant** (le moteur enregistre quel `min()` a mordu : main-d'œuvre, intrant, stock plein).
+
+| Niveau | Contenu |
+|---|---|
+| Hameau | Ses pops et leur lieu de travail, état de chaque pop (satisfaite / insatisfaite / en manque), couverture de chaque ration (reçu/requis, et auprès de quel fournisseur), jauge de croissance, atelier textile sur place |
+| Terre exploitée | Production effective %, **fertilité de la tile**, facteur limitant, stocks, pops affectées et leurs hameaux, clients |
+| Chantier | Ce qui est construit, travail restant, équipe présente, bois reçu, **motif** (« grain manque, 2 pops sans poste ») |
+| Pop | **Inspecteur** (clic sur une pop) : lieu du jour et motif, stock personnel et autonomie par ration, terres possibles et raison du choix, santé et croissance. Contour clair sur la carte = reste chez elle aujourd'hui |
+| Modes de carte | Couverture des besoins, pénuries, utilisation des terres, **fertilité**, portée (tiles chemin) autour d'un lieu, **Flux** (où une marchandise est produite, stockée, expédiée, consommée) |
+| Global | Date, vitesse, courbes (pop, production vs consommation), journal d'événements (naissance, disparition, bras réorientés vers…, **chantier lancé / terminé**) |
+| Temps | Jour/nuit par teinte globale ; une pop = un sprite qui marche sur les routes matin et soir, au travail le jour, à sa maison la nuit |
+| Debug | Choc de récolte (« mauvaise récolte »), modifier un paramètre en direct |
+
+## Prochaine étape du POC (révisée le 2026-11-03)
+
+La production reste **continue, sans saisons** dans le POC. Ordre de travail décidé (détail : `02` §10) :
+
+| # | Chantier | Référence |
+|---|---|---|
+| 1 | ✅ Traversabilité par type (terres et chantiers non traversables), tile nœud d'accès en bordure, pathfinding (moteur fait ; rendu `app/` à valider) | `02` §10.1 |
+| 2 | ✅ Extension compacte des terres (score fertilité, périmètre, distance) et terroir par hameau (moteur fait ; terroir en pénalité douce) | `02` §10.2 |
+| 3 | ✅ **Une pop = un lieu de travail par jour**, avec motif ; stock personnel par pop | `02` §10.4 |
+| 4 | ✅ Inspecteur de pop et vue « par ressource » (mode Flux) : qui travaille où, produit, stocké, consommé | `02` §10.5 |
+| 5 | ✅ Animation des pops sur leur chemin réel en mode Jour/nuit (ombres portées toujours à faire) | `02` §10.6 |
+| 6 | Économies d'échelle de l'emprise, après le 2 | `02` §10.3 |
+
+Fertilité : qualité locale par tile × aptitude du terrain par type de terre depuis le 2026-11-04 (`07` §11) ; la fertilité dynamique reste notée dans `06`.
+
+### Rappel : jour/nuit, ombres et saisons (idée antérieure, saisons reportées)
+Les saisons de la simulation sont reportées hors POC pour l'instant ; le jour/nuit et les ombres restent des idées de rendu :
+
+| Sujet | Contenu |
+|---|---|
+| **Saisons** | Profils mensuels du travail (`02` §8.3, étape 2) : labours et semis en octobre-novembre et mars, moisson en juillet-août (~⅓ du travail des céréales en 4 à 6 semaines), battage de novembre à février, textile domestique l'hiver. Les pops se déplacent d'une terre à l'autre au fil de l'année. Stocks annuels (greniers), soudure, aléa de récolte (`05`) |
+| **Jour/nuit** | Cycle visible et lisible : les pops rentrent le soir et partent le matin, teinte de la lumière selon l'heure |
+| **Visuels associés** | **Ombres portées** et lumière en rotation : shader de ré-éclairage à partir de l'albedo et des normales (déjà générés pour les maisons, `03` §7), ombres des maisons, des arbres et des clôtures qui tournent avec le soleil ; ambiance des saisons (couleur des champs, neige, feuillage) |
+
+Jusqu'ici les assets sont éclairés au zénith, sans ombre, et la production est continue. Avec un lieu de travail par jour (`02` §10.4), les pops changent de lieu selon leurs besoins sans saisons ; les saisons s'y ajouteront plus tard.
+
+Reste ensuite : **déclin et abandon** des lieux, **plusieurs groupes de hameaux** (`05`, question 23), puis POC-B : **placement des bâtiments par des firmes**, généralisation de l'extension communautaire.

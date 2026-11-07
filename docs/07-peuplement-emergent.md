@@ -1,0 +1,419 @@
+# 07 — Peuplement émergent : hameaux, villages et terrains (plaine à champs ouverts)
+
+> Statut : **design du 2026-11-04** ; **les étapes 1 (générateur de carte), 2 (aptitude par terrain), 3 (défrichement, drainage, ponts), 4 (peuplement par la valeur du site) 4 bis (abandon, destruction, repousse), 6 (seigneur, serfs, grenier) et 5 (réglage) sont faites** (§8, §10 à §17) ; le reste n'est pas implémenté. Les éléments historiques viennent de connaissances générales d'histoire agraire (plaines du Bassin parisien et de Flandre, vers 1750) : **à vérifier sur sources avant calibration**. Région retenue : **plaine à champs ouverts** (décision du 2026-11-04). Complète `02` §7–8 (extension communautaire), `04` (POC) et `06` (fertilité).
+
+## 1. Objectif
+
+Voir émerger, sans le coder, une campagne fidèle : beaucoup de petits hameaux de 1 à 2 pops, quelques noyaux de plusieurs pops (jusqu'à ~16 = 1 600 hab., l'échelle d'un gros village) et, plus tard, des bourgs. **Aucune taille de hameau n'est une règle** : on la mesure (§6).
+
+Principe : un noyau se forme là où les **forces de regroupement** dépassent les **forces de dispersion**. Chaque force est un coût ou un gain mesurable dans le moteur, jamais un seuil.
+
+| Force | Sens | État |
+|---|---|---|
+| Distance aux champs (trajet quotidien, congestion) | disperse | existe (`distance_max`, flux unifié) |
+| Terroir fini, rendements décroissants | plafonne le groupe | partiel (fertilité par tile) |
+| Point d'eau (source, rivière, puits) | regroupe | **à faire** (§3) |
+| Les enfants restent près des parents | regroupe | **à faire** (§4) |
+| Services à coût fixe (moulin, four, forge, église) | regroupe au-delà d'un seuil de clientèle | reporté (firmes, POC-B) |
+| Entraide aux pointes de travail (moisson), assolement collectif | regroupe | reporté (saisons) |
+| Sécurité | regroupe | reporté |
+
+Point d'attention : sans saisons ni services, le POC n'a que **deux** forces de regroupement (eau et famille). Il ne faut pas lui demander plus que des noyaux modestes ; les gros villages et les bourgs viendront avec les firmes et les saisons.
+
+## 2. Spécificités de la plaine à champs ouverts
+
+- **Habitat groupé** : villages compacts au centre d'un terroir de champs ouverts (parcelles en lanières, sans clôtures), forêts rares et lointaines. C'est l'inverse du bocage dispersé.
+- **Eau** : sur plateau, la nappe est profonde (puits coûteux). Les villages se tiennent aux **sources du pied de coteau**, au bord des rivières, ou sur les rares sols à nappe peu profonde. C'est le premier attracteur naturel.
+- **Bois rare** : il pousse sur les sols médiocres (argile lourde, sable, pentes), pas sur les bons limons déjà défrichés. Le bois est un facteur de localisation (construction, chauffage).
+- **Collectif** (assolement triennal commun, vaine pâture, communaux) : explique la cohésion du village, mais suppose saisons et droits d'usage. **Reporté** ; en attendant, l'accès est libre (simplification assumée : pas de seigneur, pas de droits d'usage, extension libre).
+
+## 3. Carte : terrains, eau et forêts
+
+> Révisé le 2026-11-04 : les sept types de sol d'une première version étaient trop détaillés. Le joueur doit **lire la carte d'un coup d'œil** : peu de terrains, chacun avec une identité visuelle et des conséquences de jeu claires.
+
+### 3.1 Principe : peu de terrains, chacun avec un caractère
+Un terrain porte quatre propriétés, toutes en données (`poc.toml`), jamais en règles :
+
+| Propriété | Rôle |
+|---|---|
+| **Aptitudes** | rendement par type de terre (champ, pré, verger, élevage…), voir `06` §2 |
+| **Travail requis** | multiplicateur du travail par unité de surface (traction, drainage, cailloux) |
+| **Coût et franchissabilité** | multiplicateur du coût de construction et de route ; infranchissable pour certains terrains |
+| **Ressource ou opportunité** | ce qui ne se trouve que là : c'est ce qui rend un détour coûteux *rentable* |
+
+Le dernier point est la clé des futurs choix du joueur : une route à travers un marais coûte plus cher, mais elle ouvre l'accès à la tourbe, au poisson ou à un raccourci. Sans contrepartie, un terrain difficile n'est qu'un obstacle à contourner.
+
+### 3.2 Terrains de la plaine (première version)
+| Terrain | Agriculture | Construction et routes | Opportunités (à valider) |
+|---|---|---|---|
+| **Plaine** | référence (1,0) | référence | — |
+| **Plaine riche** (variante) | meilleur rendement des céréales | référence | attire les premiers noyaux ; les terres y sont mises en valeur d'abord |
+| **Plaine rocailleuse** | céréales plus faibles ; convient à l'élevage ovin, à la vigne et aux vergers | un peu plus cher (cailloux) | pierre de construction, carrière |
+| **Plaine marécageuse** (type Dombes) | quasi inculte au départ ; drainage = investissement tardif | routes et bâtiments nettement plus chers ; ponts, digues | étangs (pêche), tourbe (combustible), roseaux ; urbanisation tardive car pénible |
+| **Forêt** | non cultivable tant que non défrichée | traversable, chemins plus lents | bois (chauffage, construction) ; réserve foncière |
+| **Colline** (relief, plus tard) | élevage, vigne, vergers | routes plus chères (pente) | minerai, pierre, énergie hydraulique en vallée |
+| **Montagne** (plus tard) | quasi nulle | **infranchissable** hors cols, ou très cher | minerai, bois, bois d'œuvre, force hydraulique |
+
+Pour le premier générateur : **plaine, plaine riche, plaine rocailleuse, plaine marécageuse, forêt**, plus l'eau (§3.3). Colline et montagne arrivent avec les régions à relief. Désert, grandes steppes et régions marécageuses étendues relèvent de la **carte macro** (étape 3 de la roadmap) : ce sont des *régions identifiables* qui changent la palette de terrains, pas des cases de plus dans la plaine.
+
+La palette est volontairement **étroite et lisible** : on peut la compléter plus tard (un terrain de plus = une ligne de données et une tile de rendu). Les aptitudes du tableau sont des hypothèses de départ à régler à l'usage.
+
+### 3.3 Eau et rivières
+| Élément | Rôle |
+|---|---|
+| **Rivière** (trois gabarits : ruisseau, rivière, fleuve) | structure le territoire ; **seuls les plus gros gabarits seront un jour navigables**, les petits ne le seront jamais |
+| **Franchissement** | un pont coûte cher (plus pour un gabarit plus gros) ; la rivière est donc une coupure qui infléchit routes et terroirs |
+| **Point d'eau** | source, rivière ou puits ; attracteur d'habitat (§4.1) ; sur plateau sec, le puits est coûteux |
+| **Navigation, moulins, ports** | **hors POC** : la rivière est aujourd'hui cosmétique et structurante (coût de pont, point d'eau). La navigation viendra avec les infrastructures de transport (`02` §9) |
+
+Aucun « village de source » n'est codé : les noyaux se forment aux points d'eau parce que le puits coûte cher ailleurs.
+
+### 3.4 Forêts et défrichement
+- Les forêts sont **présentes dès le départ**, placées surtout sur les terrains médiocres (rocailleux, marécageux en lisière) ; une pop doit s'installer près d'elles pour s'approvisionner en bois.
+- **Défricher coûte du travail et du temps** (chantier) et **rapporte du bois** (à calibrer : le défrichement fournit un lot de bois au chantier ou au stock du hameau).
+- Une tile sans bois **repousse** avec le temps : la tile vide est sélectionnable dans l'app et affiche son temps de repousse. Hypothèse retenue : la repousse est **plus rapide en lisière d'une autre forêt** (ensemencement par les tiles voisines) et plus lente au milieu d'un espace déboisé. *(À confirmer : si c'est l'inverse, il suffit d'inverser le signe dans la donnée.)* Cette fonctionnalité n'est pas retrouvée dans le dépôt `main` : à vérifier avant de l'intégrer au générateur.
+- Accès libre pour le POC (pas de communaux, voir §1).
+
+### 3.5 Dérivation et lecture dans le moteur
+Le générateur produit des **couches** (substrat, relief doux, hydrographie, forêt) à basse fréquence, déterministes selon la graine, puis **classe chaque tile** dans un terrain (§3.2). Le moteur lit `aptitude[type_de_terre][terrain]` (table dans `poc.toml`) au lieu de `fertilite_ppm` ; la fertilité d'une terre reste la moyenne de son emprise (`06` §5, étape 2). Effets distincts :
+
+| Effet | Où | Exemple (hypothèse) |
+|---|---|---|
+| **Rendement** | extrants de la terre | blé : plaine riche 1,2 ; plaine 1,0 ; rocailleuse 0,6 ; marais 0,2 |
+| **Travail requis** | équipe de la terre | marais ×2, rocailleuse ×1,3 |
+| **Coût de construction et de route** | chantiers, segments d'infrastructure | marais ×2–3, pont selon le gabarit |
+
+Les outils (charrue, attelage, drainage) modifieront ces multiplicateurs plus tard : c'est ce qui poussera les pops à en acquérir (§7).
+
+## 4. Règles de peuplement
+
+### 4.1 Choix du site (remplace `meilleur_site` seul)
+Un score continu, sans seuil dur : **terres cultivables à portée (pondérées par aptitude), eau (distance ou coût du puits), bois à portée, proximité de voisins** (bonus faible : entraide, sécurité, services futurs), moins le coût de construction. Les poids sont des données à régler sur plusieurs graines.
+
+### 4.2 Plus de plafond codé
+Supprimer `capacite_max_pops` (aujourd'hui 4). La taille d'un noyau ressort de coûts marginaux croissants :
+- **trajet moyen aux champs** qui s'allonge à mesure que les terres proches sont occupées ;
+- **eau** : un point d'eau a un débit, un puits profond coûte plus cher par pop ;
+- **congestion** des chemins d'accès (déjà modélisée).
+
+### 4.3 Coûts de logement
+Garder une maison supplémentaire et un site neuf à **coûts voisins** (maison ~150 pop-jours, hameau neuf = site + première maison, comparable). Le choix entre « s'ajouter à un noyau » et « fonder ailleurs » est tranché par le score (§4.1), pas par un coût artificiellement favorable à la dispersion : si fonder est toujours moins cher, il n'y a jamais de village.
+
+### 4.4 La famille reste
+Une nouvelle pop (croissance, `00`) cherche d'abord un logement **dans son hameau, puis dans les hameaux proches** (déjà en place) ; elle ne **fonde** un site neuf que si le score local descend sous celui d'un site disponible ailleurs. C'est le moteur de croissance sur place d'un noyau.
+
+### 4.5 Champs et entrées
+Les terres sont des bâtiments multi-tiles à entrée unique (principe 1 du `CLAUDE.md`) : une tile éloignée d'une terre reste accessible par l'entrée proche. Cela réduit le coût de la dispersion et justifie les hameaux isolés aux premiers temps.
+
+## 5. État initial de la carte
+
+Un **générateur d'état initial** pose directement la situation de 1750 ; on observe ensuite son évolution (pas de pré-simulation de décennies : décision du 2026-11-04). Le générateur applique les mêmes règles de site que le jeu (§4) pour placer les hameaux, mais en une seule passe :
+
+- les terres des meilleurs terrains (plaine riche, plaine) sont **déjà exploitées** ; les hameaux sont placés par le score de site (eau, terres, bois, voisins) ;
+- quelques noyaux plus gros aux meilleurs points d'eau, beaucoup de hameaux de 1 à 2 pops ailleurs ;
+- les terrains médiocres (rocailleux, marécageux, forêts) sont quasi vierges : la conquête de ces terres, avec des rendements décroissants, **émerge** ensuite.
+
+## 6. Critères de succès (à mesurer sur plusieurs graines)
+
+- Distribution des tailles de hameaux à **longue traîne** : majorité de 1 à 2 pops, quelques noyaux de 6 à 16. Médiane et maximum mesurés, jamais imposés.
+- Les noyaux sont proches de points d'eau et des meilleurs sols ; les hameaux isolés sont sur terres propres.
+- Aucune dépendance au plafond codé : changer les poids du score déplace la distribution, pas une constante.
+- Test d'invariants : mêmes résultats à graine égale ; aucun hameau sans accès à l'eau ni à un bien vital.
+
+## 7. Suite : la pop comme acteur (hors cette étape)
+
+La pop cherche sa prospérité (besoins vitaux, puis confort), travaille, et peut acquérir des outils avec son surplus. Cela tient au principe 3 (« la Firme est l'acteur économique ») si une pop paysanne est une **exploitation familiale**, c'est-à-dire une firme implicite. Les firmes à capital et salariés émergent quand une pop accumule assez pour embaucher. Cela demande des **échanges au niveau de la pop** (prix ou troc, monnaie), absents aujourd'hui (les pops consomment le stock de leur hameau). Également reportés : saisons et pointes de travail, services à coût fixe (moulin, four, forge), qui sont les forces de regroupement manquantes. Voir `05`.
+
+## 8. Ordre de travail
+
+1. ~~Générateur de carte~~ : **fait le 2026-11-04** (`sim/src/terrain.rs`, rendu `app/src/terrain.js`, détail §10).
+2. ~~Table d'aptitudes et effet sur rendement, travail requis et coût de construction~~ ; mode de carte « aptitude » : **fait le 2026-11-04** (§11).
+3. ~~Défrichement (coût, bois récupéré), drainage, ponts et gués~~ : **fait le 2026-11-04** (§12). La repousse et les opportunités (pierre, tourbe) restent à faire.
+4. ~~Générateur d'état initial par score de site (§5), suppression du plafond, règle « la famille reste » (§4)~~ : **fait le 2026-11-04** (§13).
+4 bis. ~~Abandon, destruction, repousse~~ : **fait le 2026-11-04** (§14) ; outils de mesure : `sim-cli --mesure N`.
+6. ~~Acteurs : le seigneur local, les pops serves, le grenier seigneurial~~ : **fait le 2026-11-04** (§16).
+5. ~~Réglage des poids de `[peuplement]` et des durées de `[abandon]`~~ : **fait le 2026-11-04** (§17), à poursuivre quand les services (banalités) existeront.
+7. Plus tard : échange entre pops, outils, saisons, services (banalités), navigation, relief (collines, montagnes), régions macro.
+
+## 9. Décisions prises (2026-11-04)
+
+Valeurs de départ **réalistes pour une tile de 250 m (6,25 ha)** et une carte de 200 × 200 (50 × 50 km, 2 500 km²) ; à régler à l'usage. Sauf mention, elles ne sont pas encore dans le code (étapes 2 et 3).
+
+| Sujet | Décision | Repère réaliste |
+|---|---|---|
+| **Rivières** | 1 fleuve, 3 affluents, 6 ruisseaux sur la carte (**fait**) ; gabarit selon le nombre de tiles d'eau en amont : ruisseau < 70, rivière ≥ 70, fleuve ≥ 240 | un cours tous les 5 à 8 km ; ~2 à 3 % de la carte en eau |
+| **Franchissement** (étape 3) | coût d'une tile de route ×3 sur un ruisseau (gué ou passerelle), ×10 sur une rivière (pont de bois ou de pierre), ×40 sur un fleuve (grand pont, enjeu majeur) | un pont de pierre coûte des années de travail d'un village |
+| **Défrichement** (étape 3) | ~1 000 pop-jours par tile de forêt (chantier, équipe), qui rapporte un lot de bois | 150 à 250 jours-homme par hectare × 6,25 ha |
+| **Bois rapporté** (étape 3) | ~600 stères par tile de forêt, à convertir dans les unités de `poc.toml` | 100 à 150 stères/ha pour un taillis sous futaie ; un ménage brûle 10 à 15 stères par an, une pop (≈ 20 ménages) ~250 |
+| **Repousse** (étape 3) | friche → taillis en ~15 ans, taillis → bois exploitable en ~40 ans ; **plus rapide en lisière d'une forêt** (×0,6 de durée, ensemencement par les voisines), plus lente au milieu d'une zone déboisée (×1,5). Le défrichement se fait une tile à la fois, avec la repousse comme contrainte sur la forêt exploitée | succession naturelle des taillis |
+| **Opportunités retenues** (étape 3) | **pierre** (carrière en plaine rocailleuse : construction, routes) et **tourbe** (marais : combustible, alternative au bois là où il manque). **Poisson** et étangs reportés (ressource nouvelle) | |
+| **Terres en champs ouverts** | une terre peut **englober des terrains différents** (rendement = moyenne de l'emprise, comme aujourd'hui), mais seulement sur des tiles constructibles. Les champs ouverts réels recouvrent plusieurs sols | parcelles en lanières traversant les sols |
+| **État initial** | généré d'un coup (§5), pas de pré-simulation | |
+| **Palette** | trois terrains agricoles (plaine, riche, rocailleuse), marais, forêt ; colline et montagne avec les régions à relief | |
+
+Question encore ouverte : la **forêt exploitée** (type de terre actuel, `foret_exploitee`) doit-elle s'appliquer sur les tiles de forêt de la carte, ou rester une terre ordinaire sur plaine ? (étape 3, avec le défrichement)
+
+## 10. Étape 1 réalisée : le générateur de carte
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Terrain | `sim/src/terrain.rs` | `generer_terrain(ParamsTerrain)` : altitude (pente générale + relief doux), écoulement par inondation de priorité (aucune cuvette, chaque cours d'eau mène au bord), gabarit par accumulation, puis terrains attribués par parts dans l'ordre marais, forêt, rocailleuse, riche. Entiers seulement, déterministe |
+| Parts par défaut | `ParamsTerrain::defaut` | marais 4 %, forêt 12 %, rocailleuse 15 %, riche 26 %, plaine le reste (~43 %) ; eau ~2,4 % en plus. Les parts sont des paramètres, pas des règles |
+| Tile | `sim/src/monde.rs` | `Tuile.terrain`, `Tuile.eau`, `Tuile.aval` ; `Tuile::constructible()` : ni eau, ni forêt, ni marais |
+| Effets de jeu | `sim/src/simulation.rs`, `village.rs` | une tile non constructible n'est ni bâtie, ni plantée, ni traversée par une route neuve. Les cours d'eau sont 4-connexes : une route (même en diagonale) ne peut pas les franchir tant qu'il n'y a pas de pont |
+| Site du village | `terrain::sites_village` | fenêtre dégagée de rayon 12 (ou 10), sans eau, forêt ni marais, de préférence près d'un point d'eau (≤ 17 tiles) et du centre de la carte ; les sites suivants servent de repli si la disposition en croix n'y tient pas |
+| Rendu | `app/src/terrain.js` | une image pour toute la carte (12 px par tile) : bordures déformées par un bruit, textures procédurales par terrain, rivières lissées entre tiles (courbes G1) avec berges ; mode Fertilité sur toute la carte ; panneau d'information (terrain, eau) |
+| Tests | `sim/tests/terrain.rs` | déterminisme, parts exactes, chaque cours d'eau va au bord par des côtés avec un gabarit croissant, site du village dégagé et près de l'eau, jamais de bâti ni de chemin sur un terrain fermé après 120 ans |
+| Visualisation | `sim-cli --terrain` | parts de chaque terrain et vue d'ensemble en ASCII |
+
+**Limites connues**
+- ~~La fertilité reste le champ radial autour du village~~ : levé à l'étape 2 (§11).
+- Le village garde sa **disposition en croix** (remplacée à l'étape 4). Comme la fenêtre dégagée exclut l'eau, le point d'eau le plus proche est à 11–17 tiles (3 à 4 km) : à la lisière du terroir, pas au cœur du village.
+- ~~Forêts et marais fermés, routes sans pont~~ : levé à l'étape 3 (§12).
+- La pente générale donne des rivières à peu près parallèles ; le relief n'est pas rendu.
+- Le sol est une image de 12 px par tile : un peu flou à fort zoom ; un rendu par chunks à plus forte résolution est possible plus tard.
+- Pas de variantes visuelles par tile (fleurs, rochers…) ; les assets de l'atlas ne servent plus pour le sol.
+
+## 11. Étape 2 réalisée : l'aptitude par terrain
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Table de données | `sim/donnees/poc.toml` | `[terrains.<nom>] cout_construction` ; par type de terre : `aptitude = {…}` (rendement par terrain) et `travail_terrain = {…}` (travail requis par terrain). Terrain absent = 1,0 ; nom inconnu = erreur de chargement |
+| Rendement | `Catalogue::rendement_tile` | qualité locale de la tile × aptitude du terrain ; la production d'une terre suit la **moyenne de son emprise** |
+| Travail requis | `Catalogue::besoin_mo_terre_milli` | somme par tile de `jours_par_tile_an × travail_terrain` : une terre sur sol difficile réclame plus de bras |
+| Coût de construction | `cout_defrichement`, `cout_logement` | le travail des chantiers (défrichement, maison, hameau) est multiplié par `cout_construction` du terrain de chaque tile |
+| Choix des tiles | `meilleur_site`, `agrandir`, `lancer_defrichement` | le score d'une tile pour une terre utilise le **rendement pour ce type** (champ ≠ élevage de laine) |
+| Fertilité locale | `village.rs` | **plus de déclin radial** autour du village : bruit de 0,85 à 1,3, la distance ne joue que par le trajet. Paramètres `rayon_fertile` / `rayon_sterile` et options CLI supprimés |
+| Site du village | `terrain::candidats_centre` | pénalise la plaine rocailleuse à portée, favorise la riche |
+| App | `app/src/App.vue`, `PanneauInfos.vue` | mode **Aptitude** avec choix du type de terre ; le panneau d'une tile libre donne le rendement de chaque type, le travail requis et le surcoût de construction |
+
+**Valeurs de départ** (hypothèses à régler à l'usage)
+
+| Terre | plaine | riche | rocailleuse | marécageuse | forêt |
+|---|---|---|---|---|---|
+| Champ de céréales | 1,0 | 1,25 | 0,6 | 0,15 | 0 |
+| Pâturage | 1,0 | 1,1 | 0,7 | 0,5 | 0,2 |
+| Verger | 1,0 | 1,1 | 1,0 | 0,1 | 0 |
+| Forêt exploitée (taillis planté) | 1,0 | 1,0 | 1,0 | 0,5 | 1,0 |
+| Champ de lin | 1,0 | 1,3 | 0,4 | 0,3 | 0 |
+| Élevage de laine | 1,0 | 0,85 | 1,2 | 0,3 | 0,1 |
+
+Travail requis par tile : rocailleuse ×1,3 (céréales, lin), marais ×1,4 à 2,0, forêt ×2,0 à 2,5. Coût de construction : plaine et riche ×1, rocailleuse ×1,3, forêt ×2, marais ×2,5.
+
+**Décisions et limites**
+- La **forêt exploitée** reste un **taillis planté sur terre ordinaire** (1,0 sur plaine) pour que le village de départ, posé en terrain ouvert, ait du bois ; depuis l'étape 3 elle s'installe aussi **sur les tiles de forêt** (1,3), sans les défricher (§12).
+- Aucun terrain n'interdit une activité : l'aptitude est un multiplicateur, donc un terrain difficile reste utilisable si le besoin presse (émergence). Forêt et marais restent fermés par `constructible()` jusqu'à l'étape 3.
+- Mesure : sur 100 ans et 8 graines, la part de plaine rocailleuse parmi les nouveaux champs (14,5 %) est inférieure à sa part parmi les tiles libres à portée (17,3 %) : l'effet est **faible** car la compacité (`poids_voisins` = 0,25) pèse autant qu'un écart d'aptitude de 0,25. À régler avec les poids de `[extension]` (étape 5).
+- Le village de départ n'est pas posé en fonction du terrain de chaque terre (la croix est rigide) ; la composition initiale reste dimensionnée sur un rendement de 1,0.
+- La compacité des terres mesurée par les tests monte à ~1,36 (1,35 avant) : elles suivent les plaques de terrain.
+- Les rendements dépendent encore uniquement du terrain et de la qualité locale : pas de fertilité dynamique (`06` §4).
+
+## 12. Étape 3 réalisée : défrichement, drainage et ponts
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Terrain ouvert / constructible | `Terrain::ouvert`, `Tuile::constructible` | **ouvert** : plaine, riche, rocailleuse (rien à convertir). **Constructible** : tout sauf l'eau. Forêt et marais se bâtissent après conversion. Le village de départ et sa croix restent sur terrain ouvert |
+| Conversion | `poc.toml` `[terrains.*] conversion_*` | **forêt → plaine** : 1 000 pop-jours et 1 750 bois par tile ; **marais → plaine riche** : 400 pop-jours (un marais drainé donne de bons limons). Le travail s'ajoute au chantier (terre, extension, hameau, maison) |
+| Fin de chantier | `Simulation::convertir` | le terrain de chaque tile change ; le bois récupéré va au hameau le plus proche ; une ligne de journal (« Terrain converti près de (x, y) : … ») |
+| Forêt exploitée | `conserve_terrain = true` | elle exploite la forêt **sur place** (rendement 1,3), sans conversion ni travail de défrichement |
+| Ponts et gués | `poc.toml` `[eau]`, `Simulation::meilleur_site` | une route neuve peut traverser l'eau ; chaque tile d'eau traversée ajoute au chantier : ruisseau 20, rivière 200, fleuve 2 000 pop-jours. Le pathfinding sépare la **distance réelle** (qui compte pour la portée) d'une **pénalité d'ordre** (1 unité de route pour 10 pop-jours) |
+| Choix des sites | `meilleur_site`, `agrandir` | le travail du site (ponts + conversion) divise le score d'une terre et allonge la clé d'un hameau ; `poids_conversion` pénalise les tiles à convertir. On ne franchit une rivière ni ne défriche une forêt qu'**à défaut de mieux à portée** |
+| Agrandir ou fonder | `lancer_defrichement` | agrandir une terre reste moins cher qu'en fonder une tant que le terrain est ouvert ; s'il faut convertir, on compare avec une terre neuve (pont compris) |
+| App | `terrain.js`, `carte.js` | le sol et les cours d'eau sont deux images ; une conversion repeint les seules tiles concernées (12 ms pour 81 tiles) ; le terrain est relu à chaque changement de carte |
+| Tests | `sim/tests/terrain.rs` | défrichement faute de terre ouverte (le bois revient, la forêt recule), forêt exploitée qui garde sa forêt, pont quand l'autre rive est la seule terre ouverte, rien d'occupé sur l'eau, table de conversion et de ponts |
+
+**Décisions et écarts**
+- Les ponts sont exprimés en **pop-jours absolus** (20 / 200 / 2 000) et non en multiplicateurs de route (×3 / ×10 / ×40 prévus au §9), car une route neuve ne coûte aujourd'hui aucun travail.
+- Sur les cartes générées, **aucun défrichement ni pont n'apparaît en 200 ans** (8 graines) : la terre ouverte est abondante à portée (200 × 200 tiles, 70 % de terrain ouvert). C'est le comportement voulu (émergence : on ne défriche qu'en cas de besoin) ; les tests forcent la rareté de terre ouverte. À revoir quand le peuplement s'accélérera (étapes 4 et 5), ou en réduisant la part de terrain ouvert.
+- Le bois récupéré est versé au hameau le plus proche (stock partagé de ses pops) ; la quantité (1 750 unités par tile, ~600 stères) couvre ~1 an de chauffage de 1 à 2 hameaux de 2 pops.
+
+**Pas encore fait**
+- **Repousse de la forêt** (§9) : elle suppose des tiles défrichées *vacantes* (ni cultivées ni bâties). Aucune n'existe tant que l'abandon des lieux est écarté (`05`, « Déclin et abandon ») ; la repousse viendra avec lui. La fonctionnalité d'affichage du temps de repousse d'une tile vide, citée par Jonathan, n'est pas dans ce dépôt.
+- **Pierre (rocailleuse) et tourbe (marais)** : nouvelles ressources, donc nouvelles chaînes de production ; reportées.
+- Pas de route à travers forêt et marais plus lente ni plus chère : le tracé les traverse comme la plaine.
+- La navigation des rivières reste hors POC.
+
+## 13. Étape 4 réalisée : le peuplement par la valeur du site
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Valeur d'un site de vie | `Simulation::valeur_habitat` | terre libre à portée (rayon 10 tiles, rendement d'une terre nourricière, décroissant avec la distance, forêt et marais rabattus de leur coût de conversion) **partagée entre les pops du voisinage**, corrigée par l'eau (au bord = 1, nulle à 30 tiles) et par les voisins (+15 % par pop à 3 tiles ou moins). Elle baisse à mesure que le terroir se remplit |
+| Données | `poc.toml` `[peuplement]` | `rayon_terroir`, `eau_proche`, `eau_portee`, `poids_voisins`, `rayon_voisinage`, `seuil_fondation` |
+| Plus de plafond codé | `poc.toml`, `donnees.rs` | `capacite_max_pops` est supprimé : seule la densité maximale par tile (`densite_max_pops` = 10, principe 1) borne un hameau |
+| La famille reste | `Simulation::etendre` | quand une pop attend un logement : une maison là où elle est, ou un hameau neuf si son site vaut **`seuil_fondation` (1,5) fois mieux** que de rester. Si la densité maximale est atteinte, on fonde ailleurs |
+| Site d'un hameau | `meilleur_site`, `site_hameau` | choisi par la valeur du site (rabattue des travaux de pont et de conversion), plus par le plus proche. Il doit pouvoir être nourri (une ressource nutritive) et chauffé à portée, et se faire livrer son matériau ; le **textile n'est plus exigé** : un hameau sans fibre à portée pousse ses pops à défricher |
+| Générateur d'état initial | `Simulation::peupler_initial`, `village.rs` | plus de croix : un premier hameau au site choisi, puis, par étapes, une part des terres et un hameau de plus, **avec les règles de site du jeu**, chantiers achevés d'un coup. Les terres sont dimensionnées en **tiles équivalentes** (pondérées par leur rendement réel) avec 50 % de marge sur le besoin nominal |
+| Chemins ruraux | `Simulation::etoufferait` | chaque hameau garde au moins 2 lignes de 5 tiles libres (une route y est permise) : sans elles, des terres jointives enferment le réseau |
+| Tests | `sim/tests/terrain.rs` | valeur d'un site (terroir partagé, eau), fondation ou maison selon le seuil, hameau au-delà de l'ancien plafond, état initial sans croix ni hameau étouffé |
+
+**Décisions et écarts à connaître**
+- **Les terres sont traversables par un chemin d'exploitation** (`traversable = "couteuse"` : pénalité d'ordre de 30, distance réelle inchangée) : c'était nécessaire, sans quoi des terres jointives enferment hameaux et routes et plus aucun site n'est atteignable. Cela **modifie la décision de `02` §10.1** (« une route ne traverse pas un champ »). Les chantiers restent interdits ; le test de routes mesure que moins de 35 % des tiles de route traversent une terre.
+- **Un chantier qui attend son matériau ne bloque plus un emplacement** de chantier (`chantiers_max`), et pèse sur la ressource manquante (le bois) dans les tensions : sinon deux chantiers sans bois bloquaient le village, et la forêt qui manquait n'était jamais défrichée.
+- **Correction d'un défaut** : à la fin d'un chantier de fondation, les pops déjà établies sur le site (l'équipe) comptent dans la capacité du hameau neuf (`migrer_vers`).
+- **Coût** : la génération d'un village passe de ~0,05 s à ~0,7 s (une centaine de chantiers, un réseau reconstruit à chaque fois) ; le test de 100 graines est ramené à 30. Une optimisation du réseau est possible plus tard.
+- **Tests relâchés, avec raison** : un chantier qui attend du bois ou des bras n'est plus compté comme « bloqué » (l'abandon est reporté, `05`) ; la compacité des terres passe à 1,6 (chemins ruraux, terrain) ; le nombre de champs à portée d'un hameau est de 3 au lieu de 4.
+
+**Mesure (8 graines, 150 ans, sans réglage)** : les villages passent de 6 à ~15 pops réparties en 5 à 17 hameaux, de taille médiane **1 pop**, au maximum **6**, dont environ un tiers **vides** (fondés puis dépeuplés : l'abandon est reporté). Les hameaux de 1 à 2 pops isolés sont donc bien là, mais **aucun noyau de 16 pops n'émerge** : les forces de regroupement (voisins +15 %, eau) sont trop faibles face au gain de terre libre ailleurs, et les services à coût fixe, l'entraide aux pointes de travail et la sécurité manquent encore (§1). C'est l'objet de l'étape 5 : mesurer la distribution des tailles sur plusieurs graines et régler les poids de `[peuplement]`.
+
+## 14. Étape 4 bis réalisée : abandon, destruction, repousse
+
+Décidé le 2026-11-04 avec Jonathan, en remplacement des deux rustines de l'étape 4 (terres traversables, chemins ruraux), **supprimées**.
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Routes et terres | `meilleur_site`, `poser_site` | une route **ne traverse plus** une terre ; si elle doit y passer, elle **détruit** les tiles traversées (travail `destruction_pop_jours` par tile : champ 2, pâturage 1, verger 8, forêt exploitée 3, lin 2, élevage 1), qui s'ajoute au chantier et pèse dans le choix du site comme un pont. Le nœud d'une terre, les chantiers et les hameaux restent intraversables |
+| Scission | `Simulation::scinder` | quand une destruction coupe l'emprise, **les tiles contiguës dissociées forment une nouvelle terre** (même type), qui garde sa part du stock et se relie à la route posée |
+| Abandon d'une terre | `abandonner_terre`, `entretien_mensuel` | une terre à laquelle on ne travaille presque pas (< 2 % du besoin) **et dont la ressource ne manque pas** depuis 20 ans est abandonnée : elle ne produit plus, ne reçoit plus de travail, ne compte plus comme fournisseur. Gratuit. Après 8 ans elle redevient friche (ses tiles sont libérées, le stock est compté comme perdu) |
+| Abandon d'un hameau | `abandonner_hameau`, `detruire_hameau` | **abandonné = sans pop** : un hameau vide depuis 2 ans (délai qui évite les à-coups) est abandonné, ce qui retire son logement (la capacité est gardée en mémoire) ; il **s'use** ensuite, et en ruine après 40 ans il est **détruit** (sa tile est libre, l'atelier devient un site inerte). *(Corrigé le 2026-11-04 : le délai était de 10 ans.)* |
+| Remise en état | `lancer_remise_hameau`, `lancer_remise_terre` | tant qu'un hameau ou une terre abandonnés ne sont pas détruits, on peut les **remettre en état**, pour une part de leur construction qui croît avec l'usure : de 10 % (à peine abandonné) à 60 % (au bord de la ruine) ; passé ce seuil, il faut reconstruire. Le seigneur préfère la remise à une fondation. Vaut pour les hameaux et les terres ; les autres bâtiments inutilisés suivront le même principe quand ils existeront |
+| Abandon d'un chantier | `abandonner_chantier` | sans progrès depuis 3 ans, il est abandonné : l'équipe est libérée, un hameau en fondation est détruit et ses pops retournent dans un autre hameau. Un hameau n'est plus fondé sur un site abandonné depuis moins de 10 ans, ni un chantier qui consomme du bois lancé dans un hameau qui en manque |
+| Repousse | `repousse_mensuelle`, `facteur_repousse_ppm` | une tile libérée (friche) redevient **forêt après 40 ans**, ×0,6 si trois tiles voisines ou plus sont de la forêt (lisière), ×1,0 pour 1 ou 2, ×1,5 isolée. Une tile qui a servi (`vacant_mois`) repousse ; une tile jamais utilisée ne change pas. L'app affiche depuis combien d'années elle est en friche et dans combien la forêt reviendra |
+| Données | `poc.toml` `[abandon]`, `destruction_pop_jours` | toutes les durées sont des données |
+| Mesure | `sim-cli --mesure N --annees A` | pour les graines 1 à N : pops, hameaux vivants, vides, abandonnés, détruits, terres abandonnées, tiles en friche, histogramme des tailles |
+| Tests | `sim/tests/abandon.rs` | scission, route à travers un champ (destruction), terre abandonnée puis friche puis forêt, repousse selon la lisière, hameau vide abandonné puis détruit, chantier abandonné, et sur 8 villages jamais de route dans une terre non détruite |
+
+**Ce que la mesure montre (8 graines, 150 ans, sans réglage)** : 73 pops, 27 hameaux vivants de taille médiane 2 (max 8), 3 vides, 6 abandonnés, **84 détruits** et 86 tiles en friche. Les hameaux détruits sont presque tous des **chantiers de fondation abandonnés** (faute de bois) puis relancés : la décision de fonder n'apprend pas de ses échecs. Une graine sur huit s'éteint. C'est le travail du seigneur (§15) puis du réglage (étape 5), pas de cette étape.
+
+**Écarts avec ce qui précédait**
+- `traversable = "couteuse"` pour les terres et la règle des « chemins ruraux » sont supprimés (décision de Jonathan : les routes ne traversent pas les champs).
+- Le test de chantier bloqué mesure maintenant la règle d'abandon (aucun chantier ne survit au-delà de 3 ans sans progrès) ; celui de croissance du pont WebAssembly n'exige plus qu'une population soit croissante, seulement vivante.
+- Le défaut de l'étape 3 (« le bois récupéré va au hameau le plus proche ») reste, ainsi qu'un défaut de la fondation : l'équipe d'un hameau qui n'avance pas vit sans ravitaillement ; l'abandon du chantier la libère désormais.
+
+## 15. Vision des acteurs (conçue le 2026-11-04, réalisée au §16)
+
+### 15.1 Qui fait quoi (formulation de Jonathan, 2026-11-04)
+
+| Acteur | Rôle | Dans le moteur |
+|---|---|---|
+| **Personnage** | le **décideur politico-économique** : règles, construction, installation, usage des terres, investissements. Le propriétaire (ou le gérant) d'une firme décide ; l'unité ne fait que travailler | `Personnage` (nouveau), créé par un **poste** (`00` §4) |
+| **Firme / domaine** | ce qui est décidé : terres, bâtiments, production | bâtiments et terres, avec un maître d'ouvrage |
+| **Pop** | « la matière » : une unité de 100 habitants qui **travaille, consomme, possède son stock personnel** et choisit **où elle travaille** parmi ce qui lui est ouvert ; elle ne décide ni des règles ni des constructions | `Pop` (existe) |
+
+Le principe 3 du `CLAUDE.md` est reformulé en ce sens (la Firme n'est plus « l'acteur économique » : le décideur est un personnage).
+
+### 15.2 Le POC : un seigneur local, des pops serves
+
+- **Un seul personnage** sur la carte : le **seigneur du village**, titulaire de la justice locale et propriétaire éminent des terres (poste `seigneur_local`, dévolution en donnée, par exemple primogéniture, non implémentée). Ses leviers historiques en plaine à champs ouverts : **champart** (part de la récolte, en nature), **cens**, **banalités** (moulin, four, pressoir : un service à coût fixe, donc une force de regroupement du §1), **corvées**, et l'**autorisation des installations**.
+- **Toutes les pops sont des serves** (champ `statut` nullable, principe 7) : **pas de liberté d'installation ni de construction** ; **liberté du lieu de travail** (inchangée).
+- **Ce que le seigneur décide** : défricher et fonder une terre, fonder un hameau, bâtir une maison, abandonner ou détruire. Les règles actuelles de `etendre` deviennent sa politique, vues depuis son revenu (champart) et non plus depuis le besoin des pops.
+- **Le stock pour construire** : un **grenier seigneurial** (stock du personnage). Le seigneur prélève en nature une part (`champart`, une donnée) de la production ; **un chantier a un maître d'ouvrage** : au début le seigneur (le matériau, bois, vient de son grenier ; la main-d'œuvre est la corvée des pops). Plus tard une pop libre pourra être maître d'ouvrage avec son propre stock, par le même mécanisme : c'est ce qui permettra d'ajouter les droits de construction des pops sans réécrire le modèle.
+- **Sans IA lourde** : des règles en données ; les décisions sont journalisées (« le seigneur ordonne… »). Le **joueur** pourra un jour prendre ce poste (ou un autre).
+
+### 15.3 Points d'attention, contradictions et ambiguïtés relevés
+
+| Point | Question | Proposition retenue |
+|---|---|---|
+| Pop « matière » ou « acteur » | le 2026-11-04 la pop est d'abord décrite comme acteur de base (homo economicus), puis comme « matière » | deux **niveaux de décision** : la pop décide en continu *dans ce qui est autorisé* (où travailler, quoi consommer, son stock) ; le personnage décide des **structures** (quoi bâtir, où, qui loger, quelles règles). Les pops libres, plus tard, pourraient être promues personnages (« chef d'exploitation ») |
+| Qui possède la récolte | si le seigneur est propriétaire, la pop travaille pour lui ; si elle est tenancière, elle garde sa récolte moins le champart | POC : **tenures** (les pops gardent le produit, moins le champart) ; pas de **réserve seigneuriale** exploitée en direct (à ajouter plus tard) |
+| Firme mono-secteur (principe 3) | les terres du seigneur couvrent plusieurs secteurs | le seigneur détient un **domaine** (ensemble de tiles, `Option`) ; les firmes mono-secteur viennent avec les capitalistes |
+| Naissances et installation | la croissance démographique n'est pas une décision | les pops naissent (jauge) ; **le logement est offert ou refusé par le seigneur** ; la famille reste par défaut |
+| Abandon : décidé ou subi | « gratuit » : par qui ? | **de fait** (inactivité, hameau vide, chantier sans progrès : fait) **et décidé** (le seigneur peut abandonner ou détruire ; `abandonner_*` sont déjà publiques) |
+| Émergence (principe 6) | un décideur à règles codées est-il de l'émergence ? | oui si ses règles sont des **données** (poids, seuils) et que la structure d'ensemble en ressort ; il ne place pas les hameaux |
+| Périmètre d'autorité | un seul décideur « pour l'instant » | le domaine du seigneur couvre toute la carte ; le modèle porte un identifiant de domaine pour en avoir plusieurs |
+
+### 15.4 Ordre de réalisation
+
+1. **Étape 4 bis** (fait). 2. **Étape 6** : personnage et poste, statut de serf, grenier et champart, maître d'ouvrage, `etendre` devient la politique du seigneur, panneau « Seigneur » dans l'app. 3. **Étape 5** : réglage des poids et durées, mesure sur plusieurs graines (noyaux de plusieurs pops, hameaux vides, échecs de fondation).
+
+## 16. Étape 6 réalisée : le seigneur local, les serfs, le grenier
+
+| Élément | Où | Contenu |
+|---|---|---|
+| Personnage | `monde.rs` `Personnage`, `Monde.personnages` | un seul : le **seigneur du village** (poste `seigneur_local`, domaine 0 = toute la carte), créé à la génération avec un grenier garni (`[seigneurie] grenier_initial`). Dévolution non implémentée |
+| Serfs | `Pop.statut` | toutes les pops sont `Serf` (champ nullable : `None` = libre, futur). Liberté du lieu de travail (inchangée), pas de liberté de construction ni d'installation |
+| Champart | `produire` | le seigneur prélève **12 %** de la production des terres en grain et en bois (`champart`, `champart_ressources`), en nature, versés à son grenier |
+| Train de vie | `train_de_vie` | il consomme chaque jour la ration d'une **demi-pop** sur son grenier |
+| Maître d'ouvrage | `Chantier.maitre` | tout chantier a pour maître le seigneur : **son grenier fournit le matériau** (les contrats de livraison depuis les producteurs ne servent plus aux chantiers), le reste du matériau lui revient, la main-d'œuvre est la corvée des pops |
+| Il ne lance que ce qu'il peut payer | `assez_de_materiau`, `bras_recrutables_depuis` | pas de chantier si son grenier ne couvre pas le bois (déjà engagé compris), ni si aucune pop à portée ne peut en former l'équipe. Un chantier qui manque de bois pèse sur la tension du bois (déjà en place) |
+| Décisions | `Simulation::etendre` | les décisions d'aménagement (logement, hameau, terre, remise en état) sont celles du seigneur ; il remet en état un hameau abandonné avant d'en fonder un, une terre abandonnée avant d'en défricher une |
+| Remise en état | `Cible::RemiseHameau`, `Cible::RemiseTerre` | voir §14 |
+| App | `PanneauInfos.vue`, `sim-wasm` | un bloc « Seigneur du village » (grenier de grain et de bois, chantiers qu'il finance, champart, nombre de serfs) |
+| Tests | `sim/tests/seigneur.rs` | un seigneur et des serfs, champart et conservation de la matière, train de vie, matériau payé par le grenier, rien sans grenier, coût de remise croissant avec l'usure, remise qui rend le logement |
+
+**Ce que la phase 6 ne règle pas (et mesure)** : sur 8 graines et 150 ans, sans réglage, 47 pops, 36 hameaux vivants de taille médiane **1**, 7 vides, **73 hameaux abandonnés et 207 détruits**, deux graines sur huit presque éteintes. Les hameaux détruits viennent surtout d'un cycle de **migration** : fonder un hameau déplace une pop (l'équipe de fondation s'y installe), ce qui vide l'ancien hameau, abandonné puis ruiné ; la fondation ne tient pas compte de la désertion qu'elle provoque. Le critère de décision du seigneur (valeur du site pour ses revenus) n'est pas encore réglé : c'est l'objet de l'étape 5.
+
+**Points ouverts**
+- Les **autres bâtiments inutilisés** (ateliers, futurs services) : même principe (usure, remise), à écrire avec eux.
+- **Banalités** (moulin, four) : la force de regroupement attendue ; le champart en nature est déjà là pour les financer.
+- **Dévolution** du poste, plusieurs seigneurs et domaines, pops libres promues personnages : voir §15.3.
+- La position du **grenier** n'est pas spatiale (transport comptable, principe 5) : à reprendre avec les banalités.
+
+## 17. Étape 5 réalisée : le réglage du peuplement
+
+**Mesure** : `sim-cli --mesure N --annees A` (tailles, hameaux vides, abandonnés, détruits). Avant réglage (8 graines, 150 ans) : 47 pops, 36 hameaux de taille médiane 1, **207 hameaux détruits**, deux graines presque éteintes.
+
+**Diagnostic** : en 150 ans, chaque village fondait ~40 à 50 hameaux, presque tous abandonnés puis ruinés. Deux mécanismes :
+1. **Migration en chaîne** : l'équipe d'une fondation s'installait dans le hameau neuf, ce qui **vidait l'ancien hameau** (abandonné après 2 ans, en ruine ensuite). La décision de fonder ne comptait pas cette désertion.
+2. **Fondation trop facile** : un site neuf n'avait à valoir que 1,5 fois mieux que de rester ; avec les destructions de tiles pour poser des routes, des sites lointains devenaient atteignables en permanence.
+
+**Corrections** (moteur)
+- Une fondation de hameau **ne prend jamais la dernière pop d'un hameau** (`recruter`, `migrer_vers`) ; la décision de lancer un chantier de fondation en tient compte (`bras_recrutables_depuis(.., fondation)`), pour ne pas lancer de chantier dont l'équipe ne peut pas être formée.
+
+**Réglage** (`poc.toml` `[peuplement]`, balayage sur 8 à 16 graines et 150 à 200 ans)
+
+| Paramètre | Avant | Après | Effet |
+|---|---|---|---|
+| `poids_voisins` | 0,15 | **1,0** | +100 % de valeur par pop à 4 tiles ou moins : l'agglomération pèse |
+| `rayon_voisinage` | 3 | **4** | |
+| `seuil_fondation` | 1,5 | **4,0** | un site neuf doit valoir 4 fois mieux que de rester |
+
+**Résultat** (16 graines, 200 ans) : 198 pops, 129 hameaux de taille médiane 1 (98 de 1 pop, 13 de 2, 5 de 3, 7 de 4, 2 de 5, 1 de 6 et **2 de 7**), 1 vide, **36 détruits** (contre ~200 pour 8 graines), aucune extinction. La majorité des hameaux est isolée et petite, avec **quelques noyaux de 4 à 7 pops (400 à 700 habitants)**.
+
+**Limites**
+- **Aucun noyau de 16 pops** : la population reste modeste (6 à ~12 pops par village en 150 ans), et les forces de regroupement manquantes (§1 : services à coût fixe, entraide aux pointes de travail, sécurité) ne sont pas là. C'est l'objet des **banalités** (moulin, four) du seigneur (§16).
+- Les durées de `[abandon]` et le champart n'ont pas été touchés ; le coût d'une fondation reste celui d'une maison (150 pop-jours) : l'arbitrage « agrandir ou créer » reste à calibrer avec l'économie des échanges.
+- Le réglage porte sur 8 à 16 graines : il est **statistique**, pas garanti graine par graine. Les tests (`sim/tests/peuplement.rs`) vérifient les ordres de grandeur : fondation sans désertion, pas d'extinction, au plus 30 hameaux détruits sur 6 villages et 150 ans, 70 % de hameaux de 1 à 2 pops, au moins 2 noyaux de 4 pops ou plus sur 7 villages et 200 ans.
+
+## 18. Accès par marche, routes décidées par le seigneur, terres en amas (2026-11-04)
+
+Décidé avec Jonathan après des bugs visibles à l'initialisation (deux chemins parallèles, chemin à travers un champ, route qui « entre » dans un champ, champs en lanières). Cause commune : l'accès passait par une **tile nœud** et par un réseau de routes obligatoire, ce qui fabriquait des entrées de champ, des détours et des lanières.
+
+| Règle | Détail |
+|---|---|
+| Marche | On marche sur **toute tile praticable** (hors eau, sans pont), 8 directions. Sur route : 10/14 par pas ; hors route : ×`cout_hors_route` (2,0) soit 20/28. Avec `distance_max = 100` : 10 tiles par la route, 5 à pied. |
+| Accès | Hameau, terre ou chantier est accessible par **n'importe laquelle de ses tiles**. Plus de nœud (principe 1 de CLAUDE.md reformulé) ; `Batiment.tuile` n'est plus qu'une tile de référence, protégée de la destruction. |
+| Route = bonus | La route ne conditionne plus l'accès : elle le rend moins cher. Son travail (`route_pop_jours_par_tile` = 5 pop-jours/tile) et sa pose sont une **décision du seigneur**. Une route peut rejoindre une route existante (plus de parallèles) et s'arrête à la lisière d'une terre (jamais dedans) ; elle ne détruit des tiles de terre que si elle en traverse une. |
+| Quand le seigneur ordonne une route | (a) à la fondation d'un site dont l'accès à pied dépasse `route_seuil_acces` × `distance_max` (0,5) ; (b) quand un trajet de travail à pied est très répété (`trajets` ≥ 60 sur la période), via `Cible::Route(hameau, terre)`. Un chantier de route à la fois. |
+| Choix des sites | Un site est admis s'il est à portée **comme si** les routes existaient (`distances_si_route`, l'eau se franchit alors par un pont à ×3) ; si l'accès réel dépasse le seuil, la route est planifiée avec le site. |
+| Chantiers | Une équipe aménage son accès en y allant : vers un chantier, un pas hors route coûte comme sur route (`distances_chantier`). |
+| Croissance en amas | `agrandir` pénalise la distance au centre de la terre (`poids_centre` 0,02) et favorise les tiles touchant une route ou un hameau (`poids_route` 0,15) : des blocs compacts, pas des lanières ni du patchwork. |
+| Scission | Sans nœud : les morceaux disjoints forment de nouvelles terres, budget de jours remis à zéro sur les clones (bug de conservation corrigé). |
+
+**Mesure** (8 graines, 150 ans) : 87 pops, 32 hameaux (médiane 3, max 8), 6 détruits, 3 abandonnés ; génération ≈ 0,26 s.
+**Tests** : `sim/tests/acces.rs` (marche ×2 hors route, accès par toute tile, aucune route dans une terre, pas de lanières), invariants/terrain/seigneur/peuplement adaptés.
+**Limites** : pas encore de maintenance des routes (prolifération possible, prévue plus tard) ; seuils (×2, 0,5, 5 pj/tile, 60 trajets) à régler ; un hameau abandonné n'est remis en état que s'il est joignable à pied.
+
+## 19. Lisibilité, saisons du grain, but du seigneur (2026-11-05)
+
+### 19.1 Fiches (app)
+| Fiche | Contenu |
+|---|---|
+| Pop | statut (serve), seigneur et champart, **état d'esprit** (satisfaite, insatisfaite, en manque) ; ce qu'elle possède (jours de réserve) ; **besoins vitaux** et **confort** en tableaux séparés (ration, stock, couverture) ; **ce que cela change** (mortalité, croissance, logement) ; accès (lieux à portée, hors de portée) |
+| Lieu de travail (terre) | propriétaire et champart, produit (et production d'hier), travail nécessaire, pops qui peuvent y travailler / qui y travaillent, stock de sortie ; pour le grain : saison, travail fait, calendrier, semences, récolte attendue |
+| Tile vierge | fertilité par type de culture (déjà en place), travail de conversion, coût de construction |
+
+### 19.2 Saisons du grain (champ uniquement)
+Données : `saisons` du champ dans `poc.toml`. Trois étapes, en jours de l'année : **labour 45–125** (35 % du travail annuel), **semis 125–160** (15 %), **récolte 190–270** (50 %). Le travail annuel total est celui de l'ancien modèle continu.
+| Règle | Détail |
+|---|---|
+| Demande | hors fenêtre, la terre ne réclame aucun travail ; en fenêtre, elle réclame ce qui reste de l'étape. En saison, le calendrier prime sur les besoins de la pop (classe vitale) |
+| Récolte | tombe d'un coup, au prorata du travail ; champart (12 %) au grenier du seigneur ; **semences** (20 %) mises en réserve dans la terre (`stock_entree`) ; le reste dans la grange (`stock_sortie`), qui alimente les hameaux toute l'année |
+| Perte | à la fin d'une fenêtre, la part non travaillée **retombe en tile libre** (les tiles les plus éloignées du centre ; la terre se scinde si besoin) ; semis limité par les semences disponibles |
+| Semences | prises dans la grange de la terre, puis **avancées par le seigneur** sur son grenier ; la première année, fournies par le village |
+| Grange | capacité 1,5 récolte (`grange_recoltes`) : pleine, on ne récolte plus, **sans perdre de tile** |
+| Départ | le 1er janvier, la grange contient le reste de la dernière récolte jusqu'à la prochaine |
+| Choix retenu | **pas de jachère** pour l'instant (décision du 2026-11-05) |
+
+### 19.3 But du seigneur (option A)
+| Règle | Détail |
+|---|---|
+| Revenu | le champart, donc le nombre de serfs |
+| Réserve | `reserve_annees` = 1 an de ration nutritive du village dans le grenier |
+| Surplus investi | au-delà de la réserve : des **logements d'avance** (`marge_logement` = 25 % des pops) |
+| Garde-fou | pas de champ de plus si ≥ 4 tiles ont été perdues faute de bras dans l'année (c'est le bras qui manque, pas la terre) |
+| **Ajout non demandé** : secours | sous 3 jours de réserve (nourriture, chauffage), le seigneur sert la pop sur son grenier (`secours_jours`, 0 pour l'ôter). Sans cela les serfs avaient faim à la soudure alors que le grenier débordait |
+
+### 19.4 Mesure et limites
+8 graines, 150 ans : 66 pops, 30 hameaux (médiane 2), aucune extinction sauf une graine à 3 pops. Les villages se stabilisent autour de **8 à 10 pops** (le pic de travail de saison borne la surface cultivable) ; peu de fondations de hameaux en 150 ans (croissance 1,5 %/an).
+Le grenier continue de grossir : le seigneur n'a pas encore de dépense à la mesure du champart (banalités, train de vie proportionnel : option B).
+Tests : `sim/tests/saisons.rs` ; plusieurs tests d'équilibre long (sans extension, fondations) ont été adaptés.

@@ -42,17 +42,32 @@ La difficulté centrale : pour l'**économie**, gérer de vraies populations pos
 
 - **Unité fixe : 100 habitants.**
 - Une pop est **homogène** sur ses attributs discrets : une seule tile de résidence, un seul lieu de travail, une seule strate (paysan, ouvrier, bourgeois, domestique, noble…), une seule culture, une seule religion, une seule orientation.
-- Plusieurs pops cohabitent sur une même tile : la tile quartier est une **capacité de logement** (1 000 hab pour le quartier rural du POC), qui varie avec le type de bâtiment et la densité.
+- Plusieurs pops cohabitent sur une même tile : la tile d'habitat (250 m × 250 m) est une **capacité de logement** (2 pops pour un hameau du POC ; plafond de 10 pops = 1 000 hab, soit ~160 hab/ha, pour un quartier dense), qui varie avec le type de bâtiment et la densité.
 - Un quartier riche mélange des pops de strates différentes sur la même tile (ex. : bourgeois + domestiques) ; les domestiques y habitent et y travaillent (lieu de vie pour les uns, lieu de travail pour les autres), sans mécanique supplémentaire grâce au flux unifié.
 - Chaque pop porte une **richesse** et des **droits politiques**.
 
+### Décision de modélisation : bloc discret, pas pop fluide
+Une pop est un **bloc discret et homogène** (comme dans Imperator Rome), pas une quantité fluide (0–1 000 hab, pourcentages de culture / religion / alphabétisation, contribution partielle à plusieurs lieux). Raisons :
+- l'affectation reste un **simple lien** (1 pop → 1 résidence, 1 emploi nullable) au lieu d'une matrice many-to-many ;
+- les pourcentages (part de lettrés, de catholiques…) **se déduisent en comptant les pops** : rien à stocker ni à renormaliser ;
+- une pop est quasi un individu : elle peut fournir un porte-parole (leader), se révolter, être citée dans un événement ;
+- coût faible (1 M d'habitants = 10 000 pops).
+
+Précisions :
+- **Résidence ≠ travail** : la pop consomme à sa résidence et produit à son lieu de travail ; le trajet est un flux de main-d'œuvre qui sollicite l'infrastructure (flux unifié). La main-d'œuvre d'un bâtiment = somme des pops qui lui sont affectées. Une pop sans emploi compte comme chômeuse.
+- **Âge et condition individuelle ignorés** : la main-d'œuvre se compte **en pops**, jamais en individus. Une pop employée = une unité de main-d'œuvre ; une pop sans emploi est une chômeuse.
+- **Équivalence de calibration** (hypothèse historique, hors moteur) : ~50 % des habitants travaillent, donc 1 pop ≈ 50 travailleurs réels. Un atelier textile de 1850 qui emploie 100 personnes s'écrit **2 pops** dans le jeu. Ce taux sert uniquement à convertir des chiffres historiques en pops ; il n'apparaît ni dans le schéma, ni dans les formules, ni dans les effectifs des bâtiments (exprimés directement en pops).
+- **100 est un paramètre, pas une structure** : si la granularité gêne, on peut passer à 50 ou 20 hab/pop sans changer les règles.
+
 ### Démographie (dans le POC)
-- La **natalité et la mortalité** dépendent de la **satisfaction des besoins** de la pop (voir `02` §6). La croissance nette s'accumule par tile quartier : à +100, une **nouvelle pop** de 100 est créée (dans la limite de la capacité de logement) ; à −100, une pop disparaît.
-- Population bornée par la capacité de logement : dans le POC, personne ne crée de quartier, la **saturation** est un résultat observé.
+- La croissance dépend de la **couverture des besoins** (vitaux et de confort, voir `02` §6). Chaque pop porte une **jauge de croissance** alimentée chaque jour : à +100 habitants elle se **duplique** (la nouvelle pop se loge dans son hameau, ou le plus proche qui a de la place) ; à −100 elle **disparaît**. Une pop ne « meurt » pas vraiment : elle représente une centaine d'habitants homogènes, et en cas de baisse de la population globale des unités disparaissent.
+- Jauge déterministe plutôt que tirage de dé quotidien : même espérance (+1,5 % / +0,5 % / déclin), mais rejouable et explicable (« pourquoi cette pop a disparu ? »), comme pour la conversion culturelle.
+- Population bornée par la capacité de logement : dans le POC, personne ne crée de logement, la **saturation** est un résultat observé.
+- La satisfaction du **confort** servira plus tard à la promotion vers d'autres classes.
 
 ### Évolutions (hors POC)
 - **Mobilité** : une pop peut déménager (résidence), changer de travail, changer de strate (paysan → ouvrier).
-- **Bascule culturelle, religieuse, d'orientation** : ces attributs sont fixes pour une pop, mais une pop peut *basculer* sous certaines conditions (assimilation, école, urbanisation, État…), avec éventuellement une part d'aléa. Exemple : une pop bretonne dans l'État français peut devenir française.
+- **Bascule culturelle, religieuse, d'orientation, alphabétisation** : ces attributs sont fixes pour une pop, mais une pop peut *basculer* en bloc sous certaines conditions (assimilation, école, urbanisation, État…). Mécanisme retenu : une **jauge de pression de conversion** continue, portée par la pop et alimentée par ces conditions ; la pop bascule quand elle franchit un seuil (pas de tirage de dé à chaque tick : déterministe, rejouable, explicable). Une part d'aléa reste possible sur le seuil. Exemple : une pop bretonne dans l'État français peut devenir française.
 - **Poids politique** d'une pop = effectif × droits × richesse ; la forme du calcul dépend du régime (universel : les têtes ; censitaire : la richesse ; Ancien Régime : le statut). Les types de vote sont donc des paramètres, pas un système à part.
 
 ## 4. Les personnages

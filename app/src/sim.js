@@ -1,0 +1,49 @@
+// Pont JavaScript vers le moteur Rust compilé en WebAssembly (voir sim-wasm/src/lib.rs).
+// Une seule simulation ; chaque appel qui écrit renvoie la longueur du JSON à lire dans le tampon.
+
+export async function chargerSim(urlWasm) {
+  const reponse = await fetch(urlWasm)
+  if (!reponse.ok) throw new Error(`moteur introuvable (${urlWasm} : ${reponse.status})`)
+  const { instance } = await WebAssembly.instantiate(await reponse.arrayBuffer(), {})
+  const w = instance.exports
+  const decoder = new TextDecoder()
+  const lire = (n) => decoder.decode(new Uint8Array(w.memory.buffer, w.sim_sortie_ptr(), n))
+  const json = (n) => JSON.parse(lire(n))
+
+  return {
+    /** Crée un village. Lève une erreur si aucune disposition valide n'est trouvée. */
+    creer({ graine = 1, hameaux = 4, occupation = 80 } = {}) {
+      if (w.sim_creer(graine >>> 0, hameaux, occupation) !== 0) {
+        throw new Error(lire(w.sim_sortie_len()))
+      }
+    },
+    avancer: (jours) => w.sim_avancer(jours),
+    meta: () => json(w.sim_meta_json()),
+    carte: () => json(w.sim_carte_json()),
+    /** `depuis` : nombre d'événements déjà reçus (le moteur ne renvoie que les nouveaux). */
+    etat: (depuis = 0) => json(w.sim_etat_json(depuis)),
+    /** Détail d'une pop : stock, rations, lieux possibles et raison du choix du jour (null si elle a disparu). */
+    pop: (id) => json(w.sim_pop_json(id)),
+    /** Où une ressource est produite, stockée, expédiée et consommée. */
+    ressource: (r) => json(w.sim_ressource_json(r)),
+    /** Tiles du chemin du hameau `q` au bâtiment `b`. */
+    chemin: (q, b) => json(w.sim_chemin_json(q, b)),
+    /** Aptitude de chaque tile pour un type de terre (index dans `meta.batiments`), en % de 1,0 (0 à 255), ligne par ligne. */
+    aptitude(type) {
+      const n = w.sim_aptitude(type)
+      return new Uint8Array(w.memory.buffer, w.sim_aptitude_ptr(), n).slice()
+    },
+    /** Fertilité locale de chaque tile en % (0 à 130), ligne par ligne. */
+    /** Terrain de chaque tile : 2 octets (terrain ; gabarit d'eau bits 0-1 et sens de l'aval bits 2-4), ligne par ligne. */
+    terrain() {
+      const n = w.sim_terrain()
+      return new Uint8Array(w.memory.buffer, w.sim_terrain_ptr(), n).slice()
+    },
+    /** Vacance de chaque tile : 2 octets (années de friche, années avant la forêt ; 255 : ne repousse pas), ligne par ligne. */
+    vacance() {
+      const n = w.sim_vacance()
+      return new Uint8Array(w.memory.buffer, w.sim_vacance_ptr(), n).slice()
+    },
+    fertilite: () => new Uint8Array(w.memory.buffer, w.sim_fertilite_ptr(), w.sim_fertilite_len()).slice(),
+  }
+}

@@ -1,3 +1,10 @@
 __pycache__/
 *.pyc
 graphGeneration/out/
+target/
+Cargo.lock.bak
+sim-wasm/target/
+node_modules/
+app/dist/
+app/public/sim_wasm.wasm
+app/public/assets/apercu.png

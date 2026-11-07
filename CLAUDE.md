@@ -15,10 +15,10 @@ Distribution visée : Steam. Licence : Apache 2.0.
 
 | Couche | Techno |
 |---|---|
-| Shell desktop | Electron |
+| Shell desktop | Electron (Tauri écarté) |
 | UI | Vue 3 |
 | Rendu | PixiJS (WebGL) |
-| Moteur de simulation | **Rust** via napi-rs (addon `.node`) — Rust dès le départ, pas de migration ultérieure |
+| Moteur de simulation | **Rust** via napi-rs (addon `.node`) pour Steam ; WebAssembly pour démos/tests — Rust dès le départ. Cible d'échelle : centaines de milliers d'objets (`docs/03` §5b) |
 | Persistance | SQLite, mode WAL, via `rusqlite` |
 | Pont | Node.js (main process Electron) ↔ renderer par IPC (deltas uniquement) |
 | IA embarquée (plus tard) | node-llama-cpp + Qwen 2.5 3B Q4_K_M, sortie JSON via GBNF — **hors POC** |
@@ -33,12 +33,24 @@ Distribution visée : Steam. Licence : Apache 2.0.
 | `docs/03-architecture.md` | Architecture technique, schéma de données, pipeline de rendu (technique) |
 | `docs/04-poc.md` | Périmètre exact du POC, calibration des quantités, critères de succès |
 | `docs/05-roadmap-et-questions.md` | Ce qui est reporté, questions ouvertes, points à trancher |
+| `docs/06-fertilite-cible.md` | Réflexions sur la fertilité cible (aptitude sol/culture) ; hors POC |
+| `docs/07-peuplement-emergent.md` | Peuplement émergent, carte de plaine à champs ouverts, terrains, rivières, forêts, règles de site, abandon et destruction ; étapes 1 à 6 réalisées (carte, aptitude, défrichement, peuplement, abandon, seigneur et serfs, réglage) + accès par marche et routes décidées par le seigneur (§18), banalités à venir |
+| `docs/08-concept-subsistance.md` | Concept de subsistance pour une pop : grain, bois, vêtement, prélèvement 15 %, transport, décision quotidienne, consommation mensuelle (décisions du 2026-11-07, hors code actuel) |
+
+## Code
+
+| Dossier | Contenu |
+|---|---|
+| `sim/` | Moteur Rust pur + CLI headless (`cargo run --release --bin sim-cli`), tests d'invariants (`cargo test --release`). Voir `sim/README.md` |
+| `sim-wasm/` | Pont WebAssembly du moteur (interface C, instantanés JSON) ; `node sim-wasm/test.mjs` |
+| `app/` | Application web : carte PixiJS + interface Vue 3 + moteur en WebAssembly. Voir `app/README.md` |
+| `graphGeneration/` | Générateur d'assets : atlas de 49 tiles dans `app/public/assets/` (référence graphique) |
 
 ## Principes non négociables
 
-1. **Les tiles sont des unités comptables, pas des surfaces géographiques fixes.** La surface implicite varie selon le type (un champ ≈ 5 km², un quartier rural ≈ 0,5 km²).
+1. **Une tile = une surface réelle fixe : 250 m × 250 m (6,25 ha)** (décision du 2026-11-02, remplace l'ancienne « unité comptable à surface variable »). Les distances en tiles ont un sens réel (10 tiles = 2,5 km ≈ 30–50 min à pied). C'est l'**emprise** et la **densité** qui varient selon le type : une terre exploitée = bâtiment de N tiles contiguës, accessible par n'importe laquelle de ses tiles (plus de tile « nœud », `docs/07` §18), un hameau = 1 tile (2 pops), plafond 10 pops/tile (voir `docs/02` §1 et §8).
 2. **Les tiles sont passives** (données en SQLite, hors boucle de tick). **Les bâtiments sont actifs** (nœuds d'un graphe en mémoire).
-3. **La Firme est l'acteur économique**, pas le bâtiment. Un groupe possède des firmes mono-secteur.
+3. **Le personnage est le décideur politico-économique** ; la **Firme** est l'entité économique qu'il possède ou gère (pas le bâtiment ; un groupe possède des firmes mono-secteur) ; la **pop** est l'unité de travail et de consommation, autonome dans ce qui lui est ouvert (où elle travaille, ce qu'elle consomme, son stock) mais qui ne décide ni des règles ni des constructions. *(Reformulé le 2026-11-04, voir `docs/07` §15.)*
 4. **Flux unifié** : la main-d'œuvre est une ressource comme les autres (produite par les quartiers, consommée par la production, soumise à la même congestion).
 5. **Transport comptable** (style Victoria 3) : les marchandises « téléportent » de stock à stock au tick suivant ; l'infrastructure est sollicitée au tick du **transfert** (J+1), pas de la production (J).
 6. **Émergence, pas de scripts** : le ratio habitat/production, la concentration capitaliste, l'urbanisation doivent *émerger* des règles, jamais être codés en dur.

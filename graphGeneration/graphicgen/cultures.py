@@ -33,6 +33,13 @@ CULTURES = {
         slope=0.62, tile_row=0.34, tile_col=0.28, seam=0.38, col_seam=0.22,
         jitter=0.12, main_w=(8.0, 12.0), main_d=(5.5, 7.5),
         wing_prob=0.45, hip_prob=0.35, chimney_max=3, metal_patches=True),
+    # Maison en bois (seul matériau de construction du POC) : toit de bardeaux de bois patinés.
+    "bardeau": Culture(
+        "bardeau",
+        ((166, 130, 88), (148, 116, 80), (178, 146, 102), (132, 106, 74)),
+        slope=0.60, tile_row=0.30, tile_col=0.9, seam=0.22, col_seam=0.0,
+        jitter=0.12, main_w=(5.5, 8.0), main_d=(4.2, 5.6),
+        wing_prob=0.25, hip_prob=0.35, chimney_max=1, metal_patches=False),
     "chaume": Culture(
         "chaume",
         ((156, 132, 82), (138, 114, 70), (170, 148, 100), (120, 98, 62)),

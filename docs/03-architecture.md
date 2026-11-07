@@ -32,18 +32,37 @@ Rust : moteur, graphe, économie, pathfinding, décisions des personnages. Node 
 ### Pourquoi Rust dès le départ
 Pas de GC (pas de micro-freezes), compilé natif, parallélisme réel (Rayon). Coût accepté : un binaire `.node` par plateforme (Windows x64, macOS ARM, Linux x64) à gérer dans le build (electron-builder).
 
+### Organisation du code et de l'exécution
+- Crate Rust **`sim` pure** (aucune dépendance à napi) : moteur, déterminisme, tests. Un **CLI headless** l'exécute sans interface.
+- Wrapper **napi-rs** mince pour Electron. En dev, le renderer est une page web ordinaire (Vite) reliée à la sim par un petit serveur local : pas d'Electron avant le packaging Steam (Electron ou Tauri à trancher à ce moment).
+- Rendu validé visuellement en Chromium headless (captures).
+
+### Hôte actuel : le navigateur (WebAssembly)
+Pour le POC, le moteur tourne **dans la page** : `sim-wasm` compile la crate `sim` en WebAssembly (interface C, sans `wasm-bindgen`) et expose des instantanés JSON ; `app/` (Vue 3 + PixiJS) les affiche. Aucun serveur, aucun pont Node : la page marche dans un navigateur, un Artifact, et plus tard dans Electron. Le moteur natif (napi-rs) reste l'hôte prévu pour la version Steam ; seul l'hôte change, pas la crate `sim`.
+
+### Décision d'hôte pour Steam (tranchée après le POC)
+
+| Hôte | Rôle | Raison |
+|---|---|---|
+| **Electron + napi-rs** | Version Steam | Multi-thread réel (Rayon), mémoire non bornée, Chromium identique sur toutes les plateformes. Coût : un binaire `.node` par plateforme, paquet plus lourd |
+| WebAssembly (`sim-wasm`) | Démonstrations, Artifact, tests visuels | Déjà en place ; limites : 4 Go (wasm32), threads soumis à `SharedArrayBuffer` + COOP/COEP, 10–30 % plus lent que le natif |
+| ~~Tauri~~ | Écarté | WebViews variables selon l'OS (WebKitGTK médiocre en WebGL) : risque inacceptable pour un jeu |
+
+Le moteur tourne **hors du thread de rendu** (`utilityProcess` Electron ou Worker en wasm). La crate `sim` reste unique et pure.
+
 ## 2. Tiles passives, bâtiments actifs
 
 | | Tiles | Bâtiments |
 |---|---|---|
 | Rôle | Données géographiques | Agents |
-| Stockage | SQLite | Mémoire (graphe) + persistance SQLite |
+| Stockage | **Mémoire** (`Vec`, 40 000 tiles en POC) ; SQLite pour la sauvegarde | Mémoire (graphe) + persistance SQLite |
 | Dans la boucle de tick | **Jamais** | Oui |
 | Sollicitées pour | Rendu, recherche d'emplacement | Production, échanges, stocks |
 
 - Les tiles ne sont lues que pour : **le rendu** (chunks sous la caméra) et **le placement** (recherche spatiale ponctuelle).
 - **Chunking** (16×16 ou 32×32) : mémoire active = chunks visibles + un anneau tampon ; le reste sur disque. Le joueur voit 200×200 tiles ; un déplacement de caméra charge les voisines.
-- Recherche d'emplacement : requête SQL indexée sur `(city_id, x, y)` — quelques ms même sur des millions de tiles, acceptable car rare (un personnage décide tous les ~30 jours, jamais à chaque tick).
+- **POC** : 200×200 = 40 000 tiles tiennent en mémoire ; SQLite sert à la sauvegarde / chargement (schéma versionné). Le chunking et la base spatiale concernent l'échelle finale.
+- Recherche d'emplacement : requête SQL indexée sur `(city_id, x, y)` au stade POC (rare : un personnage décide tous les ~30 jours). À l'échelle finale : index spatial en mémoire (voir §5b).
 
 ## 3. Graphe de connectivité (option B)
 
@@ -69,8 +88,8 @@ Tile
   firme_id        (nullable)
   capacite_max
   stock           { ressource: qte }
-  capacite_logement (si quartier ; population = Σ des pops de la tile)
-  croissance_accumulee (si quartier ; natalité / mortalité, voir `02` §6)
+  capacite_logement (si habitat ; population = Σ des pops de la tile)
+  fertilite       (ppm de 1,0 ; multiplie la production des terres exploitées ; le terrain reste unique)
   valeur_fonciere (non utilisé POC)
 
 Firme
@@ -107,34 +126,78 @@ Contrat
   qualite         (non utilisé POC)
 
 Pop (unité de population, 100 hab fixe)
-  id, tile_residence_id, tile_emploi_id (nullable)
+  id, tile_residence_id, tile_emploi_id (nullable : lieu de travail du jour, un seul)
+  stock           { ressource: qte }   (inventaire personnel : la pop consomme sur son propre stock, 02 §10.4)
+  motif           (pourquoi ce lieu aujourd'hui : classe vital | confort | intrant | entretien, ressource visée) ; travail_du_jour, travail_lisse
+  croissance      (jauge en micro-habitants : +100 hab = duplication, −100 hab = disparition)
   strate          : paysan | ouvrier | bourgeois | domestique | noble …
-  culture, religion, orientation   (fixes en POC ; bascule hors POC)
+  culture, religion, orientation, alphabetise   (fixes en POC ; bascule hors POC)
+  pression_conversion   (nullable, non utilisé POC : jauge continue, bascule au franchissement d'un seuil)
   richesse, droits_politiques      (nullable, non utilisé POC)
 
-Quartier (état agrégé d'une tile quartier, calculé depuis les pops)
-  population, actifs_disponibles, taux_chomage
-  satisfaction_jour, satisfaction_annuelle
+Hameau / Quartier (tile d'habitat)
+  habitat_id (hameau | hameau_textile), capacite_pops (0 pendant la construction), atelier (nullable : bâtiment à 1 poste sur la même tile)
+  stock (réserve commune, sans habitant seulement), vital_jour, confort_jour, couverture par ressource (moyennes de ses pops), vital_annuel, confort_annuel
   salaire_reference (POC-B)
 
 Batiment (type)
-  secteur, intrants [{ressource, qte}], extrants [{ressource, qte}]
-  emploi, niveau_tech, contraintes_geo
+  secteur, etapes [{intrants [{ressource, qte}], extrants [{ressource, qte}]}]   (étapes enchaînées le même jour)
+  emploi (en pops), fertile (production × fertilité de la tile), cout_creation (travail en pop-jours, équipe, matériau), chantier (type de site : défrichement ou construction), niveau_tech, contraintes_geo
 ```
 
 Ressources : `MAIN_OEUVRE` est une ressource ordinaire (stock dans le quartier, circule par liens, contribue à la congestion). Liste POC dans `04-poc.md`.
 
 ## 5. Ordres de grandeur (cible)
 
-| Objet | Quantité | Remarque |
-|---|---|---|
-| Tiles monde | millions | Passives, en base |
-| Bâtiments actifs | 5 000 – 20 000 | En mémoire |
-| Pops | à estimer (1 pop = 100 hab) | Objet de base de la population ; flux agrégés par (résidence, emploi, strate) |
-| Personnages | ~10 000 | Créés par des postes (voir `00`), règles légères, pas tous à chaque tick |
-| Firmes | ~1 000 | |
+> Révisé après le POC : l'ambition est de l'ordre de **centaines de milliers** d'objets (l'ancienne cible, 5–20 k bâtiments, est abandonnée). Chiffres à valider par un banc d'essai (reporté, voir `05`).
 
-Principe : **on simule finement ce qui est observé** ; les zones inactives n'évoluent que par agrégats simples et « se déploient » quand on y zoome. Résolution variable selon le niveau de zoom.
+| Objet | Cible | Mémoire estimée (SoA, ~64–128 o/objet) | Remarque |
+|---|---|---|---|
+| Tiles monde | ~4 M (2 000×2 000) | ~20–40 Mo | Passives, quelques octets chacune. **Attention** : avec la tile fixe de 250 m (`02` §1), 4 M de tiles = 500 × 500 km (~½ France) ; le monde habité en 1750 (~20 M km²) = quelques centaines de millions de tiles (voir `05`, question 0 : terre = 1 nœud pour N tiles, terrain inactif en raster passif) |
+| Bâtiments actifs | 300–500 k | ~50 Mo | En mémoire, tableaux denses |
+| Pops (1 pop = 100 hab) | 100–300 k (10–30 M d'habitants) | ~30 Mo | Flux agrégés par (résidence, emploi, strate) |
+| Personnages | 10–50 k | négligeable | Créés par des postes (voir `00`), règles légères, pas tous à chaque tick |
+| Firmes | ~1 000 – 10 000 | négligeable | |
+
+Principe : **on simule finement ce qui est observé** ; les zones inactives n'évoluent que par agrégats simples et « se déploient » quand on y zoome. Résolution variable selon le niveau de zoom. L'agrégat doit être *dérivé* des règles détaillées, jamais codé en dur (principe n°6).
+
+Le risque à cette échelle est **algorithmique** (un tick qui touche tout, une recherche de chemin non bornée), pas le langage : Rust suffit.
+
+## 5b. Passage à l'échelle — principes retenus
+
+À appliquer **après** le POC (dette connue du code actuel : `BTreeMap` dans la boucle chaude, instantanés JSON, rendu sans chunks).
+
+### Moteur (`sim`)
+| Sujet | Règle |
+|---|---|
+| Structures | Tableaux denses indexés par `u32` (SoA, un tableau par champ). Plus de `BTreeMap` dans la boucle chaude |
+| Déterminisme | Conservé par construction : entiers, ordre fixe des indices, RNG maison. Parallélisme (Rayon) **par région / chunk**, fusion dans un ordre fixe |
+| Fréquences | Bâtiments : chaque jour. Pops : par lots (1/N par jour) ou à l'événement. Personnages : tous les ~30 jours |
+| Calcul événementiel | Liste d'éléments « actifs / sales » : un stock inchangé n'est pas recalculé |
+| Zones non observées | Modèle agrégé dérivé des règles, détaillé à la demande |
+| Réseau | Chemins bornés et précalculés (déjà le cas), recalcul **local** à chaque modification d'infrastructure ; hiérarchie de chunks pour les longs trajets |
+
+### Pont moteur → rendu
+- **Plus d'instantané JSON du monde.** Le moteur expose `viewport(x0, y0, x1, y1)` et renvoie des **tableaux typés** (`u16`/`u32` : position, type, état) lus directement dans la mémoire wasm / un `SharedArrayBuffer` / un buffer napi.
+- **Drapeaux « sale » par chunk** : le rendu ne relit que les chunks modifiés depuis le dernier frame.
+- Statistiques globales et courbes : petits agrégats séparés.
+
+### Rendu (PixiJS)
+| Zoom | Technique |
+|---|---|
+| Proche | Sprites d'atlas par chunk ; pops en points ou sprites |
+| Moyen | Terrain en maillage par chunk 32×32 (1 draw call par chunk) ; bâtiments en `ParticleContainer` |
+| Lointain | Une texture agrégée par chunk (régénérée quand le chunk est sale) ; carte de densité à la place des pops |
+
+- Chunks hors caméra libérés, anneau tampon d'un chunk.
+- Seul le **visible** coûte : 500 k bâtiments en mémoire n'ont pas de coût de rendu.
+- Tiles 256 px trop lourdes pour un atlas à centaines de types : prévoir des niveaux de textures (256 / 128 / 64) et un mipmapping maîtrisé.
+- WebGL2 suffit ; WebGPU (PixiJS v8) reste une option, non nécessaire.
+
+### Persistance
+- SQLite **hors de la boucle de tick** : sauvegarde et séries historiques uniquement.
+- Sauvegarde = **instantané binaire compressé** (`bincode` + `zstd`) stocké en blob, schéma versionné.
+- Recherche d'emplacement : **index spatial en mémoire** (grille de chunks), plus de requête SQL dans le chemin de décision (remplace la requête indexée de §2 à l'échelle finale).
 
 ## 6. Rendu — architecture technique
 
@@ -145,15 +208,40 @@ Principe : **on simule finement ce qui est observé** ; les zones inactives n'é
 - **Texture atlas** (spritesheet PNG + JSON) pour les performances.
 - Vue strictement **top-down**.
 
-### Modèle des demi-directions (infrastructure)
-- Une tile d'infrastructure porte des **demi-connexions** du centre vers le bord, dans jusqu'à **8 directions** (orthogonales + diagonales), **4 actives max** par tile.
-- Deux tiles sont connectées quand leurs demi-directions **en vis-à-vis** sont présentes des deux côtés.
-- Supporte culs-de-sac, routes orthogonales et diagonales, tiles mixtes infra/habitat.
-- Coût d'ajout d'une demi-direction dominé par le **déplacement d'habitations existantes** → capture la dynamique haussmannienne sans règle dédiée.
-- Assets : une variante par combinaison de demi-directions (`infra_chemin_terre_*`).
+### Infrastructure : arêtes et rendu en courbes (décision du 2026-11-02)
+- L'infrastructure est une **couche d'arêtes** entre centres de tiles voisines : **8 directions, 4 demi-arêtes actives max par tile**. Elle n'occupe pas la tile, qui garde son terrain et son bâtiment (modèle : `02` §9).
+- Supporte culs-de-sac (demi-arête = impasse), routes orthogonales et diagonales, tiles mixtes route/habitat.
+- Coût d'ajout dominé par le **déplacement d'habitations existantes** → capture la dynamique haussmannienne sans règle dédiée (`02` §9.3).
+- **Rendu** : une courbe lissée par chemin dans la couche 1, passant par les centres de tiles avec un décalage déterministe (décroissant avec l'urbanisation), tracée par chunk et mise en cache. **L'atlas de chemins par masque (`infra_chemin_terre_*`, 15 variantes) est abandonné pour le réseau** ; le hameau et le chantier gardent leur placette. La lumière (jour/nuit) est une teinte appliquée en rendu, pas précalculée.
+- Référence visuelle : `docs/maquettes/routes-250m.html`.
+
+### Terres sur N tiles
+Une terre exploitée occupe N tiles contiguës d'un même bâtiment : le rendu pose sur chaque tile une **texture raccordable** (`*_plein`, `04`) et trace une **haie** (champs, lin) ou une **clôture** (pâturage, laine) seulement le long des côtés qui ne touchent pas la même terre. Les terres sont sous les routes, qui peuvent les traverser. La sélection d'une tile met en évidence toute l'emprise.
+
+### Habitations : une maison par pop (décision du 2026-11-02)
+- **Une maison = une pop** (100 hab.) : la tile d'habitat affiche autant de sprites que de pops (1 à 10 pour le bâti bas ; au-delà, le type de bâtiment change, `02` §9.4).
+- **Taille exagérée** : environ 1/3 de la largeur d'une tile (une maison réelle fait 9 m sur 250 m), comme la largeur des routes (12 % d'une tile). Valeurs retenues à la validation visuelle.
+- **Placement** : le long de l'arête qui dessert la tile, avec un décalage déterministe (hash de la position et de la graine). **Orientation** : face à l'arête, par rotation continue du sprite.
+- Un sprite orienté librement impose des sprites **éclairés au zénith, sans ombre portée** (déjà le cas) ; le ré-éclairage par shader reste reporté (`05`).
+- **Chantier** : un sprite de maison en construction par maison en cours (un seul chantier de maison à la fois par pop à loger).
 
 ### Sprites d'ambiance
-Sprites stochastiques (piétons, charrettes, plus tard locomotives) sur les tiles d'infrastructure, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
+Sprites stochastiques (piétons, charrettes, plus tard locomotives) le long des arêtes, **densité proportionnelle à la charge** du segment. Aucun suivi d'entité individuelle : c'est une visualisation de `charge_courante`, pas une simulation.
 
 ## 7. Outillage d'assets
-Un nouveau pipeline de génération d'assets remplace l'ancien générateur Python/Pillow (abandonné pour son rendu). Conventions conservées : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifest JSON.
+Le générateur `graphGeneration/` (Python/Pillow/numpy) **fait référence** pour les assets. Conventions : nommage par catégorie (`terrain_*`, `infra_*`, `bat_*`), variantes multiples par type pour éviter la répétition visuelle, manifeste JSON.
+
+```bash
+cd graphGeneration && python generate_assets.py [--seed N] [--apercu]   # écrit dans app/public/assets/
+```
+
+| Sortie | Contenu |
+|---|---|
+| `atlas.png` + `atlas.json` | 49 tiles de 256×256 : herbe (10 variantes raccordables), 15 chemins, hameaux, terres, chantiers |
+| `relief/` | Pour les hameaux (les seuls à avoir du relief) : image **sans éclairage directionnel** (`*_albedo.png`) et **carte de normales** (`*_normal.png`) |
+
+- **Lumière : soleil au zénith.** Aucune ombre portée ; seule une légère assise de contact sous les objets. Le relief des toits est cuit (pans symétriques). Pour une **lumière en rotation**, un shader ré-éclairera les hameaux à partir de l'albedo et des normales, sans régénérer. Le jour/nuit reste une teinte globale en rendu.
+- **Raccords.** Les chemins sont indexés par **masque de demi-directions** (N=1, E=2, S=4, O=8, mêmes valeurs que le moteur) et leur profil au bord est identique d'une tile à l'autre (bruit périodique) : pas de couture visible. L'herbe est raccordable et toutes ses variantes ont la même couleur moyenne.
+- **Couches.** 0 terrain, 1 infrastructure, 2 bâtiments. **Les hameaux n'embarquent pas leurs rues** : le rendu pose sous le hameau (et sous le chantier de hameau) le chemin du masque des voisins réellement raccordés. Le hameau garde seulement une placette de terre battue.
+- **Un chantier, deux images.** Dans la simulation un chantier est un seul type de lieu ; le rendu choisit `bat_chantier_hameau` ou `bat_chantier_champ` selon sa cible.
+- Tests : `cd graphGeneration && python -m unittest discover -s tests` (raccords, zénith, manifeste).

@@ -1,0 +1,328 @@
+# Données du POC-A : économie de subsistance d'un hameau isolé de 1750.
+# Quantités en unités/jour (converties en milli-unités au chargement).
+# Aucune valeur de gameplay n'est codée en dur dans le moteur.
+# `traversable` (par bâtiment) : "libre" | "couteuse" | "interdite" (défaut) — une route neuve contourne
+# les tiles d'un bâtiment « interdite » (terres, chantiers) ; on s'y raccorde par la tile nœud (docs/02 §10.1). Une route ne
+# traverse une terre qu'en **détruisant** les tiles concernées (`destruction_pop_jours`), au prix d'un travail (docs/07 §14).
+
+[simulation]
+jours_par_an = 365
+jours_stock_sortie = 10.0          # plafond du stock d'extrant d'un bâtiment (jours de production)
+jours_stock_entree = 5.0           # plafond du stock d'intrants (jours de besoin)
+jours_stock_quartier = 10.0        # cible de stock d'un hameau (jours de consommation)
+nb_rondes_appel_offres = 0           # 0 = un client interroge tous les fournisseurs à portée (distance_max) ; n > 0 : les n plus proches
+stock_initial_quartier_jours = 5.0
+stock_initial_entree_jours = 3.0
+stock_initial_sortie_jours = 2.0
+
+# Distance : coût du plus court chemin le long des arêtes (10 par côté, 14 par diagonale, 0 sur une même
+# tile), voir docs/02 §9. Aucune pénalité selon la distance, mais l'on s'approvisionne au plus proche, et
+# l'on ne va ni travailler ni s'approvisionner au-delà de la limite.
+# Congestion : en sommeil dans le POC (capacités très au-dessus des flux).
+[infrastructure]
+distance_max = 100                 # 10 tiles-équivalents = 2,5 km à pied (tile de 250 m, docs/02 §1)
+capacite_nominale = 4000.0
+capacite_max = 8000.0
+poids_trajet_pop = 10.0
+# On marche sur toute tile praticable (hors eau) ; une route réduit le coût du pas (docs/07 §18). Hors route un pas coûte
+# `cout_hors_route` fois plus : à 2, un hameau atteint 10 tiles par la route mais 5 tiles à pied.
+cout_hors_route = 2.0
+route_pop_jours_par_tile = 5.0     # travail d'une tile de route neuve, ordonnée par le seigneur
+route_seuil_acces = 0.5            # le seigneur ordonne une route quand l'accès dépasse la moitié de distance_max
+
+# Habitat : plafond de densité de toute tile d'habitat (les quartiers ouvriers y viendront).
+[habitat]
+densite_max_pops = 10
+
+# Hameau : des maisons, une par pop (docs/02 §9.4). Le générateur pose des hameaux de `capacite_pops`
+# maisons ; un hameau neuf n'a que sa première maison (`capacite_fondation`) et en gagne une à une. Il n'y a
+# plus de plafond propre au hameau : seule la densité maximale par tile (`densite_max_pops`) borne sa taille, et
+# c'est la valeur du site (`[peuplement]`) qui décide d'ajouter une maison ou de fonder ailleurs (docs/07 §4).
+# `cout_creation` est le coût d'UNE maison (≈ la moitié de l'ancien hameau de 2 pops).
+# Le textile (tissage, couture) est un travail domestique d'hiver, fait à la maison avec le temps libre
+# des pops (docs/02 §8.4) : tout hameau embarque donc un atelier domestique, sans poste.
+[[habitats]]
+nom = "hameau"
+asset = "bat_hameau"
+capacite_pops = 2
+capacite_fondation = 1
+atelier = "atelier_domestique"
+cout_creation = { travail_pop_jours = 150.0, equipe = 1, bois = 100.0 }
+
+# Le seigneur local (docs/07 §15) : le décideur du POC. Il prélève en nature le champart sur la production des terres,
+# prend son train de vie sur son grenier, et c'est son grenier qui fournit le matériau de ses chantiers (il est leur
+# maître d'ouvrage) ; les pops, toutes serves, fournissent la main-d'œuvre (corvée).
+[seigneurie]
+nom = "Seigneur du village"
+poste = "seigneur_local"
+champart = 0.12
+champart_ressources = ["grain", "bois"]
+train_de_vie_pops = 0.5            # il consomme la ration d'une demi-pop par jour
+grenier_initial = { grain = 300.0, bois = 400.0 }
+# But du seigneur (docs/07 §19) : son revenu est le champart, donc le nombre de serfs. Il garde `reserve_annees` années de
+# ration du village (semence à avancer, mauvaise année) et investit le surplus : des logements d'avance (`marge_logement`
+# en part des pops), pour que la place ne manque jamais quand une pop naît.
+reserve_annees = 1.0
+marge_logement = 0.25
+# Secours : en deçà de 3 jours de réserve (nourriture, chauffage), le seigneur sert ses serfs sur son grenier (la soudure).
+secours_jours = 3.0
+
+# Usure et abandon des lieux (docs/07 §14). Une terre sans travail depuis `terre_inactive_ans` est abandonnée : elle ne
+# produit plus et redevient friche après `terre_friche_ans`. Un hameau sans pop depuis `hameau_vide_ans` est abandonné :
+# plus de logement, il s'use et est détruit après `hameau_ruine_ans`. Une tile libérée redevient forêt après
+# `foret_apres_ans` (friche, taillis, bois), plus vite en lisière d'une forêt (`lisiere_forte`) et plus lentement isolée.
+[abandon]
+terre_inactive_ans = 20
+terre_friche_ans = 8
+hameau_vide_ans = 2                # un hameau sans pop depuis 2 ans est abandonné ; il s'use ensuite (voir hameau_ruine_ans)
+hameau_ruine_ans = 40
+remise_min = 0.10                  # remettre en état un lieu à peine abandonné coûte 10 % de sa construction…
+remise_max = 0.60                  # … et 60 % au bord de la ruine ; au-delà il est détruit et il faut reconstruire
+chantier_bloque_ans = 3            # un chantier sans progrès depuis 3 ans est abandonné (équipe libérée)
+memoire_site_ans = 10              # on ne refonde pas un hameau sur un site abandonné depuis moins de 10 ans
+foret_apres_ans = 40
+lisiere_isolee = 1.5               # aucune tile de forêt voisine
+lisiere_moyenne = 1.0              # 1 ou 2 tiles de forêt voisines
+lisiere_forte = 0.6                # 3 tiles de forêt voisines ou plus
+
+# Où s'installer (docs/07 §4). La valeur d'un site de vie est la terre libre à portée (aptitude, décroissante avec
+# la distance), partagée entre les pops du voisinage, corrigée par l'eau et par la présence de voisins. Quand des pops
+# attendent un logement, on bâtit une maison là où l'on est, ou on fonde un hameau ailleurs s'il vaut
+# `seuil_fondation` fois mieux (la famille reste, sauf gain net).
+[peuplement]
+rayon_terroir = 10                 # tiles : 2,5 km, le rayon de travail d'un hameau
+eau_proche = 6                     # tiles : puits ou source à 1,5 km ou moins, sans gêne
+eau_portee = 30                    # tiles : au-delà, l'eau ne vaut plus rien (puits profond, corvée d'eau)
+poids_voisins = 1.0                # bonus par pop installée à moins de `rayon_voisinage` (entraide, services)
+rayon_voisinage = 4                # tiles
+seuil_fondation = 4.0              # un site neuf doit valoir 4 fois mieux que de rester (réglé le 2026-11-04, docs/07 §17)
+
+# Budget de jours de travail (docs/02 §8.3, étape 1 : lissé sur l'année, sans saisons). Une pop fournit
+# 12 500 jours-personne par an (~50 travailleurs × 250 jours). Chaque jour, les pops de chaque hameau
+# (hors équipes de chantier) donnent leur temps aux terres à portée, les plus en tension d'abord ; ce qui
+# reste est le temps libre du hameau, que le textile domestique utilise (docs/02 §8.4).
+[travail]
+jours_personne_par_pop_an = 12500.0
+seuil_deplacement = 0.5            # pop-jours qu'une terre doit réclamer pour qu'une pop se déplace (docs/02 §10.4)
+
+[demographie]
+habitants_par_pop = 100
+croissance_satisfaite = 0.015      # /an : tous les besoins couverts (vitaux + confort)
+croissance_insatisfaite = 0.005    # /an : besoins vitaux couverts, confort insuffisant
+mortalite_famine = 0.08            # /an à besoins vitaux nuls (interpolation linéaire entre les deux)
+acceleration = 1.0                 # facteur sur le taux net (observation du POC)
+
+# Priorité du travail : une ressource est « en tension » quand sa ration est couverte à moins de ce seuil ;
+# les terres qui la produisent sont servies les premières.
+[mobilite]
+seuil_tension = 0.97
+
+# Extension du village par ses habitants (décisions saisonnières, sans monnaie) :
+# les pops prennent d'abord tous les postes disponibles, puis ouvrent un chantier.
+[extension]
+periode_jours = 90
+chantiers_max = 2                  # chantiers simultanés
+materiau = "bois"
+tuiles_par_defrichement = 4        # tiles défrichées d'un coup : taille d'une terre fondée, ou d'une extension
+# Score d'extension d'une terre (docs/02 §10.2), en part de la fertilité : compacité sans forme codée.
+poids_voisins = 0.25               # bonus par voisin déjà dans l'emprise (4-voisinage) : périmètre court
+poids_centre = 0.02                # malus par tile² de distance au centre de la terre : des amas, pas des bandes (docs/07 §18)
+poids_route = 0.15                 # bonus d'une tile qui touche une route ou un hameau
+poids_distance = 0.01              # malus par tile de distance au hameau demandeur
+penalite_terroir = 0.30            # malus d'une tile hors du terroir (hameau le plus proche) de la terre
+
+# Besoins vitaux : sans eux, la population décline.
+[vital]
+nourriture = 5.0                   # unités nutritives / pop / jour (grain, viande, fruit interchangeables)
+chauffage_ressource = "bois"
+chauffage = 2.0
+
+# Besoins de confort : sous le minimum la pop est insatisfaite, au-dessus satisfaite.
+[[confort]]
+ressource = "viande"               # part de viande attendue dans l'alimentation
+par_pop_jour = 1.0
+[[confort]]
+ressource = "vetements"
+par_pop_jour = 0.5
+
+[[ressources]]
+nom = "grain"
+peremption_jour = 0.0002
+valeur_nutritive = 1.0
+[[ressources]]
+nom = "viande"
+peremption_jour = 0.02
+valeur_nutritive = 1.0
+[[ressources]]
+nom = "fruit"
+peremption_jour = 0.03
+valeur_nutritive = 1.0
+[[ressources]]
+nom = "bois"
+peremption_jour = 0.0
+[[ressources]]
+nom = "lin"
+peremption_jour = 0.0
+[[ressources]]
+nom = "laine"
+peremption_jour = 0.0
+[[ressources]]
+nom = "tissu"
+peremption_jour = 0.0
+[[ressources]]
+nom = "vetements"
+peremption_jour = 0.0
+
+# Ration normale tirée chaque jour par une pop sur le stock de son hameau.
+[[besoins]]
+ressource = "grain"
+par_pop_jour = 5.0
+[[besoins]]
+ressource = "viande"
+par_pop_jour = 1.0
+[[besoins]]
+ressource = "fruit"
+par_pop_jour = 1.0
+[[besoins]]
+ressource = "bois"
+par_pop_jour = 2.0
+[[besoins]]
+ressource = "vetements"
+par_pop_jour = 0.5
+
+# Terrains (docs/07 §3, §12). `cout_construction` : multiplicateur du travail des chantiers (maison, hameau,
+# défrichement) sur ce terrain. `conversion_*` : un chantier sur une tile de forêt ou de marais la convertit
+# (défrichement, drainage) ; travail en pop-jours par tile, bois récupéré par tile (unités du jeu : une pop brûle
+# 2 unités par jour, soit ~250 stères par an : 1 stère ≈ 2,9 unités). Valeurs : docs/07 §9.
+[terrains.plaine]
+cout_construction = 1.0
+[terrains.plaine_riche]
+cout_construction = 1.0
+[terrains.plaine_rocailleuse]
+cout_construction = 1.3            # cailloux à ôter, fondations plus dures
+[terrains.plaine_marecageuse]
+cout_construction = 1.0
+conversion_vers = "plaine_riche"   # un marais drainé donne de bons limons
+conversion_pop_jours = 400.0       # fossés et assèchement : 60 jours-homme par hectare
+conversion_bois = 0.0
+[terrains.foret]
+cout_construction = 1.0
+conversion_vers = "plaine"
+conversion_pop_jours = 1000.0      # 150 à 250 jours-homme par hectare × 6,25 ha
+conversion_bois = 1750.0           # ~600 stères par tile
+
+# Franchissement des cours d'eau (docs/07 §9) : une route neuve peut traverser l'eau, au prix d'un travail de
+# pont ou de gué ajouté au chantier, en pop-jours par tile d'eau traversée.
+[eau]
+pont_ruisseau = 20.0               # gué ou passerelle
+pont_riviere = 200.0               # pont de bois
+pont_fleuve = 2000.0               # grand pont de pierre
+
+# Terres exploitées (docs/02 §8.2) : un seul bâtiment actif sur N tiles contiguës de 250 m. Les extrants
+# sont par tile et par jour (à fertilité 1) et le travail par tile et par an, en jours-personne (docs/04 :
+# références de 1750, ~34 tiles de terroir par pop, dont ~13 de labours et ~6 de bois). `emprise_max` :
+# au-delà, on fonde une autre terre. `fertile` : la production suit la fertilité de chaque tile.
+# `aptitude` : rendement de chaque terrain pour ce type de terre (× la fertilité locale, 1,0 si absent).
+# `travail_terrain` : travail requis par terrain (× `jours_par_tile_an`, 1,0 si absent). Hypothèses de départ
+# (docs/07 §3.2), à régler à l'usage : plaine = référence, riche = limons, rocailleuse = cailloux, marais = détrempé.
+# `cout_creation` : défricher = travail (pop-jours) PAR TILE par une équipe, + matériau par tile.
+[[batiments]]
+nom = "champ"
+asset = "bat_champ"
+par_tile = true
+destruction_pop_jours = 2.0
+jours_par_tile_an = 250.0
+emprise_max = 36
+fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.25, plaine_rocailleuse = 0.6, plaine_marecageuse = 0.15, foret = 0.0 }
+travail_terrain = { plaine_rocailleuse = 1.3, plaine_marecageuse = 2.0, foret = 2.5 }
+cout_creation = { travail_pop_jours = 10.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "grain", qte = 0.40 }] }]
+# Saisons (docs/07 §19) : [début, fin, part du travail annuel], en jours de l'année. Labour en mars-avril, semis en
+# avril-mai, récolte de mi-juillet à fin août. Ce qui n'est pas fait dans la fenêtre retombe en friche. Les semences
+# sont mises de côté sur la récolte (≈ 1/5 : un rendement de 4 à 5 pour 1 en 1750).
+saisons = { labour = [45, 125, 0.35], semis = [125, 160, 0.15], recolte = [190, 270, 0.50], semences = 0.2 }
+[[batiments]]
+nom = "paturage"
+asset = "bat_paturage"
+par_tile = true
+destruction_pop_jours = 1.0
+jours_par_tile_an = 80.0
+emprise_max = 30
+fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.1, plaine_rocailleuse = 0.7, plaine_marecageuse = 0.5, foret = 0.2 }
+travail_terrain = { plaine_marecageuse = 1.4, foret = 2.0 }
+cout_creation = { travail_pop_jours = 5.0, equipe = 1, bois = 1.0 }
+etapes = [{ extrants = [{ ressource = "viande", qte = 0.42 }] }]
+[[batiments]]
+nom = "verger"
+asset = "bat_verger"
+par_tile = true
+destruction_pop_jours = 8.0
+jours_par_tile_an = 150.0
+emprise_max = 16
+fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.1, plaine_rocailleuse = 1.0, plaine_marecageuse = 0.1, foret = 0.0 }
+travail_terrain = { plaine_rocailleuse = 1.1, plaine_marecageuse = 2.0, foret = 2.5 }
+cout_creation = { travail_pop_jours = 12.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "fruit", qte = 1.0 }] }]
+[[batiments]]
+nom = "foret_exploitee"
+asset = "bat_foret_exploitee"
+conserve_terrain = true            # exploite la forêt sur place, sans la défricher
+par_tile = true
+destruction_pop_jours = 3.0
+jours_par_tile_an = 60.0
+emprise_max = 36
+fertile = true
+# Forêt exploitée sur place (1,3) ; taillis planté sur terre ordinaire (1,0), pour que le village de départ, posé en
+# terrain ouvert, ait du bois.
+aptitude = { plaine = 1.0, plaine_riche = 1.0, plaine_rocailleuse = 1.0, plaine_marecageuse = 0.5, foret = 1.3 }
+travail_terrain = { plaine_marecageuse = 1.5 }
+cout_creation = { travail_pop_jours = 4.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "bois", qte = 0.35 }] }]
+[[batiments]]
+nom = "champ_lin"
+asset = "bat_champ_lin"
+par_tile = true
+destruction_pop_jours = 2.0
+jours_par_tile_an = 625.0
+emprise_max = 12
+fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 1.3, plaine_rocailleuse = 0.4, plaine_marecageuse = 0.3, foret = 0.0 }
+travail_terrain = { plaine_rocailleuse = 1.3, plaine_marecageuse = 2.0, foret = 2.5 }
+cout_creation = { travail_pop_jours = 10.0, equipe = 2, bois = 0.0 }
+etapes = [{ extrants = [{ ressource = "lin", qte = 1.2 }] }]
+[[batiments]]
+nom = "elevage_laine"
+asset = "bat_elevage_laine"
+par_tile = true
+destruction_pop_jours = 1.0
+jours_par_tile_an = 80.0
+emprise_max = 30
+fertile = true
+aptitude = { plaine = 1.0, plaine_riche = 0.85, plaine_rocailleuse = 1.2, plaine_marecageuse = 0.3, foret = 0.1 }
+travail_terrain = { plaine_marecageuse = 1.5, foret = 2.0 }
+cout_creation = { travail_pop_jours = 5.0, equipe = 1, bois = 1.0 }
+etapes = [{ extrants = [{ ressource = "laine", qte = 0.15 }] }]
+
+# Atelier domestique : textile fait à la maison (distance 0), sans poste. `pops` = travail requis à plein
+# régime, en pop-jours par jour : 1 pop-jour fait 4 vêtements (soit les besoins de 8 pops).
+[[batiments]]
+nom = "atelier_domestique"
+asset = "bat_hameau"
+pops = 1
+domestique = true
+etapes = [
+  { intrants = [{ ressource = "lin", qte = 8.0 }, { ressource = "laine", qte = 4.0 }], extrants = [{ ressource = "tissu", qte = 6.0 }] },
+  { intrants = [{ ressource = "tissu", qte = 6.0 }], extrants = [{ ressource = "vetements", qte = 4.0 }] },
+]
+
+# Site de chantier : la même entité sert à défricher une terre ou à bâtir un hameau.
+# L'équipe est propre à chaque chantier (le champ `pops` n'est pas utilisé).
+[[batiments]]
+nom = "chantier"
+asset = "bat_chantier"
+pops = 1
+chantier = true
+etapes = []

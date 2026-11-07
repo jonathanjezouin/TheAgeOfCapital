@@ -1,0 +1,489 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>
+<title>Routes à 250 m</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Newsreader:opsz,wght@6..72,500;6..72,650&family=Public+Sans:wght@400;500;600&family=Spline+Sans+Mono:wght@400;500&display=swap">
+<style>
+/* Concept : une planche de cadastre (la carte), puis un zoom sur une seule tile. Encre bleu-gris, bâti rose cadastral. */
+:root{
+  --bg:#eaeff0; --surface:#f6f9f9; --fg:#1c2a33; --muted:#53656f; --line:#cbd6d8;
+  --accent:#27506f; --accent-fg:#ffffff; --warn:#b3322e;
+  --map-champ:#dfe6bd; --map-champ2:#d4dcac; --map-furrow:rgba(96,112,40,.30);
+  --map-prairie:#c8dfae; --map-bois:#74a06e; --map-bois-dark:#4a7a4e;
+  --map-sol:#a98b5c; --map-sol-light:#e8d9ae;
+  --map-bati:#dc8f8a; --map-bati-edge:#98474460;
+  --map-graph:#16679f; --map-grid:rgba(40,62,72,.20);
+  --asphalt:#5b636c; --ballast:#b4af9f; --paper:#f6f9f9;
+  --font-display:'Newsreader', Georgia, 'Times New Roman', serif;
+  --font-body:'Public Sans', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono:'Spline Sans Mono', ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#11191d; --surface:#18232a; --fg:#e3ecec; --muted:#9bacb2; --line:#2b3a41;
+    --accent:#86b7dc; --accent-fg:#0c1519; --warn:#ff9189;
+    --map-champ:#3b482b; --map-champ2:#344126; --map-furrow:rgba(160,190,100,.16);
+    --map-prairie:#385030; --map-bois:#2d5535; --map-bois-dark:#214426;
+    --map-sol:#8a7248; --map-sol-light:#b39d70;
+    --map-bati:#cc807c; --map-bati-edge:#7c3a3860;
+    --map-graph:#62b6f0; --map-grid:rgba(200,222,232,.17);
+    --asphalt:#7f8892; --ballast:#6f6b60; --paper:#18232a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#11191d; --surface:#18232a; --fg:#e3ecec; --muted:#9bacb2; --line:#2b3a41;
+  --accent:#86b7dc; --accent-fg:#0c1519; --warn:#ff9189;
+  --map-champ:#3b482b; --map-champ2:#344126; --map-furrow:rgba(160,190,100,.16);
+  --map-prairie:#385030; --map-bois:#2d5535; --map-bois-dark:#214426;
+  --map-sol:#8a7248; --map-sol-light:#b39d70;
+  --map-bati:#cc807c; --map-bati-edge:#7c3a3860;
+  --map-graph:#62b6f0; --map-grid:rgba(200,222,232,.17);
+  --asphalt:#7f8892; --ballast:#6f6b60; --paper:#18232a;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:var(--font-body);font-size:15px;line-height:1.55;
+  padding-left:max(16px, env(safe-area-inset-left, 0px));padding-right:max(16px, env(safe-area-inset-right, 0px));padding-block:28px 56px}
+.wrap{max-width:1040px;margin:0 auto;display:flex;flex-direction:column;gap:44px}
+h1,h2{font-family:var(--font-display);font-weight:650;letter-spacing:-.01em;text-wrap:balance;margin:0}
+h1{font-size:clamp(28px,5vw,40px);line-height:1.1}
+h2{font-size:clamp(21px,3.4vw,27px);line-height:1.2}
+p{margin:0;max-width:66ch}
+.lead{color:var(--muted);margin-top:10px;font-size:16px}
+.sec{display:flex;flex-direction:column;gap:16px}
+.note{color:var(--muted);font-size:13px}
+.mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+
+/* contrôles */
+.controls{display:flex;flex-wrap:wrap;gap:12px 24px;align-items:flex-end}
+.ctl{display:flex;flex-direction:column;gap:6px;border:0;padding:0;margin:0;min-width:0}
+.ctl>legend,.ctl>.lab{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);padding:0;font-weight:600}
+.seg{position:relative;display:flex;flex-wrap:wrap;border:1px solid var(--line);border-radius:8px;overflow:hidden;background:var(--surface)}
+.seg input{position:absolute;opacity:0;pointer-events:none}
+.seg label{padding:7px 12px;cursor:pointer;font-size:14px;border-right:1px solid var(--line);white-space:nowrap}
+.seg label:last-of-type{border-right:0}
+.seg input:checked+label{background:var(--accent);color:var(--accent-fg)}
+.seg input:focus-visible+label{outline:2px solid var(--accent);outline-offset:-2px}
+.chk{display:inline-flex;align-items:center;gap:8px;font-size:14px;cursor:pointer}
+.chk input{width:16px;height:16px;accent-color:var(--accent)}
+input[type=range]{accent-color:var(--accent);width:200px;max-width:100%}
+
+/* carte */
+#mapwrap{position:relative;border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface);touch-action:pan-y}
+#map{display:block;width:100%;cursor:ew-resize}
+.table-scroll{overflow-x:auto;border:1px solid var(--line);border-radius:6px;background:var(--surface)}
+table{border-collapse:collapse;width:100%;font-size:14px;min-width:560px}
+th,td{padding:8px 12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap}
+th{font-size:12px;letter-spacing:.05em;text-transform:uppercase;color:var(--muted);font-weight:600}
+tr:last-child td{border-bottom:0}
+td.num{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+.bad{color:var(--warn)}
+
+/* tile */
+.tilegrid{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:start}
+@media (min-width:860px){.tilegrid{grid-template-columns:minmax(0,520px) minmax(0,1fr);gap:32px}}
+#tilebox{border:1px solid var(--line);border-radius:6px;overflow:hidden;background:var(--surface)}
+#tile{display:block;width:100%;height:auto;aspect-ratio:1/1}
+.stack{display:flex;flex-direction:column;gap:16px;min-width:0}
+.read{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:6px;overflow:hidden}
+.read>div{background:var(--surface);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.read .k{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);font-weight:600}
+.read .v{font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:15px}
+#verdict{font-size:15px;max-width:60ch;min-height:3.2em}
+
+ul.rules{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:10px;max-width:70ch}
+.open{border-left:3px solid var(--accent);padding:4px 0 4px 14px;display:flex;flex-direction:column;gap:6px;max-width:70ch}
+.open b{font-weight:600}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Routes et tiles de 250 m</h1>
+    <p class="lead">Deux maquettes pour trancher. La première compare le réseau actuel, fait de tiles de chemin, au réseau cible, fait d'arêtes à 8 directions. La seconde montre ce qu'une route prend à la tile qu'elle traverse.</p>
+  </header>
+
+  <section class="sec" aria-labelledby="h-reseau">
+    <h2 id="h-reseau">Le même réseau, avant et après</h2>
+    <p>Glisse la séparation sur la carte. Chaque tile fait 250 m. Les largeurs de route sont exagérées : à l'échelle, une piste de 5 m ferait moins d'un pixel.</p>
+    <div class="controls">
+      <label class="chk" for="o-grille"><input type="checkbox" id="o-grille" checked> Grille de 250 m</label>
+      <label class="chk" for="o-graphe"><input type="checkbox" id="o-graphe"> Graphe (arêtes), à droite</label>
+      <label class="chk" for="o-bati"><input type="checkbox" id="o-bati"> Cible : contourner les tiles bâties</label>
+      <div class="ctl"><label class="lab" for="o-jit">Décalage organique</label><input type="range" id="o-jit" min="0" max="100" value="55"></div>
+      <div class="ctl"><label class="lab" for="o-split">Comparer</label><input type="range" id="o-split" min="2" max="98" value="50"></div>
+    </div>
+    <div id="mapwrap"><canvas id="map" role="img" aria-label="Carte de 36 sur 22 tiles. À gauche, les routes sont des tiles de chemin orthogonales. À droite, les mêmes liaisons sont des courbes à 8 directions."></canvas></div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th>Liaison</th><th>Actuel (orthogonal)</th><th>Cible (8 directions)</th><th>Ligne droite</th><th>Écart actuel</th></tr></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <p class="note">Actuel : chaque tile de chemin recouvre ses 6,25 ha, et un trajet en diagonale se compte comme un trajet en escalier. Cible : la route passe par-dessus les tiles, qui gardent leur champ. Coûts 10 pour un côté et 14 pour une diagonale, forêt ×3.</p>
+  </section>
+
+  <section class="sec" aria-labelledby="h-tile">
+    <h2 id="h-tile">Ce qu'une route prend à une tile</h2>
+    <p>Une tile mesure 250 m de côté, soit 62 500 m². Les maisons sont dessinées à l'échelle : 9 m de côté, un ménage = 5 habitants, une pop = 20 ménages.</p>
+    <div class="tilegrid">
+      <div id="tilebox"><svg id="tile" viewBox="0 0 250 250" role="img" aria-label="Une tile de 250 mètres avec ses maisons et une voie"></svg></div>
+      <div class="stack">
+        <fieldset class="ctl"><legend>Voie</legend>
+          <div class="seg">
+            <input type="radio" name="t-voie" id="v-chemin" value="chemin" checked><label for="v-chemin">Chemin 5 m</label>
+            <input type="radio" name="t-voie" id="v-route" value="route"><label for="v-route">Route royale 12 m</label>
+            <input type="radio" name="t-voie" id="v-rail" value="rail"><label for="v-rail">Voie ferrée 15 m</label>
+            <input type="radio" name="t-voie" id="v-auto" value="auto"><label for="v-auto">Autoroute 40 m</label>
+          </div></fieldset>
+        <fieldset class="ctl"><legend>Tracé dans la tile</legend>
+          <div class="seg">
+            <input type="radio" name="t-geom" id="g-droite" value="straight" checked><label for="g-droite">Traversante</label>
+            <input type="radio" name="t-geom" id="g-diag" value="diag"><label for="g-diag">Diagonale</label>
+            <input type="radio" name="t-geom" id="g-cul" value="dead"><label for="g-cul">Cul-de-sac</label>
+          </div></fieldset>
+        <fieldset class="ctl"><legend>Densité de la tile</legend>
+          <div class="seg">
+            <input type="radio" name="t-dens" id="d-ham" value="40" checked><label for="d-ham">Hameau 2 pops</label>
+            <input type="radio" name="t-dens" id="d-vil" value="120"><label for="d-vil">Village 6 pops</label>
+            <input type="radio" name="t-dens" id="d-ville" value="200"><label for="d-ville">Quartier dense 10 pops</label>
+          </div></fieldset>
+        <fieldset class="ctl"><legend>Qui était là en premier</legend>
+          <div class="seg">
+            <input type="radio" name="t-ordre" id="o-bat" value="bat" checked><label for="o-bat">Les maisons</label>
+            <input type="radio" name="t-ordre" id="o-route" value="route"><label for="o-route">La route</label>
+          </div></fieldset>
+        <div class="read" aria-live="polite">
+          <div><span class="k">Emprise de la voie</span><span class="v" id="r-emprise">–</span></div>
+          <div><span class="k">Maisons</span><span class="v" id="r-maisons">–</span></div>
+          <div><span class="k">Capacité en pops</span><span class="v" id="r-cap">–</span></div>
+          <div><span class="k">À reloger</span><span class="v" id="r-reloc">–</span></div>
+        </div>
+        <p id="verdict"></p>
+      </div>
+    </div>
+  </section>
+
+  <section class="sec" aria-labelledby="h-modele">
+    <h2 id="h-modele">Ce que cela donne dans le modèle</h2>
+    <ul class="rules">
+      <li><b>Une seule grandeur : l'emprise.</b> Largeur de la voie × longueur de l'arête dans la tile. Un cul-de-sac vaut la moitié d'une traversante, une diagonale 1,41 fois plus.</li>
+      <li><b>Les rues locales sont déjà dans la densité.</b> Un hameau ou un quartier contient ses ruelles (15 à 25 % de voirie). Seules les voies majeures (route royale, rail, autoroute) retirent de la place. Un chemin de terre ne change rien.</li>
+      <li><b>Le plafond n'est pas codé par type de voie.</b> Il ressort du nombre de maisons qui tiennent dans la surface restante. Dans la maquette, avec la route d'abord, une autoroute traversante ne coûte rien à un hameau et environ 10 % de capacité à un quartier dense.</li>
+      <li><b>Poser une route a un prix.</b> Le coût inclut les maisons à déplacer. Les routes neuves contournent donc les tiles bâties (case de la première maquette), comme les contournements de bourgs.</li>
+      <li><b>L'ordre d'arrivée décide qui s'adapte.</b> Route d'abord : les maisons se placent autour. Maisons d'abord : la route paie ou fait le tour. Les deux cas utilisent la même règle.</li>
+      <li><b>À repousser :</b> la coupure (une autoroute sépare un village en deux), le bruit, les échangeurs. L'emprise suffit pour le POC.</li>
+    </ul>
+    <div class="open">
+      <b>À trancher</b>
+      <span>Quand une route est posée sur une tile pleine, les pops déplacées partent-elles vers une tile voisine, ou disparaissent-elles ?</span>
+      <span>Garde-t-on la route à l'écart des tiles bâties par un simple coût, ou interdit-on de traverser un village sans l'accord de ses habitants ?</span>
+    </div>
+  </section>
+</div>
+
+<script>
+(function(){
+  var $ = function(s){ return document.querySelector(s); };
+  function varc(n){ return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function fmt(n,d){ return n.toLocaleString('fr-FR',{minimumFractionDigits:d||0,maximumFractionDigits:d||0}); }
+
+  /* ---------- hasard déterministe ---------- */
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  function hash2(x,y,s){var h=Math.imul(x|0,374761393)^Math.imul(y|0,668265263)^Math.imul(s|0,2147483647);h=Math.imul(h^h>>>13,1274126177);h=h^h>>>16;return (h>>>0)/4294967296;}
+  function vnoise(x,y,s){var xi=Math.floor(x),yi=Math.floor(y),xf=x-xi,yf=y-yi,u=xf*xf*(3-2*xf),v=yf*yf*(3-2*yf);
+    var a=hash2(xi,yi,s),b=hash2(xi+1,yi,s),c=hash2(xi,yi+1,s),d=hash2(xi+1,yi+1,s);return a+(b-a)*u+(c-a)*v+(a-b-c+d)*u*v;}
+
+  /* =====================================================
+     1. Carte : réseau avant / après
+     ===================================================== */
+  var COLS=36, ROWS=22, TILE_KM=0.25;
+  var T={CHAMP:0,PRAIRIE:1,BOIS:2,BATI:3};
+  var SETTLE=[
+    {id:'A',name:'Les Granges',kind:1,tiles:[[4,16]],port:[4,16]},
+    {id:'B',name:'La Folie',kind:1,tiles:[[9,5]],port:[9,5]},
+    {id:'V',name:'Saint-Aubin',kind:2,tiles:[[16,12],[17,12],[17,11]],port:[17,12]},
+    {id:'G',name:'Le Bourg',kind:3,tiles:[[30,8],[31,8],[30,9],[31,9]],port:[30,8]},
+    {id:'C',name:'Les Chênes',kind:1,tiles:[[28,19]],port:[28,19]}
+  ];
+  var PAIRS=[['A','G'],['B','V'],['C','V'],['C','G']];
+  var terrain=new Uint8Array(COLS*ROWS), owner=new Array(COLS*ROWS).fill(null);
+  var BLOBS=[[11,10,3.4,2.5],[24,15,3.0,2.2],[22,4,2.6,2.0]];
+  (function build(){
+    var x,y;
+    for(y=0;y<ROWS;y++)for(x=0;x<COLS;x++){
+      var n=vnoise(x*.22,y*.22,7), m=vnoise(x*.15+40,y*.15,3), t=T.CHAMP;
+      if(m>0.64)t=T.PRAIRIE; if(n>0.70)t=T.BOIS;
+      BLOBS.forEach(function(b){ if(Math.pow((x-b[0])/b[2],2)+Math.pow((y-b[1])/b[3],2)<1)t=T.BOIS; });
+      terrain[y*COLS+x]=t;
+    }
+    SETTLE.forEach(function(s){
+      s.tiles.forEach(function(p){
+        for(var dy=-1;dy<=1;dy++)for(var dx=-1;dx<=1;dx++){
+          var xx=p[0]+dx,yy=p[1]+dy; if(xx<0||yy<0||xx>=COLS||yy>=ROWS)continue;
+          if(terrain[yy*COLS+xx]===T.BOIS)terrain[yy*COLS+xx]=T.CHAMP;
+        }
+      });
+      s.tiles.forEach(function(p){ terrain[p[1]*COLS+p[0]]=T.BATI; owner[p[1]*COLS+p[0]]=s.id; });
+    });
+  })();
+  function sById(id){ return SETTLE.filter(function(s){return s.id===id;})[0]; }
+
+  /* file de priorité minimale */
+  function Heap(){this.a=[];}
+  Heap.prototype.push=function(p,v){var a=this.a;a.push([p,v]);var i=a.length-1;while(i>0){var j=(i-1)>>1;if(a[j][0]<=a[i][0])break;var t=a[j];a[j]=a[i];a[i]=t;i=j;}};
+  Heap.prototype.pop=function(){var a=this.a,top=a[0],last=a.pop();if(a.length){a[0]=last;var i=0,n=a.length;for(;;){var l=2*i+1,r=l+1,m=i;if(l<n&&a[l][0]<a[m][0])m=l;if(r<n&&a[r][0]<a[m][0])m=r;if(m===i)break;var t=a[m];a[m]=a[i];a[i]=t;i=m;}}return top;};
+  Object.defineProperty(Heap.prototype,'size',{get:function(){return this.a.length;}});
+
+  var DIRS=[[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  function route(from,to,orth,avoidBuilt){
+    var turnPen=orth?2.5:2, N=COLS*ROWS*8, dist=new Float64Array(N).fill(Infinity), prev=new Int32Array(N).fill(-1), heap=new Heap();
+    var s=from[1]*COLS+from[0], goal=to[1]*COLS+to[0], fo=owner[s], to_=owner[goal], d, end=-1;
+    for(d=0;d<8;d++){ if(orth&&d%2)continue; dist[s*8+d]=0; heap.push(0,s*8+d); }
+    while(heap.size){
+      var e=heap.pop(), c=e[0], st=e[1]; if(c>dist[st])continue;
+      var cell=st>>3, dd=st&7; if(cell===goal){end=st;break;}
+      var cx=cell%COLS, cy=(cell/COLS)|0;
+      for(var nd=0;nd<8;nd++){
+        if(orth&&nd%2)continue;
+        var nx=cx+DIRS[nd][0], ny=cy+DIRS[nd][1]; if(nx<0||ny<0||nx>=COLS||ny>=ROWS)continue;
+        var nc=ny*COLS+nx, step=(nd%2?14:10), tt=terrain[nc];
+        if(tt===T.BOIS)step*=3;
+        if(tt===T.BATI&&avoidBuilt&&owner[nc]!==fo&&owner[nc]!==to_)step+=90;
+        var diff=Math.abs(nd-dd); if(diff>4)diff=8-diff;
+        var cost=c+step+diff*turnPen, ns=nc*8+nd;
+        if(cost<dist[ns]){dist[ns]=cost;prev[ns]=st;heap.push(cost,ns);}
+      }
+    }
+    var cells=[]; for(var q=end;q!==-1;q=prev[q])cells.push(q>>3); cells.reverse();
+    return cells.map(function(k){return [k%COLS,(k/COLS)|0];});
+  }
+  function metrics(p){ var c=0,i; for(i=1;i<p.length;i++){ c+=(p[i][0]!==p[i-1][0]&&p[i][1]!==p[i-1][1])?14:10; } return {steps:p.length-1,eq:c/10}; }
+
+  var orthPaths=[], tgtPaths=[];
+  function computeOrth(){ orthPaths=PAIRS.map(function(pr){return route(sById(pr[0]).port,sById(pr[1]).port,true,false);}); }
+  function computeTgt(){ var av=$('#o-bati').checked; tgtPaths=PAIRS.map(function(pr){return route(sById(pr[0]).port,sById(pr[1]).port,false,av);}); }
+
+  var canvas=$('#map'), ctx=canvas.getContext('2d');
+  var splitPct=50;
+
+  function drawTerrain(ts){
+    var C=varc('--map-champ'),C2=varc('--map-champ2'),F=varc('--map-furrow'),P=varc('--map-prairie'),B=varc('--map-bois'),BD=varc('--map-bois-dark');
+    for(var y=0;y<ROWS;y++)for(var x=0;x<COLS;x++){
+      var t=terrain[y*COLS+x], px=x*ts, py=y*ts, h=hash2(x,y,1);
+      ctx.fillStyle = t===T.BOIS?B : t===T.PRAIRIE?P : (h>.5?C:C2);
+      ctx.fillRect(px,py,ts+.5,ts+.5);
+      if(t===T.CHAMP||t===T.BATI){
+        var ori=hash2(x>>1,y>>1,11)>.5; ctx.strokeStyle=F; ctx.lineWidth=1; ctx.beginPath();
+        for(var k=1;k<5;k++){ var o=k*ts/5; if(ori){ctx.moveTo(px+o,py);ctx.lineTo(px+o,py+ts);}else{ctx.moveTo(px,py+o);ctx.lineTo(px+ts,py+o);} }
+        ctx.stroke();
+      }
+      if(t===T.BOIS){
+        ctx.fillStyle=BD;
+        for(var i=0;i<5;i++){ var tx=px+(hash2(x,y,30+i)*.8+.1)*ts, ty=py+(hash2(x,y,40+i)*.8+.1)*ts; ctx.beginPath(); ctx.arc(tx,ty,ts*.15,0,6.283); ctx.fill(); }
+      }
+    }
+  }
+  function centre(p,ts){ return [(p[0]+.5)*ts,(p[1]+.5)*ts]; }
+
+  function drawOrth(ts){
+    var S=varc('--map-sol'),SL=varc('--map-sol-light'),seen={};
+    orthPaths.forEach(function(p){ p.forEach(function(c){ var k=c[0]+','+c[1]; if(!seen[k]){seen[k]=1; ctx.fillStyle=S; ctx.fillRect(c[0]*ts,c[1]*ts,ts+.5,ts+.5);} }); });
+    ctx.strokeStyle=SL; ctx.lineWidth=ts*.4; ctx.lineCap='butt';
+    orthPaths.forEach(function(p){ ctx.beginPath(); p.forEach(function(c,i){var q=centre(c,ts); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]);}); ctx.stroke(); });
+  }
+  function jitterPts(p,ts,j){
+    return p.map(function(c,i){
+      var q=centre(c,ts); if(i===0||i===p.length-1)return q;
+      return [q[0]+(hash2(c[0],c[1],21)-.5)*2*j*ts, q[1]+(hash2(c[0],c[1],22)-.5)*2*j*ts];
+    });
+  }
+  function curve(pts){
+    ctx.beginPath(); ctx.moveTo(pts[0][0],pts[0][1]);
+    for(var i=0;i<pts.length-1;i++){
+      var p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||p2;
+      ctx.bezierCurveTo(p1[0]+(p2[0]-p0[0])/6,p1[1]+(p2[1]-p0[1])/6,p2[0]-(p3[0]-p1[0])/6,p2[1]-(p3[1]-p1[1])/6,p2[0],p2[1]);
+    }
+  }
+  function drawOrganic(ts){
+    var S=varc('--map-sol'),SL=varc('--map-sol-light'), j=($('#o-jit').value/100)*.34;
+    ctx.lineCap='round'; ctx.lineJoin='round';
+    var all=tgtPaths.map(function(p){return jitterPts(p,ts,j);});
+    ctx.strokeStyle=S; ctx.lineWidth=Math.max(2.4,ts*.2); all.forEach(function(pts){curve(pts);ctx.stroke();});
+    ctx.strokeStyle=SL; ctx.lineWidth=Math.max(1.2,ts*.1); all.forEach(function(pts){curve(pts);ctx.stroke();});
+  }
+  function drawGraph(ts){
+    var G=varc('--map-graph'); ctx.strokeStyle=G; ctx.fillStyle=G; ctx.lineWidth=1.5; ctx.lineCap='butt'; ctx.setLineDash([5,3]);
+    tgtPaths.forEach(function(p){ ctx.beginPath(); p.forEach(function(c,i){var q=centre(c,ts); if(i)ctx.lineTo(q[0],q[1]); else ctx.moveTo(q[0],q[1]);}); ctx.stroke(); });
+    ctx.setLineDash([]);
+    tgtPaths.forEach(function(p){ p.forEach(function(c){var q=centre(c,ts); ctx.beginPath(); ctx.arc(q[0],q[1],2.6,0,6.283); ctx.fill();}); });
+  }
+  function drawSettlements(ts){
+    var BA=varc('--map-bati'),BE=varc('--map-bati-edge'),FG=varc('--fg'),SF=varc('--surface');
+    SETTLE.forEach(function(s){
+      s.tiles.forEach(function(p){
+        var n=s.kind===1?5:(s.kind===2?7:9);
+        for(var i=0;i<n;i++){
+          var hx=(p[0]+.12+hash2(p[0],p[1],50+i)*.76)*ts, hy=(p[1]+.12+hash2(p[0],p[1],70+i)*.76)*ts, sz=Math.max(3,ts*.16);
+          ctx.fillStyle=BA; ctx.strokeStyle=BE; ctx.lineWidth=1; ctx.fillRect(hx-sz/2,hy-sz/2,sz,sz); ctx.strokeRect(hx-sz/2,hy-sz/2,sz,sz);
+        }
+      });
+      var q=s.port, fs=Math.max(10,Math.min(13,ts*.42));
+      ctx.font='500 '+fs+'px '+varc('--font-body'); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+      var lx=(q[0]+.5)*ts, ly=(q[1])*ts-4; ctx.lineWidth=3; ctx.strokeStyle=SF; ctx.lineJoin='round'; ctx.strokeText(s.name,lx,ly); ctx.fillStyle=FG; ctx.fillText(s.name,lx,ly);
+    });
+  }
+  function chip(text,x,y,align,ts){
+    ctx.font='600 12px '+varc('--font-body'); var w=ctx.measureText(text).width+16, h=22, x0=align==='r'?x-w:x;
+    ctx.fillStyle=varc('--surface'); ctx.globalAlpha=.92; ctx.fillRect(x0,y,w,h); ctx.globalAlpha=1;
+    ctx.fillStyle=varc('--fg'); ctx.textAlign='left'; ctx.textBaseline='middle'; ctx.fillText(text,x0+8,y+h/2+.5); return w;
+  }
+  function render(){
+    var wrap=$('#mapwrap'), W=wrap.clientWidth; if(!W)return;
+    var ts=W/COLS, H=ts*ROWS, dpr=Math.min(window.devicePixelRatio||1,2);
+    canvas.width=Math.round(W*dpr); canvas.height=Math.round(H*dpr); canvas.style.height=H+'px';
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    drawTerrain(ts);
+    var sx=W*splitPct/100;
+    ctx.save(); ctx.beginPath(); ctx.rect(0,0,sx,H); ctx.clip(); drawOrth(ts); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(sx,0,W-sx,H); ctx.clip(); drawOrganic(ts); if($('#o-graphe').checked)drawGraph(ts); ctx.restore();
+    if($('#o-grille').checked){
+      ctx.strokeStyle=varc('--map-grid'); ctx.lineWidth=1; ctx.beginPath();
+      for(var x=0;x<=COLS;x++){ctx.moveTo(Math.round(x*ts)+.5,0);ctx.lineTo(Math.round(x*ts)+.5,H);}
+      for(var y=0;y<=ROWS;y++){ctx.moveTo(0,Math.round(y*ts)+.5);ctx.lineTo(W,Math.round(y*ts)+.5);}
+      ctx.stroke();
+    }
+    drawSettlements(ts);
+    /* échelle 1 km */
+    var bx=10, by=H-14, bl=4*ts; ctx.fillStyle=varc('--surface'); ctx.globalAlpha=.9; ctx.fillRect(bx-4,by-16,bl+8,24); ctx.globalAlpha=1;
+    ctx.strokeStyle=varc('--fg'); ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(bx,by); ctx.lineTo(bx+bl,by); ctx.moveTo(bx,by-4); ctx.lineTo(bx,by+4); ctx.moveTo(bx+bl,by-4); ctx.lineTo(bx+bl,by+4); ctx.stroke();
+    ctx.fillStyle=varc('--fg'); ctx.font='500 11px '+varc('--font-mono'); ctx.textAlign='center'; ctx.textBaseline='alphabetic'; ctx.fillText('1 km',bx+bl/2,by-6);
+    /* séparation et étiquettes */
+    ctx.strokeStyle=varc('--accent'); ctx.lineWidth=2; ctx.beginPath(); ctx.moveTo(sx,0); ctx.lineTo(sx,H); ctx.stroke();
+    var my=H/2; ctx.fillStyle=varc('--accent'); ctx.beginPath(); ctx.arc(sx,my,12,0,6.283); ctx.fill();
+    ctx.fillStyle=varc('--accent-fg'); ctx.beginPath(); ctx.moveTo(sx-8,my); ctx.lineTo(sx-3,my-4); ctx.lineTo(sx-3,my+4); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(sx+8,my); ctx.lineTo(sx+3,my-4); ctx.lineTo(sx+3,my+4); ctx.closePath(); ctx.fill();
+    if(sx>200)chip('Actuel : tiles de chemin',8,8,'l',ts);
+    if(W-sx>230)chip('Cible : arêtes à 8 directions',W-8,8,'r',ts);
+  }
+  function renderTable(){
+    var rows='';
+    PAIRS.forEach(function(pr,i){
+      var a=sById(pr[0]), b=sById(pr[1]), mo=metrics(orthPaths[i]), mt=metrics(tgtPaths[i]);
+      var dx=a.port[0]-b.port[0], dy=a.port[1]-b.port[1], straight=Math.sqrt(dx*dx+dy*dy)*TILE_KM;
+      var kmo=mo.steps*TILE_KM, kmt=mt.eq*TILE_KM, over=(kmo/straight-1)*100;
+      rows+='<tr><td>'+a.name+' → '+b.name+'</td>'
+        +'<td class="num">'+mo.steps+' tiles · '+fmt(kmo,1)+' km</td>'
+        +'<td class="num">'+fmt(mt.eq,1)+' tiles · '+fmt(kmt,1)+' km</td>'
+        +'<td class="num">'+fmt(straight,1)+' km</td>'
+        +'<td class="num '+(over>25?'bad':'')+'">+'+fmt(over,0)+' %</td></tr>';
+    });
+    $('#tbody').innerHTML=rows;
+  }
+  function refreshMap(){ render(); }
+  computeOrth(); computeTgt(); renderTable();
+  ['#o-grille','#o-graphe','#o-jit'].forEach(function(s){ $(s).addEventListener('input',refreshMap); });
+  $('#o-bati').addEventListener('input',function(){ computeTgt(); renderTable(); render(); });
+  $('#o-split').addEventListener('input',function(e){ splitPct=+e.target.value; render(); });
+  (function drag(){
+    var on=false;
+    function set(e){ var r=canvas.getBoundingClientRect(); splitPct=Math.max(2,Math.min(98,(e.clientX-r.left)/r.width*100)); $('#o-split').value=splitPct; render(); }
+    canvas.addEventListener('pointerdown',function(e){ on=true; canvas.setPointerCapture(e.pointerId); set(e); });
+    canvas.addEventListener('pointermove',function(e){ if(on)set(e); });
+    canvas.addEventListener('pointerup',function(){ on=false; });
+    canvas.addEventListener('pointercancel',function(){ on=false; });
+  })();
+
+  /* =====================================================
+     2. Une tile de 250 m
+     ===================================================== */
+  var NS='http://www.w3.org/2000/svg', SQ2=Math.SQRT2, TILE_M2=62500;
+  var VOIES={
+    chemin:{label:'Un chemin de terre',w:5},
+    route:{label:'Une route royale',w:12},
+    rail:{label:'Une voie ferrée',w:15},
+    auto:{label:'Une autoroute',w:40}
+  };
+  var GEOM={straight:{label:'traversante',len:250},diag:{label:'diagonale',len:250*SQ2},dead:{label:'en cul-de-sac',len:125}};
+  function distTo(geom,x,y){
+    if(geom==='straight')return Math.abs(y-125);
+    if(geom==='diag')return Math.abs(x-y)/SQ2;
+    var cx=Math.max(0,Math.min(125,x)); return Math.sqrt((x-cx)*(x-cx)+(y-125)*(y-125));
+  }
+  function layout(N,sigma,blocked){
+    var rng=mulberry32(12345+N), placed=[], tries=0, d2=14*14;
+    while(placed.length<N&&tries<60000){
+      tries++; var x,y;
+      if(sigma){ var u=rng(),v=rng(),r=Math.sqrt(-2*Math.log(u||1e-9)); x=125+sigma*r*Math.cos(6.2832*v); y=125+sigma*r*Math.sin(6.2832*v); }
+      else { x=rng()*250; y=rng()*250; }
+      if(x<5||y<5||x>245||y>245)continue;
+      if(blocked&&blocked(x,y))continue;
+      var ok=true; for(var i=0;i<placed.length;i++){var dx=placed[i][0]-x,dy=placed[i][1]-y; if(dx*dx+dy*dy<d2){ok=false;break;}}
+      if(ok)placed.push([x,y]);
+    }
+    return placed;
+  }
+  function el(name,attrs,parent){ var e=document.createElementNS(NS,name); for(var k in attrs)e.setAttribute(k,attrs[k]); if(parent)parent.appendChild(e); return e; }
+
+  function roadGroup(svg,type,geom){
+    var rot=geom==='diag'?45:0, g=el('g',{transform:'rotate('+rot+' 125 125)'},svg), w=VOIES[type].w;
+    var x1=geom==='dead'?0:(geom==='diag'?125-200:-5), x2=geom==='dead'?125:(geom==='diag'?125+200:255), cap=geom==='dead'?'round':'butt';
+    function ln(sw,stroke,extra){ var a={x1:x1,y1:125,x2:x2,y2:125,'stroke-width':sw,'stroke-linecap':cap,style:'stroke:'+stroke}; for(var k in extra||{})a[k]=extra[k]; return el('line',a,g); }
+    if(type==='chemin'){ ln(w+1.8,'var(--map-sol)'); ln(w,'var(--map-sol-light)'); }
+    else if(type==='route'){ ln(w+3,'var(--map-sol)'); ln(w,'var(--ballast)'); ln(0.8,'var(--paper)',{'stroke-dasharray':'6 6'}); }
+    else if(type==='rail'){ ln(w,'var(--ballast)'); ln(8,'var(--asphalt)',{'stroke-dasharray':'1.4 2.6'}); el('line',{x1:x1,y1:122.6,x2:x2,y2:122.6,'stroke-width':1.2,style:'stroke:var(--fg)'},g); el('line',{x1:x1,y1:127.4,x2:x2,y2:127.4,'stroke-width':1.2,style:'stroke:var(--fg)'},g); }
+    else { ln(w,'var(--asphalt)'); ln(3.2,'var(--ballast)'); ln(.9,'var(--paper)',{'stroke-dasharray':'7 7',transform:'translate(0 -9)'}); ln(.9,'var(--paper)',{'stroke-dasharray':'7 7',transform:'translate(0 9)'}); ln(.9,'var(--paper)',{transform:'translate(0 -18)'}); ln(.9,'var(--paper)',{transform:'translate(0 18)'}); }
+  }
+  function renderTile(){
+    var type=document.querySelector('input[name=t-voie]:checked').value, geom=document.querySelector('input[name=t-geom]:checked').value,
+        N=+document.querySelector('input[name=t-dens]:checked').value, ordre=document.querySelector('input[name=t-ordre]:checked').value;
+    var w=VOIES[type].w, sigma=N===40?70:(N===120?95:0), limit=w/2+4.5;
+    var inside=function(x,y){ return distTo(geom,x,y)<limit; };
+    var base=layout(N,sigma,null), baseN=base.length, shown, displaced=[], placedN;
+    if(ordre==='bat'){ shown=base; base.forEach(function(h){ if(inside(h[0],h[1]))displaced.push(h); }); placedN=baseN-displaced.length; }
+    else { shown=layout(N,sigma,inside); placedN=shown.length; }
+    var svg=$('#tile'); while(svg.firstChild)svg.removeChild(svg.firstChild);
+    el('rect',{x:0,y:0,width:250,height:250,style:'fill:var(--map-champ)'},svg);
+    for(var k=1;k<21;k++){ el('line',{x1:k*12,y1:0,x2:k*12,y2:250,'stroke-width':.6,style:'stroke:var(--map-furrow)'},svg); }
+    roadGroup(svg,type,geom);
+    var dset={}; displaced.forEach(function(h){dset[h[0]+','+h[1]]=1;});
+    shown.forEach(function(h,i){
+      var bad=dset[h[0]+','+h[1]], a=(hash2(i,N,5)-.5)*16;
+      var r=el('rect',{x:h[0]-4.5,y:h[1]-4.5,width:9,height:9,transform:'rotate('+a+' '+h[0]+' '+h[1]+')','stroke-width':.8,
+        style:bad?'fill:none;stroke:var(--warn);stroke-dasharray:2 1.4':'fill:var(--map-bati);stroke:var(--map-bati-edge)'},svg);
+      if(bad){ el('line',{x1:h[0]-4.5,y1:h[1]-4.5,x2:h[0]+4.5,y2:h[1]+4.5,'stroke-width':.9,style:'stroke:var(--warn)'},svg); el('line',{x1:h[0]+4.5,y1:h[1]-4.5,x2:h[0]-4.5,y2:h[1]+4.5,'stroke-width':.9,style:'stroke:var(--warn)'},svg); }
+    });
+    el('rect',{x:.5,y:.5,width:249,height:249,fill:'none','stroke-width':1,style:'stroke:var(--fg)'},svg);
+    el('rect',{x:8,y:228,width:62,height:16,rx:2,style:'fill:var(--surface);opacity:.92'},svg);
+    el('line',{x1:13,y1:238,x2:63,y2:238,'stroke-width':1.6,style:'stroke:var(--fg)'},svg);
+    el('line',{x1:13,y1:234.5,x2:13,y2:241.5,'stroke-width':1.6,style:'stroke:var(--fg)'},svg);
+    el('line',{x1:63,y1:234.5,x2:63,y2:241.5,'stroke-width':1.6,style:'stroke:var(--fg)'},svg);
+    var t=el('text',{x:38,y:233.5,'text-anchor':'middle','font-size':7,style:'fill:var(--fg);font-family:var(--font-mono)'},svg); t.textContent='50 m';
+
+    var area=w*GEOM[geom].len, pct=area/TILE_M2*100, capBefore=baseN/20, capAfter=placedN/20;
+    $('#r-emprise').textContent=fmt(area)+' m² · '+fmt(pct,1)+' %';
+    $('#r-maisons').textContent=baseN+' → '+placedN;
+    var loss=baseN?(1-placedN/baseN)*100:0;
+    $('#r-cap').textContent=fmt(capBefore,1)+' → '+fmt(capAfter,1)+' ('+(loss>0?'−':'')+fmt(loss,0)+' %)';
+    var reloc=ordre==='bat'?displaced.length:Math.max(0,baseN-placedN);
+    $('#r-reloc').textContent=reloc+' maisons · '+fmt(reloc/20,1)+' pop';
+    var msg=VOIES[type].label+' '+GEOM[geom].label+' prend '+fmt(pct,1)+' % de la tile. ';
+    if(ordre==='bat'){ msg+= displaced.length? displaced.length+' maisons sont sur le tracé : poser la route coûte '+fmt(displaced.length/20,1)+' pop à reloger.' : 'Aucune maison n\'est sur le tracé : la route se pose sans rien déplacer.'; }
+    else { msg+= reloc? 'Les maisons se placent autour, mais '+reloc+' ne trouvent plus de place : le plafond de la tile baisse de '+fmt(loss,0)+' %.' : 'Les maisons se placent autour sans perte : la tile n\'était pas assez dense pour que la route compte.'; }
+    $('#verdict').textContent=msg;
+  }
+  ['t-voie','t-geom','t-dens','t-ordre'].forEach(function(n){
+    Array.prototype.forEach.call(document.querySelectorAll('input[name='+n+']'),function(i){ i.addEventListener('change',renderTile); });
+  });
+
+  /* ---------- démarrage et thème ---------- */
+  function all(){ render(); renderTile(); }
+  if(window.ResizeObserver){ new ResizeObserver(function(){ render(); }).observe($('#mapwrap')); } else { window.addEventListener('resize',render); }
+  try{ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change',all); }catch(e){}
+  new MutationObserver(all).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+  if(document.fonts&&document.fonts.ready){ document.fonts.ready.then(render); }
+  all();
+})();
+</script>
+
+</body></html>
