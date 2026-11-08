@@ -1,9 +1,9 @@
 //! POC v2 : la subsistance d'une pop (docs/08-concept-subsistance.md).
 //!
 //! Une ferme isolée, 5 champs, 3 forêts, une pop. Un tick = un jour. Grain, bois et vêtement
-//! sont produits, transportés (quantité × distance × k jours), prélevés (15 %) et consommés.
-//! Toutes les quantités sont des entiers en parts : 1 unité = `Q` parts (divisible par 1 à 8,
-//! donc le transport et le prélèvement de 15 % sont exacts).
+//! sont produits, transportés (quantité × distance × k jours), consommés ; le seigneur prélève
+//! 15 % de la production dans le stock de la ferme, à date fixe.
+//! Toutes les quantités sont des entiers : l'unité de matériau est indivisible (décision du 2026-11-08).
 
 pub mod calendrier;
 pub mod rng;
@@ -11,9 +11,6 @@ pub mod rng;
 use calendrier::*;
 use rng::Rng;
 use serde::Serialize;
-
-/// Parts par unité (1 unité de grain ≈ 2 t, 1 unité de bois ≈ 5 t).
-pub const Q: i64 = 120;
 
 // ───────────────────────── Paramètres ─────────────────────────
 
@@ -23,6 +20,8 @@ pub struct Params {
     /// Si présent, météo fixe en ‰ (1000 = année moyenne) au lieu d'un tirage entre 800 et 1200.
     pub meteo_fixe_pm: Option<i64>,
     pub prelevement_pct: i64,
+    /// Date fixe du prélèvement (mois, jour du mois) : Saint-Martin, hypothèse à valider.
+    pub prelevement_date: (u32, u32),
     pub grains_par_champ: i64,
     pub bois_par_foret: i64,
     pub labour_j: u32,
@@ -45,6 +44,7 @@ impl Default for Params {
             graine: 1,
             meteo_fixe_pm: None,
             prelevement_pct: 15,
+            prelevement_date: (11, 11),
             grains_par_champ: 3,
             bois_par_foret: 3,
             labour_j: 5,
@@ -80,18 +80,22 @@ pub struct Champ {
     pub phase: Phase,
     /// Jours de travail déjà faits dans la phase en cours.
     pub travail: u32,
-    /// Grain récolté (net de prélèvement) qui attend d'être transporté à la ferme.
+    /// Grain récolté qui attend d'être transporté à la ferme (unités entières).
     pub grain: i64,
+    /// Jours déjà passés à porter l'unité en cours.
+    pub portage: u32,
 }
 
 #[derive(Clone, Debug)]
 pub struct Foret {
-    /// Bois encore coupable cette année (la forêt repousse au 1er janvier).
+    /// Petit bois à ramasser cette année : la forêt est permanente, le petit bois repousse au 1er janvier.
     pub disponible: i64,
-    /// Bois coupé (net de prélèvement) qui attend d'être transporté.
+    /// Bois coupé qui attend d'être transporté.
     pub coupe: i64,
     /// Jours de travail déjà faits sur l'unité en cours de coupe.
     pub travail: u32,
+    /// Jours déjà passés à porter l'unité en cours.
+    pub portage: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -118,10 +122,10 @@ impl Monde {
         let ferme = 2 * largeur + 1;
         tiles[ferme] = Tile::Ferme;
         for (x, y) in [(2, 2), (3, 1), (3, 2), (3, 3), (4, 2)] {
-            tiles[y * largeur + x] = Tile::Champ(Champ { phase: Phase::Laboure, travail: 0, grain: 0 });
+            tiles[y * largeur + x] = Tile::Champ(Champ { phase: Phase::Laboure, travail: 0, grain: 0, portage: 0 });
         }
         for (x, y) in [(1, 0), (0, 0), (2, 0)] {
-            tiles[y * largeur + x] = Tile::Foret(Foret { disponible: p.bois_par_foret * Q, coupe: 0, travail: 0 });
+            tiles[y * largeur + x] = Tile::Foret(Foret { disponible: p.bois_par_foret, coupe: 0, travail: 0, portage: 0 });
         }
         Monde { largeur, hauteur, tiles, ferme }
     }
@@ -283,6 +287,9 @@ pub struct Simulation {
     pub meteo_pm: i64,
     pub stocks: Stocks,
     pub travail_vetement: u32,
+    /// Production brute depuis le dernier prélèvement (assiette du prochain).
+    pub grain_a_taxer: i64,
+    pub bois_a_taxer: i64,
     pub activite: Activite,
     pub raison: String,
     pub bilan: Bilan,
@@ -305,7 +312,7 @@ impl Simulation {
     pub fn avec(params: Params) -> Self {
         let monde = Monde::initial(&params);
         let (g, b, v) = params.stock_initial;
-        let stocks = Stocks { grain: g * Q, bois: b * Q, vetement: v * Q };
+        let stocks = Stocks { grain: g, bois: b, vetement: v };
         let mut s = Simulation {
             rng: Rng::new(params.graine),
             monde,
@@ -313,6 +320,8 @@ impl Simulation {
             meteo_pm: 1000,
             stocks,
             travail_vetement: 0,
+            grain_a_taxer: 0,
+            bois_a_taxer: 0,
             activite: Activite::Aucune,
             raison: String::from("Pas encore commencé"),
             bilan: Bilan::default(),
@@ -341,6 +350,9 @@ impl Simulation {
         }
         if jdm == 1 {
             self.debut_de_mois(mois);
+        }
+        if (mois, jdm) == self.params.prelevement_date {
+            self.prelevement();
         }
         let (act, raison) = if self.jour % 7 == 6 {
             (Activite::Repos, String::from("Dimanche : jour chômé"))
@@ -372,7 +384,7 @@ impl Simulation {
             Some(m) => m,
             None => 800 + self.rng.sous(401) as i64,
         };
-        let repousse = self.params.bois_par_foret * Q;
+        let repousse = self.params.bois_par_foret;
         for t in &mut self.monde.tiles {
             if let Tile::Foret(f) = t {
                 f.disponible = repousse;
@@ -412,7 +424,7 @@ impl Simulation {
         }
         // Consommation mensuelle.
         let p = self.params.clone();
-        let faim = p.conso_grain_mois * Q;
+        let faim = p.conso_grain_mois;
         let mange = faim.min(self.stocks.grain);
         self.stocks.grain -= mange;
         self.bilan.grain_mange += mange;
@@ -421,7 +433,7 @@ impl Simulation {
             self.noter(String::from("Manque de grain (trace, sans conséquence pour l'instant)"));
         }
         if mois_froid(mois) {
-            let besoin = p.conso_bois_mois_froid * Q;
+            let besoin = p.conso_bois_mois_froid;
             let brule = besoin.min(self.stocks.bois);
             self.stocks.bois -= brule;
             self.bilan.bois_brule += brule;
@@ -431,11 +443,11 @@ impl Simulation {
             }
         }
         if self.rng.sous(100) < p.usure_vetement_pct_mois {
-            let use_ = Q.min(self.stocks.vetement);
+            let use_ = 1.min(self.stocks.vetement);
             self.stocks.vetement -= use_;
             self.bilan.vetement_use += use_;
-            if use_ < Q {
-                self.bilan.manque_vetement += Q - use_;
+            if use_ < 1 {
+                self.bilan.manque_vetement += 1 - use_;
                 self.noter(String::from("Un vêtement s'use mais il n'y en a plus (trace)"));
             } else {
                 self.noter(String::from("Un vêtement est usé"));
@@ -444,17 +456,44 @@ impl Simulation {
         self.serie.push(Point { jour: self.jour, grain: self.stocks.grain, bois: self.stocks.bois, vetement: self.stocks.vetement });
     }
 
+    /// Part du seigneur, arrondie à l'unité la plus proche (unité indivisible).
+    fn part_du_seigneur(&self, brut: i64) -> i64 {
+        (brut * self.params.prelevement_pct + 50) / 100
+    }
+
+    /// Prélèvement à date fixe : 15 % de la production brute depuis le précédent, pris dans le stock de la ferme.
+    pub fn prelevement(&mut self) {
+        let (du_grain, du_bois) = (self.part_du_seigneur(self.grain_a_taxer), self.part_du_seigneur(self.bois_a_taxer));
+        let pris_grain = du_grain.min(self.stocks.grain);
+        let pris_bois = du_bois.min(self.stocks.bois);
+        self.stocks.grain -= pris_grain;
+        self.stocks.bois -= pris_bois;
+        self.bilan.grain_preleve += pris_grain;
+        self.bilan.bois_preleve += pris_bois;
+        let mut texte = format!(
+            "Prélèvement du seigneur : {pris_grain} grain (15 % de {}), {pris_bois} bois (15 % de {})",
+            self.grain_a_taxer, self.bois_a_taxer
+        );
+        if pris_grain < du_grain || pris_bois < du_bois {
+            texte.push_str(" — stock insuffisant, prélèvement partiel (trace)");
+        }
+        self.grain_a_taxer = 0;
+        self.bois_a_taxer = 0;
+        self.noter(texte);
+    }
+
     // ── Décision quotidienne (docs/08 §6) ──
 
+    /// Seuil en unités : le bois est ramassé tant que le stock est strictement inférieur
+    /// à (5 + prélèvement attendu) + 10 %, arrondi à l'unité supérieure.
     pub fn seuil_bois(&self) -> i64 {
         let p = &self.params;
-        let annuel = 5 * Q;
-        let attendu = p.bois_par_foret * 3 * Q * p.prelevement_pct / 100;
-        (annuel + attendu) * 110 / 100
+        let attendu = self.part_du_seigneur(p.bois_par_foret * 3);
+        ((5 + attendu) * 11 + 9) / 10
     }
 
     pub fn seuil_vetement(&self) -> i64 {
-        2 * Q
+        2
     }
 
     fn travailler(&mut self, mois: u32) -> (Activite, String) {
@@ -473,11 +512,11 @@ impl Simulation {
             self.travail_vetement += 1;
             if self.travail_vetement >= self.params.vetement_j {
                 self.travail_vetement = 0;
-                self.stocks.vetement += Q;
+                self.stocks.vetement += 1;
                 self.bilan.vetements_faits += 1;
                 self.noter(String::from("Un vêtement est terminé"));
             }
-            return (Activite::Vetement, format!("Vêtements : stock {} < 2 → couture à la maison", fmt(self.stocks.vetement)));
+            return (Activite::Vetement, format!("Vêtements : stock {} < 2 → couture à la maison", self.stocks.vetement));
         }
         // 5. Sinon, chômage supplémentaire.
         (Activite::Chomage, String::from("Rien d'urgent : chômage supplémentaire"))
@@ -530,21 +569,28 @@ impl Simulation {
         }
         // Transport du grain : le champ le plus proche qui en a.
         let mut c = self.monde.indices(|t| matches!(t, Tile::Champ(c) if c.grain > 0));
-        c.sort_by_key(|&i| (self.monde.distance(i), i));
+        c.sort_by_key(|&i| {
+            let entame = matches!(&self.monde.tiles[i], Tile::Champ(c) if c.portage > 0);
+            (!entame, self.monde.distance(i), i)
+        });
         let i = *c.first()?;
         let d = self.monde.distance(i);
-        let par_jour = Q / (d * p.k_grain);
+        let cout = (d * p.k_grain) as u32;
         let (x, y) = self.monde.xy(i);
-        let mut reste = 0;
+        let (mut reste, mut jour_n) = (0, 0);
         if let Tile::Champ(ch) = &mut self.monde.tiles[i] {
-            let bouge = par_jour.min(ch.grain);
-            ch.grain -= bouge;
-            self.stocks.grain += bouge;
+            ch.portage += 1;
+            jour_n = ch.portage;
+            if ch.portage >= cout {
+                ch.portage = 0;
+                ch.grain -= 1;
+                self.stocks.grain += 1;
+            }
             reste = ch.grain;
         }
         Some((
             Activite::TransportGrain(i),
-            format!("Transport du grain du champ ({x},{y}) : {d} tiles × {} j/grain, reste {} à porter", p.k_grain, fmt(reste)),
+            format!("Transport du grain du champ ({x},{y}) : 1 grain = {d} tiles × {} j, jour {jour_n}/{cout}, reste {reste} à porter", p.k_grain),
         ))
     }
 
@@ -563,56 +609,61 @@ impl Simulation {
         let pm = self.meteo_pm;
         let mut brut = 0;
         for _ in 0..self.params.grains_par_champ {
-            let mut g = Q;
+            let mut g = 1;
             if pm > 1000 && (self.rng.sous(1000) as i64) < pm - 1000 {
-                g = 2 * Q;
+                g = 2;
             } else if pm < 1000 && (self.rng.sous(1000) as i64) < 1000 - pm {
                 g = 0;
             }
             brut += g;
         }
-        let preleve = brut * self.params.prelevement_pct / 100;
         if let Tile::Champ(c) = &mut self.monde.tiles[i] {
-            c.grain += brut - preleve;
+            c.grain += brut;
             c.phase = Phase::Nu;
             c.travail = 0;
         }
         self.bilan.grain_brut += brut;
-        self.bilan.grain_preleve += preleve;
+        self.grain_a_taxer += brut;
         self.bilan.champs_recoltes += 1;
         let (x, y) = self.monde.xy(i);
-        self.noter(format!("Champ ({x},{y}) récolté : {} grains dont {} prélevés", fmt(brut), fmt(preleve)));
+        self.noter(format!("Champ ({x},{y}) récolté : {brut} grains"));
     }
 
     fn travail_bois(&mut self) -> Option<(Activite, String)> {
         let p = self.params.clone();
         // Bois déjà coupé à rapporter.
         let mut c = self.monde.indices(|t| matches!(t, Tile::Foret(f) if f.coupe > 0));
-        c.sort_by_key(|&i| (self.monde.distance(i), i));
+        c.sort_by_key(|&i| {
+            let entame = matches!(&self.monde.tiles[i], Tile::Foret(f) if f.portage > 0);
+            (!entame, self.monde.distance(i), i)
+        });
         if let Some(&i) = c.first() {
             let d = self.monde.distance(i);
-            let par_jour = Q / (d * p.k_bois);
+            let cout = (d * p.k_bois) as u32;
             let (x, y) = self.monde.xy(i);
             let mut reste = 0;
             if let Tile::Foret(f) = &mut self.monde.tiles[i] {
-                let bouge = par_jour.min(f.coupe);
-                f.coupe -= bouge;
-                self.stocks.bois += bouge;
+                f.portage += 1;
+                if f.portage >= cout {
+                    f.portage = 0;
+                    f.coupe -= 1;
+                    self.stocks.bois += 1;
+                }
                 reste = f.coupe;
             }
             return Some((
                 Activite::TransportBois(i),
                 format!(
-                    "Bois : stock {} < seuil {} → transport depuis la forêt ({x},{y}), {d} tiles × {} j/unité, reste {}",
-                    fmt(self.stocks.bois),
-                    fmt(self.seuil_bois()),
+                    "Bois : stock {} < seuil {} → transport depuis la forêt ({x},{y}), 1 unité = {d} tiles × {} j, reste {}",
+                    self.stocks.bois,
+                    self.seuil_bois(),
                     p.k_bois,
-                    fmt(reste)
+                    reste
                 ),
             ));
         }
         // Sinon couper : d'abord la forêt dont la coupe est entamée, sinon la plus proche.
-        let mut c = self.monde.indices(|t| matches!(t, Tile::Foret(f) if f.disponible >= Q));
+        let mut c = self.monde.indices(|t| matches!(t, Tile::Foret(f) if f.disponible >= 1));
         c.sort_by_key(|&i| {
             let entame = matches!(&self.monde.tiles[i], Tile::Foret(f) if f.travail > 0);
             (!entame, self.monde.distance(i), i)
@@ -626,32 +677,26 @@ impl Simulation {
             jour_n = f.travail;
             if f.travail >= p.coupe_j_par_unite {
                 f.travail = 0;
-                f.disponible -= Q;
-                let preleve = Q * p.prelevement_pct / 100;
-                f.coupe += Q - preleve;
-                self.bilan.bois_brut += Q;
-                self.bilan.bois_preleve += preleve;
+                f.disponible -= 1;
+                f.coupe += 1;
+                self.bilan.bois_brut += 1;
                 finie = true;
             }
         }
         if finie {
-            self.noter(format!("Forêt ({x},{y}) : 1 unité de bois coupée"));
+            self.bois_a_taxer += 1;
+            self.noter(format!("Forêt ({x},{y}) : 1 unité de bois ramassée"));
         }
         Some((
             Activite::Coupe(i),
             format!(
-                "Bois : stock {} < seuil {} → coupe en forêt ({x},{y}), jour {jour_n}/{}",
-                fmt(self.stocks.bois),
-                fmt(self.seuil_bois()),
+                "Bois : stock {} < seuil {} → petit bois en forêt ({x},{y}), jour {jour_n}/{}",
+                self.stocks.bois,
+                self.seuil_bois(),
                 p.coupe_j_par_unite
             ),
         ))
     }
-}
-
-/// Format d'une quantité en unités (2 décimales).
-pub fn fmt(q: i64) -> String {
-    format!("{:.2}", q as f64 / Q as f64).replace('.', ",")
 }
 
 // ───────────────────────── Vue JSON pour l'interface ─────────────────────────
@@ -675,6 +720,8 @@ struct VueTile {
     disponible: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     coupe: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    portage: Option<u32>,
 }
 
 #[derive(Serialize)]
@@ -695,6 +742,8 @@ struct VuePop {
     raison: String,
     stocks: Stocks,
     travail_vetement: u32,
+    grain_a_taxer: i64,
+    bois_a_taxer: i64,
     seuil_bois: i64,
     seuil_vetement: i64,
 }
@@ -702,6 +751,8 @@ struct VuePop {
 #[derive(Serialize)]
 struct VueRegles {
     prelevement_pct: i64,
+    prelevement_mois: u32,
+    prelevement_jour: u32,
     labour_j: u32,
     semis_j: u32,
     recolte_j: u32,
@@ -713,7 +764,6 @@ struct VueRegles {
 
 #[derive(Serialize)]
 struct Vue<'a> {
-    q: i64,
     jours_ecoules: u32,
     date: VueDate,
     meteo_pm: i64,
@@ -762,6 +812,7 @@ impl Simulation {
                     grain: None,
                     disponible: None,
                     coupe: None,
+                    portage: None,
                 };
                 match &self.monde.tiles[i] {
                     Tile::Plaine => {}
@@ -776,11 +827,13 @@ impl Simulation {
                             Phase::Seme => p.recolte_j,
                         });
                         v.grain = Some(c.grain);
+                        v.portage = Some(c.portage);
                     }
                     Tile::Foret(f) => {
                         v.genre = "foret";
                         v.disponible = Some(f.disponible);
                         v.coupe = Some(f.coupe);
+                        v.portage = Some(f.portage);
                         v.travail = Some(f.travail);
                         v.travail_requis = Some(p.coupe_j_par_unite);
                     }
@@ -789,7 +842,6 @@ impl Simulation {
             })
             .collect();
         let vue = Vue {
-            q: Q,
             jours_ecoules: self.jour,
             date: self.date(),
             meteo_pm: self.meteo_pm,
@@ -802,6 +854,8 @@ impl Simulation {
                 raison: self.raison.clone(),
                 stocks: self.stocks,
                 travail_vetement: self.travail_vetement,
+                grain_a_taxer: self.grain_a_taxer,
+                bois_a_taxer: self.bois_a_taxer,
                 seuil_bois: self.seuil_bois(),
                 seuil_vetement: self.seuil_vetement(),
             },
@@ -811,6 +865,8 @@ impl Simulation {
             journal: &self.journal[self.journal.len().saturating_sub(40)..],
             regles: VueRegles {
                 prelevement_pct: p.prelevement_pct,
+                prelevement_mois: p.prelevement_date.0,
+                prelevement_jour: p.prelevement_date.1,
                 labour_j: p.labour_j,
                 semis_j: p.semis_j,
                 recolte_j: p.recolte_j,

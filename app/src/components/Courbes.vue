@@ -8,7 +8,7 @@ const pts = computed(() => {
   const debut = Math.max(0, fin - ANNEES * 365)
   return props.etat.serie.filter((p) => p.jour >= debut)
 })
-const max = computed(() => Math.max(10 * props.etat.q, ...pts.value.map((p) => Math.max(p.grain, p.bois, p.vetement))))
+const max = computed(() => Math.max(10, ...pts.value.map((p) => Math.max(p.grain, p.bois, p.vetement))))
 const chemin = (cle) => {
   const p = pts.value
   if (p.length < 2) return ''
@@ -24,6 +24,6 @@ const COULEURS = { grain: '#e0b43a', bois: '#3f8f5a', vetement: '#8d5fb0' }
     <svg :viewBox="`0 0 ${W} ${H}`" class="courbe" preserveAspectRatio="none">
       <path v-for="(c, k) in COULEURS" :key="k" :d="chemin(k)" :stroke="c" fill="none" stroke-width="1.6" vector-effect="non-scaling-stroke" />
     </svg>
-    <ul class="legende"><li v-for="(c, k) in COULEURS" :key="k"><i :style="{ background: c }"></i>{{ { grain: 'Grain', bois: 'Bois', vetement: 'Vêtements' }[k] }}</li><li>max {{ Math.round(max / etat.q) }}</li></ul>
+    <ul class="legende"><li v-for="(c, k) in COULEURS" :key="k"><i :style="{ background: c }"></i>{{ { grain: 'Grain', bois: 'Bois', vetement: 'Vêtements' }[k] }}</li><li>max {{ max }}</li></ul>
   </section>
 </template>

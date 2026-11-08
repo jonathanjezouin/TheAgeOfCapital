@@ -95,7 +95,7 @@ export class Carte {
         s.visible = t.phase === 'seme'
         s.tint = 0xcfe89a
       } else if (t.type === 'foret') {
-        s.alpha = 0.45 + 0.55 * (t.disponible / etat.q / 3)
+        s.alpha = 0.45 + 0.55 * (t.disponible / 3)
       }
     })
     this.redessiner()
@@ -106,7 +106,6 @@ export class Carte {
     if (!e) return
     const g = this.surcouche
     g.clear()
-    const q = e.q
     const mur = e.date.mois === 7 || e.date.mois === 8
     e.tiles.forEach((t, i) => {
       const x = t.x * T, y = t.y * T
@@ -117,10 +116,10 @@ export class Carte {
         }
         if (t.phase === 'seme' && mur) g.rect(x + 12, y + 12, T - 24, T - 24).fill({ color: 0xf2c94c, alpha: 0.5 })
         if (t.travail > 0) this.barre(g, x, y, t.travail / t.travail_requis, 0xffffff)
-        if (t.grain > 0) this.tas(g, x + T - 56, y + 56, 0xf6d24a, t.grain / q)
+        if (t.grain > 0) this.tas(g, x + T - 56, y + 56, 0xf6d24a, t.grain)
       } else if (t.type === 'foret') {
         if (t.travail > 0) this.barre(g, x, y, t.travail / t.travail_requis, 0xffffff)
-        if (t.coupe > 0) this.tas(g, x + T - 56, y + 56, 0x9b6a3c, t.coupe / q)
+        if (t.coupe > 0) this.tas(g, x + T - 56, y + 56, 0x9b6a3c, t.coupe)
       }
     })
     // Trajet de la pop vers sa tile de travail

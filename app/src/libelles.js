@@ -23,10 +23,8 @@ export const PHASES = {
   seme: { nom: 'Semé (à récolter)', fenetre: 'juillet-août' },
 }
 
-export const unites = (q, Q, d = 2) => {
-  const v = q / Q
-  return (Math.abs(v - Math.round(v)) < 1e-9 ? String(Math.round(v)) : v.toFixed(d)).replace('.', ',')
-}
+// Les quantités sont des entiers : l'unité de matériau est indivisible.
+export const unites = (q) => String(q)
 
 export const dateCourte = (jour) => {
   // jour = numéro de jour depuis le 1er janvier 1750 (années de 365 jours)

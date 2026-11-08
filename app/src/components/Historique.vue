@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { unites } from '../libelles.js'
 const props = defineProps({ etat: Object })
-const u = (q) => unites(q, props.etat.q, 1)
+const u = (q) => unites(q)
 const travailles = (j) => j.labour + j.semis + j.recolte + j.transport_grain + j.coupe + j.transport_bois + j.vetement
 const lignes = computed(() => props.etat.historique.slice(-12).reverse())
 </script>

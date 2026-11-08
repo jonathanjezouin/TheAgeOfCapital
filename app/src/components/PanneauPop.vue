@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { ACTIVITES, unites } from '../libelles.js'
 const props = defineProps({ etat: Object })
 const a = computed(() => ACTIVITES[props.etat.pop.activite])
-const u = (q) => unites(q, props.etat.q)
+const u = (q) => unites(q)
 const s = computed(() => props.etat.pop.stocks)
 </script>
 

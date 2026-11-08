@@ -23,24 +23,25 @@ Le concept de `docs/08` (décisions du 2026-11-07) remplace les étapes 1 à 3 e
 | Interface | `app/` : clic sur une tile (fiche détaillée), survol, état des champs (nu, labouré, semé, mûr), barres de travail, tas de grain et de bois à porter, trajet et position de la pop ; panneaux pop, année (jours par poste, flux), courbes de stocks, historique, journal |
 | Tests | `cargo test` dans `sim/` : invariants (365 j, dimanches, conservation du grain et du bois) et trajectoires (année moyenne = chiffres du doc, jamais de moisson ratée sur 5 graines × 100 ans) |
 
-### Hypothèses prises sur les points ouverts de `docs/08` §9 (à valider)
+### Décisions sur les points ouverts de `docs/08` §9 (validées le 2026-11-08)
 
-| # | Point ouvert | Hypothèse du code |
+| # | Point ouvert | Décision |
 |---|---|---|
-| 1 | Moisson et transport | culture d'abord, transport du grain seulement quand il n'y a plus de travail de culture disponible |
-| 2 | Grain laissé au champ | attend sans perte |
-| 3 | Prélèvement | pris sur le champ à la fin de la récolte (et sur le bois à la coupe) ; seul le net est transporté, par la pop |
-| 4 | Régénération des forêts | d'un coup au 1ᵉʳ janvier, pas d'effet de la météo |
+| 1 | Moisson et transport | culture d'abord, transport ensuite |
+| 2 | Grain laissé au champ | attend sans perte ni péremption |
+| 3 | Prélèvement | **pris dans le stock de la ferme, à date fixe** (11 novembre, Saint-Martin : date retenue par défaut, modifiable), 15 % de la production brute depuis le prélèvement précédent. Si le stock ne suffit pas, prélèvement partiel (trace) |
+| — | **Unités indivisibles** | toutes les quantités sont des entiers ; la part du seigneur est arrondie à l'unité la plus proche (15 % de 15 grains = 2,25 → 2) ; le transport se fait une unité à la fois (une unité = distance × k jours, avec un compteur de jours de portage) |
+| 4 | Régénération | la forêt est permanente ; c'est le **petit bois à ramasser** (3 unités par forêt) qui repousse d'un coup au 1ᵉʳ janvier |
 | 5 | Stock initial | 12 grains, 7 bois, 2 vêtements |
-| 6 | Vêtement | usure aléatoire de 20 % par mois |
-| — | Étapes ratées | un semis non fait avant mai, une récolte non faite avant septembre ou un labour inachevé en décembre font retomber le champ en friche |
-| — | Choix du champ | celui dont le travail est entamé, sinon le plus proche |
+| 6 | Vêtement | usure aléatoire de 20 % par mois, insatisfaisant mais conservé pour l'instant |
+
+Choix techniques non discutés : un champ non travaillé à temps retombe en friche (semis non fait avant mai, récolte non faite avant septembre, labour inachevé en décembre) ; on travaille d'abord le champ entamé, sinon le plus proche ; seuil du bois = (5 + prélèvement attendu) + 10 %, arrondi à l'unité supérieure (7).
 
 ### Constats
 
-- Avec une météo moyenne, le moteur retrouve les chiffres du doc §8 : grain net 12,75 pour 12 mangés (+0,75 par an), 100 j de culture, 33 j de transport du grain, 41 j de bois.
-- **Aucun manque de grain** sur 20 graines × 100 ans (0,3 % d'années) : le stock initial et le surplus moyen amortissent la météo. Le « très tendu » du doc ne se voit pas dans ces conditions ; à régler par le stock initial ou le prélèvement.
-- **Vêtement** : avec l'usure aléatoire, un stock de 2 et 20 j de couture, deux usures rapprochées vident parfois le stock (7 vêtements manquants en 50 ans) ; certaines années demandent 100 j de couture. Le compteur d'usure déterministe (point 6, alternative) lisserait cela.
+- Avec une météo moyenne : 15 grains récoltés, 2 prélevés (au lieu de 2,25), 12 mangés, donc **+1 grain par an** (le doc §8 annonçait +0,75 sans arrondi) ; 100 j de culture, 36 j de transport du grain, 42 j de bois, en moyenne 220 jours travaillés sur 313 ouvrables.
+- **Aucun manque de grain** sur 20 graines × 100 ans (0,2 % d'années) : le stock initial et le surplus de +1 par an amortissent la météo. Le « très tendu » du doc ne se voit pas ; à régler par le stock initial, le prélèvement ou la consommation.
+- **Vêtement** : avec l'usure aléatoire, un stock de 2 et 20 j de couture, deux usures rapprochées vident parfois le stock (7 vêtements manquants en 50 ans) ; certaines années demandent 100 j de couture.
 
 ## Suite possible
 

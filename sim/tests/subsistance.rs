@@ -57,30 +57,68 @@ fn conservation_du_grain_et_du_bois() {
     }
     let h = &s.historique;
     let net_grain: i64 = h.iter().chain([&s.bilan]).map(|b| b.grain_brut - b.grain_preleve - b.grain_mange).sum();
-    assert_eq!(g0 * Q + net_grain, s.stocks.grain + grain_champs, "grain");
+    assert_eq!(g0 + net_grain, s.stocks.grain + grain_champs, "grain");
     let net_bois: i64 = h.iter().chain([&s.bilan]).map(|b| b.bois_brut - b.bois_preleve - b.bois_brule).sum();
-    assert_eq!(b0 * Q + net_bois, s.stocks.bois + bois_foret, "bois");
+    assert_eq!(b0 + net_bois, s.stocks.bois + bois_foret, "bois");
 }
 
 #[test]
 fn annee_moyenne_production_du_doc() {
-    // Doc §3-§4 : 5 champs × 3 grains = 15, prélèvement 15 % → 12,75 net ; 12 consommés.
+    // Doc §3-§4 : 5 champs × 3 grains = 15 ; prélèvement de 15 % arrondi à l'unité (2,25 → 2) ; 12 consommés.
     let s = annees(moyenne(Default::default()), 10);
     for b in &s.historique {
-        assert_eq!(b.grain_brut, 15 * Q);
-        assert_eq!(b.grain_preleve, 15 * Q * 15 / 100);
-        assert_eq!(b.grain_mange, 12 * Q);
+        assert_eq!(b.grain_brut, 15);
+        assert_eq!(b.grain_preleve, 2);
+        assert_eq!(b.grain_mange, 12);
         assert_eq!(b.manque_grain, 0);
         assert_eq!(b.champs_recoltes, 5);
-        // Bois : jamais rasé, 9 unités brutes au plus par an, 5 brûlées.
-        assert!(b.bois_brut <= 9 * Q);
-        assert_eq!(b.bois_brule, 5 * Q);
+        // Bois : le petit bois repousse d'un coup, 9 unités au plus par an, 5 brûlées.
+        assert!(b.bois_brut <= 9);
+        assert_eq!(b.bois_brule, 5);
+    }
+}
+
+#[test]
+fn le_prelevement_a_lieu_a_date_fixe_dans_le_stock_de_la_ferme() {
+    // 11 novembre = jour 314 de l'année (0-based) ; la part est un entier, prise sur le stock de la ferme.
+    let mut s = Simulation::avec(moyenne(Default::default()));
+    for _ in 0..315 {
+        s.tick();
+    }
+    let ev: Vec<_> = s.journal.iter().filter(|e| e.texte.starts_with("Prélèvement")).collect();
+    assert_eq!(ev.len(), 1);
+    assert_eq!(ev[0].jour, 314);
+    assert_eq!(s.bilan.grain_preleve, 2);
+    assert!(s.bilan.bois_preleve >= 1);
+    assert_eq!(s.grain_a_taxer, 0, "assiette remise à zéro");
+}
+
+#[test]
+fn le_prelevement_est_partiel_si_le_stock_manque() {
+    // Le seigneur ne prend pas plus que ce que la ferme a en stock : 10 grains dus (15 % de 70), 3 en stock.
+    let mut s = Simulation::new();
+    s.stocks.grain = 3;
+    s.grain_a_taxer = 70;
+    s.prelevement();
+    assert_eq!(s.stocks.grain, 0);
+    assert_eq!(s.bilan.grain_preleve, 3);
+    assert!(s.journal.last().unwrap().texte.contains("prélèvement partiel"));
+}
+
+#[test]
+fn le_prelevement_est_arrondi_a_l_unite_la_plus_proche() {
+    for (brut, attendu) in [(15, 2), (13, 2), (12, 2), (10, 2), (9, 1), (3, 0), (4, 1)] {
+        let mut s = Simulation::new();
+        s.stocks.grain = 100;
+        s.grain_a_taxer = brut;
+        s.prelevement();
+        assert_eq!(100 - s.stocks.grain, attendu, "15 % de {brut}");
     }
 }
 
 #[test]
 fn le_temps_de_travail_tient_dans_l_annee() {
-    // Doc §8 : 100 j de culture, 30 à 45 j de transport du grain, de l'ordre de 220-250 j au total.
+    // Doc §8 : 100 j de culture, 30 à 45 j de transport du grain (15 grains × 2,4 tiles ≈ 36 j).
     let s = annees(moyenne(Default::default()), 30);
     for b in &s.historique {
         let j = b.jours;
@@ -132,6 +170,6 @@ fn le_vetement_manque_rarement() {
     // deux usures rapprochées peuvent vider le stock avant la fin de la couture (point ouvert n°6).
     let s = annees(moyenne(Default::default()), 50);
     let manques: i64 = s.historique.iter().map(|b| b.manque_vetement).sum();
-    println!("vêtements manquants en 50 ans : {}", manques / Q);
-    assert!(manques < 20 * Q);
+    println!("vêtements manquants en 50 ans : {}", manques);
+    assert!(manques < 20);
 }
